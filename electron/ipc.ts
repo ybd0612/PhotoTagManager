@@ -55,7 +55,12 @@ export function registerIpc(deps: IpcDeps): void {
   // 多根目录（R10）：增删改查
   handle('roots:list', (): Promise<unknown> => deps.roots.list());
   handle('roots:add', (path: string, alias?: string): Promise<unknown> => deps.roots.add(path, alias));
-  handle('roots:remove', (rootId: string): Promise<unknown> => deps.roots.remove(rootId));
+  handle('roots:remove', async (rootId: string): Promise<unknown> => {
+    const result = await deps.roots.remove(rootId);
+    // 删根即清隐藏记录，避免残留（bugfix）
+    await deps.folders.removeByRoot(rootId);
+    return result;
+  });
   handle('roots:rename', (rootId: string, alias: string): Promise<unknown> => deps.roots.rename(rootId, alias));
 
   // 扫描（R01/R02，带 rootId）

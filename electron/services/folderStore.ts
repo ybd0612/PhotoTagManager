@@ -50,6 +50,20 @@ export class FolderStore {
     }
   }
 
+  /** 删除指定根目录的全部隐藏记录（删根即清隐藏，key 按前缀清理） */
+  async removeByRoot(rootId: string): Promise<void> {
+    await this.load();
+    const prefix = `${rootId}\u0000`;
+    let changed = false;
+    for (const key of [...this.cache.keys()]) {
+      if (key.startsWith(prefix)) {
+        this.cache.delete(key);
+        changed = true;
+      }
+    }
+    if (changed) await this.persist();
+  }
+
   private async load(): Promise<void> {
     if (this.loaded) return;
     try {

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Box, Chip, Divider, IconButton, Menu, MenuItem, Stack, Tooltip, Typography } from '@mui/material';
+import { useMemo, useState } from 'react';
+import { Box, Chip, Divider, IconButton, ListItemText, Menu, MenuItem, Stack, Tooltip, Typography } from '@mui/material';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import FolderIcon from '@mui/icons-material/Folder';
@@ -32,10 +32,21 @@ export function FolderTree(): JSX.Element {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({ '': true });
   const [showHidden, setShowHidden] = useState(false);
   const [menu, setMenu] = useState<{ relPath: string; mouseX: number; mouseY: number } | null>(null);
+  // 「已隐藏 N」按钮的菜单锚点（用于恢复隐藏目录）
+  const [hiddenAnchor, setHiddenAnchor] = useState<null | HTMLElement>(null);
 
   const currentRoot = roots.find((r) => r.id === selectedRootId) ?? null;
   const rootName = currentRoot?.alias || '根目录';
   const rootId = selectedRootId ?? '';
+
+  // 当前根已隐藏目录的 relPath 列表（hiddenSet key = `${rootId}\u0000${relPath}`，按前缀过滤）
+  const hiddenRelPaths = useMemo(() => {
+    const prefix = `${rootId}\u0000`;
+    return [...hiddenSet]
+      .filter((key) => key.startsWith(prefix))
+      .map((key) => key.slice(prefix.length))
+      .sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
+  }, [hiddenSet, rootId]);
 
   const toggleExpand = (relPath: string): void => {
     setExpanded((prev) => ({ ...prev, [relPath]: !prev[relPath] }));
@@ -76,9 +87,20 @@ export function FolderTree(): JSX.Element {
         justifyContent="space-between"
         className="shrink-0 border-b border-slate-100 px-3 py-2"
       >
-        <Typography variant="subtitle2" color="text.secondary">
-          目录
-        </Typography>
+        <Stack direction="row" alignItems="center" spacing={1} className="min-w-0">
+          <Typography variant="subtitle2" color="text.secondary" className="shrink-0">
+            目录
+          </Typography>
+          {/* 隐藏目录恢复入口：点击弹出该根全部已隐藏目录 */}
+          <Chip
+            size="small"
+            label={`已隐藏 ${hiddenRelPaths.length}`}
+            color="warning"
+            variant="outlined"
+            onClick={(e) => setHiddenAnchor(e.currentTarget)}
+            sx={{ height: 22, fontSize: 12 }}
+          />
+        </Stack>
         <Tooltip title={showHidden ? '隐藏已隐藏目录' : '显示已隐藏目录'}>
           <IconButton size="small" onClick={() => setShowHidden((v) => !v)}>
             {showHidden ? <VisibilityIcon fontSize="small" /> : <VisibilityOffIcon fontSize="small" />}
@@ -126,6 +148,28 @@ export function FolderTree(): JSX.Element {
             />
           ))}
       </Box>
+
+      {/* 「已隐藏 N」菜单：列出该根所有已隐藏目录，逐项恢复 */}
+      <Menu
+        anchorEl={hiddenAnchor}
+        open={Boolean(hiddenAnchor)}
+        onClose={() => setHiddenAnchor(null)}
+        PaperProps={{ sx: { maxHeight: 360, width: 280 } }}
+      >
+        {hiddenRelPaths.length === 0 && <MenuItem disabled>暂无已隐藏目录</MenuItem>}
+        {hiddenRelPaths.map((relPath) => (
+          <MenuItem
+            key={relPath}
+            onClick={() => {
+              setHiddenAnchor(null);
+              void handleUnhide(relPath);
+            }}
+          >
+            <ListItemText primary={relPath} />
+            <Chip size="small" label="恢复" color="primary" />
+          </MenuItem>
+        ))}
+      </Menu>
 
       <Menu
         open={menu !== null}

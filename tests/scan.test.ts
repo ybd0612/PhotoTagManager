@@ -255,4 +255,26 @@ describe('FolderStore 隐藏持久化', () => {
     const list3 = await store3.list('r1');
     expect(list3.map((r) => r.relPath)).toEqual(['2024/01']);
   });
+
+  it('removeByRoot 删除指定根全部隐藏记录，其它根保留且跨实例持久化（删根清隐藏 bugfix）', async () => {
+    const store = new FolderStore(tempDir);
+    await store.hide('r1', '2024');
+    await store.hide('r1', '2024/01');
+    await store.hide('r2', '2024');
+    await store.hide('r2', 'photos');
+
+    await store.removeByRoot('r1');
+
+    // r1 已清空
+    expect(await store.list('r1')).toEqual([]);
+    // r2 记录保留
+    const listR2 = await store.list('r2');
+    expect(listR2.map((r) => r.relPath).sort()).toEqual(['2024', 'photos']);
+    expect(listR2.every((r) => r.rootId === 'r2')).toBe(true);
+
+    // 新实例（模拟重启）同样读不到 r1，r2 保留
+    const store2 = new FolderStore(tempDir);
+    expect(await store2.list('r1')).toEqual([]);
+    expect(await store2.list('r2').then((l) => l.map((r) => r.relPath).sort())).toEqual(['2024', 'photos']);
+  });
 });
