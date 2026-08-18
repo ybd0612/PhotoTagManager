@@ -32,6 +32,10 @@ export default defineConfig({
   },
   renderer: {
     root: resolve(__dirname),
+    server: {
+      port: 51783,
+      strictPort: true
+    },
     plugins: [react()],
     build: {
       rollupOptions: {
