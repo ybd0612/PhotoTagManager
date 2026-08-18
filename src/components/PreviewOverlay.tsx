@@ -121,13 +121,27 @@ export function PreviewOverlay(): JSX.Element | null {
     };
   }, []);
 
-  // 键盘：←/→ 翻页、Esc 关闭
+  /** 复制当前文件到剪贴板（可在资源管理器粘贴；文本同时写入路径） */
+  const copyFileToClipboard = async (absPath: string): Promise<void> => {
+    try {
+      await call(getApi().copyFileToClipboard(absPath));
+      setSnackbar('已复制文件，可在资源管理器中粘贴');
+    } catch {
+      setSnackbar('复制文件失败');
+    }
+  };
+
+  // 键盘：←/→ 翻页、Esc 关闭、Ctrl+C 复制当前文件
   useEffect(() => {
     if (!preview) return;
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') closePreview();
       else if (e.key === 'ArrowLeft') previewStep(-1);
       else if (e.key === 'ArrowRight') previewStep(1);
+      else if (e.ctrlKey && (e.key === 'c' || e.key === 'C')) {
+        e.preventDefault();
+        void copyFileToClipboard(preview.image.absPath);
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -137,6 +151,10 @@ export function PreviewOverlay(): JSX.Element | null {
 
   const image = preview.image;
   const tags = tagCache.get(image.absPath) ?? image.tags ?? [];
+  // 拆分绝对路径：目录部分（浅色）+ 文件名部分（白色）
+  const lastSep = Math.max(image.absPath.lastIndexOf('\\'), image.absPath.lastIndexOf('/'));
+  const dirPath = lastSep === -1 ? '' : image.absPath.slice(0, lastSep + 1);
+  const fileName = lastSep === -1 ? image.absPath : image.absPath.slice(lastSep + 1);
 
   const applyWrite = async (
     nextTags: string[],
@@ -186,8 +204,15 @@ export function PreviewOverlay(): JSX.Element | null {
             <ChevronLeftIcon />
           </IconButton>
         </Tooltip>
-        <Typography noWrap variant="subtitle1" className="min-w-0 flex-1 text-center ptm-selectable">
-          {image.name}
+        {/* 绝对路径：目录部分浅色 + 文件名白色 */}
+        <Typography
+          noWrap
+          variant="subtitle1"
+          className="min-w-0 flex-1 text-center ptm-selectable"
+          title={image.absPath}
+        >
+          <span style={{ color: 'rgba(255,255,255,0.5)' }}>{dirPath}</span>
+          <span style={{ color: 'white' }}>{fileName}</span>
           <Typography component="span" variant="caption" sx={{ color: 'rgba(255,255,255,0.55)', ml: 1 }}>
             {preview.index + 1} / {preview.list.length}
           </Typography>

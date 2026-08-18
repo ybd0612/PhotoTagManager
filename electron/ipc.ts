@@ -1,4 +1,4 @@
-import { app, dialog, ipcMain, shell, type BrowserWindow } from 'electron';
+import { app, clipboard, dialog, ipcMain, shell, type BrowserWindow } from 'electron';
 import type { IpcResult, TagWriteRequest } from '../shared/types';
 import type { ScanService } from './services/scanService';
 import type { XmpService } from './services/xmpService';
@@ -88,6 +88,12 @@ export function registerIpc(deps: IpcDeps): void {
     if (!absPath) throw new Error('absPath 不能为空');
     const errorMessage = await shell.openPath(absPath);
     if (errorMessage) throw new Error(errorMessage);
+  });
+
+  // 复制文件到剪贴板（FileNameW 格式，Windows 资源管理器可直接粘贴）
+  handle('clipboard:copy-file', (absPath: string): void => {
+    if (!absPath) throw new Error('absPath 不能为空');
+    clipboard.writeBuffer('FileNameW', Buffer.from(`${absPath}\0`, 'utf16le'));
   });
 
   // 标签（R07）
