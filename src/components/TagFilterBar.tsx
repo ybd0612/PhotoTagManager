@@ -9,6 +9,7 @@ import {
   Stack,
   ToggleButton,
   ToggleButtonGroup,
+  Tooltip,
   Typography
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
@@ -145,15 +146,16 @@ export function TagFilterBar(): JSX.Element {
           hotTags.map(([tag, count]) => {
             const selected = tagFilter.tags.includes(tag);
             return (
-              <Chip
-                key={tag}
-                label={`${tag} ${count}`}
-                size="small"
-                variant={selected ? 'filled' : 'outlined'}
-                color={selected ? 'primary' : 'default'}
-                onClick={() => toggleFilterTag(tag)}
-                sx={{ cursor: 'pointer' }}
-              />
+              <Tooltip key={tag} title={`${count} 张图片`}>
+                <Chip
+                  label={`${tag}（${count}）`}
+                  size="small"
+                  variant={selected ? 'filled' : 'outlined'}
+                  color={selected ? 'primary' : 'default'}
+                  onClick={() => toggleFilterTag(tag)}
+                  sx={{ cursor: 'pointer' }}
+                />
+              </Tooltip>
             );
           })
         )}
