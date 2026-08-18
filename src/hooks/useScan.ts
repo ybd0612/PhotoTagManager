@@ -114,3 +114,37 @@ export async function cancelScan(): Promise<void> {
   store.setScanState('idle');
   store.setScanStats(null);
 }
+
+/** 等待指定根扫描结束（done / error / 超时兜底），用于自动扫描队列 */
+function waitForScanDone(rootId: string): Promise<void> {
+  return new Promise((resolve) => {
+    let settled = false;
+    let offDone: () => void = () => undefined;
+    let offError: () => void = () => undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const finish = (): void => {
+      if (settled) return;
+      settled = true;
+      offDone();
+      offError();
+      clearTimeout(timer);
+      resolve();
+    };
+    offDone = getApi().onScanDone((p) => {
+      if (p.rootId === rootId) finish();
+    });
+    offError = getApi().onScanError(() => finish());
+    // 兜底：用户手动打断/切换根导致旧扫描无 done 事件，超时后继续下一个根
+    timer = setTimeout(finish, 30_000);
+  });
+}
+
+/** 启动后自动扫描全部根：优先第一个（当前选中）根，其余串行后台扫描（不切换选中根） */
+export async function autoScanAllRoots(roots: RootEntry[]): Promise<void> {
+  for (const root of roots) {
+    const store = useAppStore.getState();
+    if (store.scannedRoots.has(root.id)) continue; // 已扫过跳过
+    await startScan(root);
+    await waitForScanDone(root.id);
+  }
+}

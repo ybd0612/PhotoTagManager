@@ -258,14 +258,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     for (const key of [...imagesByDir.keys()]) {
       if (key.startsWith(prefix)) imagesByDir.delete(key);
     }
+    const isSelected = get().selectedRootId === rootId;
     set({
       scanState: 'scanning',
       scanStats: null,
       treesByRoot,
       imagesByDir,
-      selectedDir: '',
-      selectedImages: new Set(),
-      tree: []
+      // 后台扫描非选中根时不重置当前选中根的浏览状态（启动自动扫描所有根场景）
+      ...(isSelected ? { selectedDir: '', selectedImages: new Set(), tree: [] } : {})
     });
   },
 

@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { createTheme, CssBaseline, ThemeProvider } from '@mui/material';
 import { getApi } from './api';
-import { startScan, useScanSubscriptions } from './hooks/useScan';
+import { autoScanAllRoots, useScanSubscriptions } from './hooks/useScan';
 import { useAppStore } from './store/useAppStore';
 import { AppLayout } from './components/AppLayout';
 
@@ -54,7 +54,7 @@ export default function App(): JSX.Element {
   // 全局订阅扫描事件（progress/done/error）——唯一订阅者
   useScanSubscriptions();
 
-  // 启动加载持久化根列表（R10：多根 + 别名）；选中第一个根并**自动扫描**（其余根懒扫描，点击才扫）
+  // 启动加载持久化根列表（R10）；选中第一个根并自动扫描全部根（优先选中根，其余串行后台扫）
   useEffect(() => {
     let cancelled = false;
     void getApi()
@@ -65,7 +65,7 @@ export default function App(): JSX.Element {
         useAppStore.getState().setRoots(roots);
         if (roots.length > 0) {
           useAppStore.getState().selectRoot(roots[0].id);
-          void startScan(roots[0]);
+          void autoScanAllRoots(roots);
         }
       })
       .catch(() => undefined);
