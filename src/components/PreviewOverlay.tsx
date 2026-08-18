@@ -39,7 +39,6 @@ export function PreviewOverlay(): JSX.Element | null {
   const zoomRef = useRef(1);
   const offsetRef = useRef({ x: 0, y: 0 });
   const dragRef = useRef<{ startX: number; startY: number; ox: number; oy: number } | null>(null);
-  const imgBoxRef = useRef<HTMLDivElement>(null);
 
   const setZoom = (z: number): void => {
     zoomRef.current = z;
@@ -81,27 +80,20 @@ export function PreviewOverlay(): JSX.Element | null {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [absPath]);
 
-  // 滚轮缩放（光标为中心）；原生监听以允许 preventDefault（React wheel 是 passive）
-  useEffect(() => {
-    const el = imgBoxRef.current;
-    if (!el) return;
-    const onWheel = (e: WheelEvent): void => {
-      e.preventDefault();
-      const rect = el.getBoundingClientRect();
-      const px = e.clientX - rect.left;
-      const py = e.clientY - rect.top;
-      const prev = zoomRef.current;
-      const next = Math.min(5, Math.max(0.5, prev * (e.deltaY < 0 ? 1.15 : 0.87)));
-      const ratio = next / prev;
-      setZoom(next);
-      setOffset({
-        x: px - (px - offsetRef.current.x) * ratio,
-        y: py - (py - offsetRef.current.y) * ratio
-      });
-    };
-    el.addEventListener('wheel', onWheel, { passive: false });
-    return () => el.removeEventListener('wheel', onWheel);
-  }, []);
+  /** 滚轮缩放（光标为中心）；React onWheel 属性无挂载时机问题（预览层无页面滚动冲突） */
+  const handleWheel = (e: React.WheelEvent<HTMLDivElement>): void => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const px = e.clientX - rect.left;
+    const py = e.clientY - rect.top;
+    const prev = zoomRef.current;
+    const next = Math.min(5, Math.max(0.5, prev * (e.deltaY < 0 ? 1.15 : 0.87)));
+    const ratio = next / prev;
+    setZoom(next);
+    setOffset({
+      x: px - (px - offsetRef.current.x) * ratio,
+      y: py - (py - offsetRef.current.y) * ratio
+    });
+  };
 
   // 拖动平移（仅在缩放 >1 时生效）
   useEffect(() => {
@@ -231,7 +223,6 @@ export function PreviewOverlay(): JSX.Element | null {
 
       {/* 大图区：滚轮缩放（光标为中心）+ 拖动平移（长图），双击重置 */}
       <Box
-        ref={imgBoxRef}
         className={`relative flex min-h-0 flex-1 select-none items-center justify-center overflow-hidden p-4 ${
           zoom > 1 ? 'cursor-grab active:cursor-grabbing' : ''
         }`}
@@ -247,6 +238,7 @@ export function PreviewOverlay(): JSX.Element | null {
           e.preventDefault();
         }}
         onDoubleClick={resetView}
+        onWheel={handleWheel}
       >
         <img
           key={image.absPath}

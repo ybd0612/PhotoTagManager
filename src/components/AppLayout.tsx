@@ -44,6 +44,8 @@ export function AppLayout(): JSX.Element {
   const scannedRoots = useAppStore((s) => s.scannedRoots);
   const scanState = useAppStore((s) => s.scanState);
   const scanStats = useAppStore((s) => s.scanStats);
+  const scanStatsByRoot = useAppStore((s) => s.scanStatsByRoot);
+  const imagesByDir = useAppStore((s) => s.imagesByDir);
   const selectedImages = useAppStore((s) => s.selectedImages);
   const snackbar = useAppStore((s) => s.snackbar);
   const setSnackbar = useAppStore((s) => s.setSnackbar);
@@ -60,6 +62,20 @@ export function AppLayout(): JSX.Element {
     if (selectedDir === '') return selectedRoot.path;
     return `${selectedRoot.path.replace(/[\\/]+$/, '')}\\${selectedDir.replace(/\//g, '\\')}`;
   }, [selectedRoot, selectedDir]);
+
+  // 当前选中根的图片总数（按 imagesByDir 复合 key 前缀统计）
+  const currentRootImageCount = useMemo(() => {
+    if (!selectedRootId) return 0;
+    const prefix = `${selectedRootId}\u0000`;
+    let total = 0;
+    for (const [key, arr] of imagesByDir) {
+      if (key.startsWith(prefix)) total += arr.length;
+    }
+    return total;
+  }, [selectedRootId, imagesByDir]);
+
+  // 当前选中根的扫描统计
+  const currentRootScanStats = selectedRootId ? (scanStatsByRoot.get(selectedRootId) ?? null) : null;
 
   /** 添加根目录：选目录 → 持久化 → 选中 → 懒扫描（新根必未扫） */
   const handleAddRoot = useCallback(async () => {
@@ -234,14 +250,14 @@ export function AppLayout(): JSX.Element {
         </Box>
       )}
 
-      {/* 底部状态栏 */}
+      {/* 底部状态栏（统计按当前选中根） */}
       <Paper className="flex h-7 shrink-0 items-center justify-between rounded-none border-t border-slate-200 px-3">
         <Typography variant="caption" color="text.secondary">
-          共 {scanStats?.imageCount.toLocaleString() ?? 0} 张
+          共 {currentRootImageCount.toLocaleString()} 张
           <span className="mx-2 text-slate-300">|</span>
           已选 {selectedImages.size} 张
           <span className="mx-2 text-slate-300">|</span>
-          已扫描 {scanStats?.scannedFiles.toLocaleString() ?? 0} 个文件
+          已扫描 {currentRootScanStats?.scannedFiles.toLocaleString() ?? 0} 个文件
         </Typography>
         <Stack direction="row" spacing={1} alignItems="center">
           {scanning && (

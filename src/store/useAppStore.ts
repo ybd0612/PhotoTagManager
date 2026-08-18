@@ -35,7 +35,8 @@ interface AppState {
   roots: RootEntry[];
   selectedRootId: string | null;
   scanState: ScanState;
-  scanStats: ScanStats | null;
+  scanStats: ScanStats | null; // 最后一次扫描（全局，兼容旧引用）
+  scanStatsByRoot: Map<string, ScanStats>; // 按根统计（底部状态栏按选中根显示）
   tree: FolderNode[]; // 当前选中根的顶层目录（由 treesByRoot 派生，切换根时重建）
   treesByRoot: Map<string, FolderNode[]>;
   imagesByDir: Map<string, ImageFile[]>; // key = rootKey(rootId, dirRelPath)
@@ -162,6 +163,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedRootId: null,
   scanState: 'idle',
   scanStats: null,
+  scanStatsByRoot: new Map(),
   tree: [],
   treesByRoot: new Map(),
   imagesByDir: new Map(),
@@ -216,12 +218,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (key.startsWith(prefix)) hiddenSet.delete(key);
     }
     const selectedRootId = get().selectedRootId === rootId ? (roots[0]?.id ?? null) : get().selectedRootId;
+    const scanStatsByRoot = new Map(get().scanStatsByRoot);
+    scanStatsByRoot.delete(rootId);
     set({
       roots,
       treesByRoot,
       imagesByDir,
       scannedRoots,
       hiddenSet,
+      scanStatsByRoot,
       selectedRootId,
       selectedDir: selectedRootId ? get().selectedDir : null,
       tree: selectedRootId ? (treesByRoot.get(selectedRootId) ?? []) : []
@@ -259,9 +264,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (key.startsWith(prefix)) imagesByDir.delete(key);
     }
     const isSelected = get().selectedRootId === rootId;
+    const scanStatsByRoot = new Map(get().scanStatsByRoot);
+    scanStatsByRoot.delete(rootId);
     set({
       scanState: 'scanning',
       scanStats: null,
+      scanStatsByRoot,
       treesByRoot,
       imagesByDir,
       // 后台扫描非选中根时不重置当前选中根的浏览状态（启动自动扫描所有根场景）
@@ -288,9 +296,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     const scannedRoots = new Set(get().scannedRoots);
     scannedRoots.add(rootId);
 
+    const scanStatsByRoot = new Map(get().scanStatsByRoot);
+    scanStatsByRoot.set(rootId, batch.stats);
+
     const tree = get().selectedRootId === rootId ? (treesByRoot.get(rootId) ?? []) : get().tree;
 
-    set({ treesByRoot, tree, imagesByDir, scannedRoots, scanStats: batch.stats });
+    set({ treesByRoot, tree, imagesByDir, scannedRoots, scanStatsByRoot, scanStats: batch.stats });
   },
 
   // ---- 隐藏（按根） ----
