@@ -5,7 +5,8 @@ import { FixedSizeGrid } from 'react-window';
 import { rootKey, useAppStore } from '../store/useAppStore';
 import { useThumbnails } from '../hooks/useThumbnails';
 import { toFileUrl } from '../api';
-import type { FolderNode, ImageFile } from '../../shared/types';
+import { collectDirAndDescendants } from '../utils/folders';
+import type { ImageFile } from '../../shared/types';
 
 /**
  * 缩略图网格（R09）：react-window 虚拟滚动，只渲染可视区；D4 性能策略④。
@@ -33,38 +34,6 @@ function applyTagFilter(
     if (mode === 'AND') return tags.every((t) => imageTags.includes(t));
     return tags.some((t) => imageTags.includes(t));
   });
-}
-
-/**
- * 收集目录及其全部后代目录的 relPath（含自身；'' 额外包含根目录直接图片）。
- * 用于递归汇总视图：选中根目录显示全盘图片，选中子目录显示该目录及子树图片。
- */
-function collectDirAndDescendants(tree: FolderNode[], dir: string): string[] {
-  const out: string[] = [];
-  const walk = (nodes: FolderNode[]): void => {
-    for (const n of nodes) {
-      out.push(n.relPath);
-      if (n.children.length > 0) walk(n.children);
-    }
-  };
-  if (dir === '') {
-    out.push('');
-    walk(tree);
-    return out;
-  }
-  const find = (nodes: FolderNode[]): boolean => {
-    for (const n of nodes) {
-      if (n.relPath === dir) {
-        out.push(n.relPath);
-        walk(n.children);
-        return true;
-      }
-      if (find(n.children)) return true;
-    }
-    return false;
-  };
-  find(tree);
-  return out;
 }
 
 interface GridRange {
