@@ -277,4 +277,46 @@ describe('FolderStore 隐藏持久化', () => {
     expect(await store2.list('r1')).toEqual([]);
     expect(await store2.list('r2').then((l) => l.map((r) => r.relPath).sort())).toEqual(['2024', 'photos']);
   });
+
+  it('removeByRoot 前缀隔离：删除 r1 不影响 r10（rootId 前缀碰撞边界，QA 补充）', async () => {
+    const store = new FolderStore(tempDir);
+    await store.hide('r1', '2024');
+    await store.hide('r10', '2024');
+    await store.hide('r10', 'photos');
+
+    await store.removeByRoot('r1');
+
+    // r1 已清空，但 r10 的记录必须完整保留（\u0000 分隔符防止前缀误匹配）
+    expect(await store.list('r1')).toEqual([]);
+    expect(await store.list('r10').then((l) => l.map((r) => r.relPath).sort())).toEqual(['2024', 'photos']);
+
+    // 跨实例持久化验证 r10 仍在
+    const store2 = new FolderStore(tempDir);
+    expect(await store2.list('r10').then((l) => l.map((r) => r.relPath).sort())).toEqual(['2024', 'photos']);
+  });
+});
+
+describe('useScan loadRootTags rootKey 前缀匹配（QA 补充）', () => {
+  // 镜像 src/store/useAppStore.ts 中 rootKey = `${rootId}\u0000${relPath}` 的契约（node 测试工程不引入 src）
+  const rootKey = (rootId: string, relPath: string): string => `${rootId}\u0000${relPath}`;
+
+  it('rootKey(rootId, "") 作为前缀可精确收集该根全部目录 key，且不误匹配其它根', () => {
+    // 模拟 imagesByDir 的 key 集合（rootKey(rootId, dirRelPath)）
+    const keys = [
+      rootKey('r1', ''),
+      rootKey('r1', '2024'),
+      rootKey('r1', '2024/01'),
+      rootKey('r10', ''),
+      rootKey('r10', '2024')
+    ];
+    const collect = (rootId: string): string[] => keys.filter((k) => k.startsWith(rootKey(rootId, '')));
+
+    expect(collect('r1').sort()).toEqual([
+      rootKey('r1', ''),
+      rootKey('r1', '2024'),
+      rootKey('r1', '2024/01')
+    ]);
+    // r10 不会被 r1 的前缀误匹配（\u0000 分隔符边界）
+    expect(collect('r10').sort()).toEqual([rootKey('r10', ''), rootKey('r10', '2024')]);
+  });
 });
