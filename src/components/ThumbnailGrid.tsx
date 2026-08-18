@@ -88,7 +88,9 @@ export function ThumbnailGrid(): JSX.Element {
     return () => ro.disconnect();
   }, []);
 
+  // 列数按固定最小列宽计算；列宽自适应填满容器，避免右侧留白
   const cols = Math.max(1, Math.floor((size.width + GAP) / (COL_WIDTH + GAP)));
+  const colWidth = Math.max(COL_WIDTH, Math.floor((size.width - (cols - 1) * GAP) / cols));
   const rowCount = Math.ceil(filtered.length / cols);
 
   // 可视区 absPath（仅请求视口内缩略图/标签）
@@ -198,7 +200,7 @@ export function ThumbnailGrid(): JSX.Element {
       <div ref={containerRef} className="min-h-0 flex-1">
         <FixedSizeGrid
           columnCount={cols}
-          columnWidth={COL_WIDTH}
+          columnWidth={colWidth}
           height={size.height}
           rowCount={rowCount}
           rowHeight={ROW_HEIGHT}
