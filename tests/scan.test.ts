@@ -9,9 +9,10 @@ import type { Dirent } from 'fs';
  * 仅 mock readdir/stat，其余 fs 能力透传真实实现（folderStore 使用临时目录验证）。
  */
 
-const { readdirMock, statMock } = vi.hoisted(() => ({
+const { readdirMock, statMock, lstatMock } = vi.hoisted(() => ({
   readdirMock: vi.fn(),
-  statMock: vi.fn()
+  statMock: vi.fn(),
+  lstatMock: vi.fn()
 }));
 
 vi.mock('fs/promises', async (importOriginal) => {
@@ -19,7 +20,8 @@ vi.mock('fs/promises', async (importOriginal) => {
   return {
     ...actual,
     readdir: readdirMock,
-    stat: statMock
+    stat: statMock,
+    lstat: lstatMock
   };
 });
 
@@ -43,11 +45,14 @@ function dirent(name: string, isDir: boolean): Dirent {
 }
 
 const STAT_RESULT = { size: 2048, mtimeMs: 1700000000000, isFile: () => true, isDirectory: () => false } as never;
+const LSTAT_DIR = { isSymbolicLink: () => false, isFile: () => false, isDirectory: () => true } as never;
 
 beforeEach(() => {
   readdirMock.mockReset();
   statMock.mockReset();
+  lstatMock.mockReset();
   statMock.mockResolvedValue(STAT_RESULT);
+  lstatMock.mockResolvedValue(LSTAT_DIR);
 });
 
 afterEach(() => {
@@ -149,6 +154,39 @@ describe('scanWorker walkDirectory', () => {
     });
 
     expect(stats.done).toBe(false);
+  });
+
+  it('跳过符号链接/junction 目录，避免 Windows 系统盘循环递归', async () => {
+    // 目录结构：
+    // C:/root/
+    //   a.jpg（直接图片）
+    //   loop/  → junction，指向自身（AppData\Local\Application Data 场景）
+    //   real/  → 普通目录
+    readdirMock.mockImplementation((dir: string) => {
+      const p = dir.replace(/\\/g, '/');
+      if (p === 'C:/root') return [dirent('a.jpg', false), dirent('loop', true), dirent('real', true)];
+      if (p === 'C:/root/loop') return [dirent('b.jpg', false)]; // 不应被访问
+      if (p === 'C:/root/real') return [dirent('c.jpg', false)];
+      return [];
+    });
+    // loop 为 junction（isSymbolicLink=true）；real 为普通目录
+    lstatMock.mockImplementation((p: string) => ({
+      isSymbolicLink: () => p.replace(/\\/g, '/').endsWith('/loop'),
+      isFile: () => false,
+      isDirectory: () => true
+    } as never));
+
+    const batches: ScanBatch[] = [];
+    const stats = await walkDirectory({
+      rootPath: 'C:/root',
+      onBatch: (batch) => batches.push(batch)
+    });
+
+    expect(stats.imageCount).toBe(2); // a.jpg + real/c.jpg；loop/b.jpg 被跳过
+    const images = batches.flatMap((b) => b.images);
+    expect(images.map((i: ImageFile) => i.name).sort()).toEqual(['a.jpg', 'c.jpg']);
+    const folders = batches.flatMap((b) => b.folders);
+    expect(folders.map((f: FolderNode) => f.relPath)).toEqual(['real']);
   });
 });
 

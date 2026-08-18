@@ -1,5 +1,5 @@
 import { parentPort } from 'worker_threads';
-import { readdir, stat } from 'fs/promises';
+import { readdir, stat, lstat } from 'fs/promises';
 import { basename, extname, join } from 'path';
 import { createHash } from 'crypto';
 import { isImageFile } from '../../shared/imageExt';
@@ -83,6 +83,15 @@ export async function walkDirectory(options: ScanOptions): Promise<ScanStats> {
         return null;
       }
       if (entry.isDirectory()) {
+        // 跳过符号链接/junction：Windows 系统盘存在自循环 junction
+        // （如 AppData\Local\Application Data → AppData\Local 自身），
+        // 跟随会导致 DFS 无限递归、扫描卡死。
+        try {
+          const lst = await lstat(join(dirAbs, entry.name));
+          if (lst.isSymbolicLink()) continue;
+        } catch {
+          continue;
+        }
         subDirs.push({
           abs: join(dirAbs, entry.name),
           rel: dirRel ? `${dirRel}/${entry.name}` : entry.name
