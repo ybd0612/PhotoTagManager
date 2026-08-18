@@ -12,13 +12,15 @@ import { rescan } from '../hooks/useScan';
 import type { FolderNode } from '../../shared/types';
 
 /**
- * 目录树（R03/R04/R05）：
+ * 目录树（R03/R04/R05，多根 R10）：
+ * - 展示当前选中根的目录树（store.tree 已按选中根分桶）
  * - 仅渲染 totalCount>0 的节点（扫描阶段已过滤）
- * - hiddenSet 剪枝；「显示已隐藏」开关下以 👁 图标弱化展示隐藏节点
+ * - hiddenSet 按 rootId 剪枝；「显示已隐藏」开关下以 👁 图标弱化展示隐藏节点
  * - 右键菜单：隐藏文件夹 / 取消隐藏 / 重新扫描
  */
 export function FolderTree(): JSX.Element {
-  const rootPath = useAppStore((s) => s.rootPath);
+  const selectedRootId = useAppStore((s) => s.selectedRootId);
+  const roots = useAppStore((s) => s.roots);
   const tree = useAppStore((s) => s.tree);
   const hiddenSet = useAppStore((s) => s.hiddenSet);
   const selectedDir = useAppStore((s) => s.selectedDir);
@@ -31,9 +33,9 @@ export function FolderTree(): JSX.Element {
   const [showHidden, setShowHidden] = useState(false);
   const [menu, setMenu] = useState<{ relPath: string; mouseX: number; mouseY: number } | null>(null);
 
-  const rootName = rootPath
-    ? rootPath.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || rootPath
-    : '根目录';
+  const currentRoot = roots.find((r) => r.id === selectedRootId) ?? null;
+  const rootName = currentRoot?.alias || '根目录';
+  const rootId = selectedRootId ?? '';
 
   const toggleExpand = (relPath: string): void => {
     setExpanded((prev) => ({ ...prev, [relPath]: !prev[relPath] }));
@@ -41,8 +43,8 @@ export function FolderTree(): JSX.Element {
 
   const handleHide = async (relPath: string): Promise<void> => {
     try {
-      await call(getApi().hideFolder(relPath));
-      hideFolderLocal(relPath);
+      await call(getApi().hideFolder(rootId, relPath));
+      hideFolderLocal(rootId, relPath);
     } catch {
       setSnackbar('隐藏文件夹失败');
     }
@@ -50,8 +52,8 @@ export function FolderTree(): JSX.Element {
 
   const handleUnhide = async (relPath: string): Promise<void> => {
     try {
-      await call(getApi().unhideFolder(relPath));
-      unhideFolderLocal(relPath);
+      await call(getApi().unhideFolder(rootId, relPath));
+      unhideFolderLocal(rootId, relPath);
     } catch {
       setSnackbar('取消隐藏失败');
     }
@@ -85,7 +87,7 @@ export function FolderTree(): JSX.Element {
       </Stack>
 
       <Box className="min-h-0 flex-1 overflow-auto py-1">
-        {/* 根节点 */}
+        {/* 根节点（当前根，显示别名） */}
         <FolderRow
           name={rootName}
           relPath=""
@@ -113,6 +115,7 @@ export function FolderTree(): JSX.Element {
               expanded={expanded}
               showHidden={showHidden}
               hiddenSet={hiddenSet}
+              rootId={rootId}
               selectedDir={selectedDir}
               onToggle={toggleExpand}
               onSelect={selectDir}
@@ -134,7 +137,7 @@ export function FolderTree(): JSX.Element {
           隐藏文件夹
         </MenuItem>
         <MenuItem
-          disabled={menu === null || !hiddenSet.has(menu.relPath)}
+          disabled={menu === null || !hiddenSet.has(`${rootId}\u0000${menu.relPath}`)}
           onClick={() => handleMenuAction('unhide')}
         >
           取消隐藏
@@ -156,6 +159,7 @@ interface TreeNodeProps {
   expanded: Record<string, boolean>;
   showHidden: boolean;
   hiddenSet: Set<string>;
+  rootId: string;
   selectedDir: string | null;
   onToggle: (relPath: string) => void;
   onSelect: (relPath: string) => void;
@@ -163,14 +167,14 @@ interface TreeNodeProps {
 }
 
 function TreeNode(props: TreeNodeProps): JSX.Element | null {
-  const { node, depth, hiddenByAncestor } = props;
-  const isHidden = node.hidden || props.hiddenSet.has(node.relPath);
+  const { node, depth, hiddenByAncestor, rootId } = props;
+  const isHidden = node.hidden || props.hiddenSet.has(`${rootId}\u0000${node.relPath}`);
 
   // 剪枝：祖先隐藏 或 自身隐藏（且未开启显示隐藏）
   if (hiddenByAncestor || (isHidden && !props.showHidden)) return null;
 
   const isExpanded = props.expanded[node.relPath] === true;
-  const visibleChildren = node.children.filter((c) => !props.hiddenSet.has(c.relPath));
+  const visibleChildren = node.children.filter((c) => !props.hiddenSet.has(`${rootId}\u0000${c.relPath}`));
   const hasChildren = visibleChildren.length > 0;
 
   return (

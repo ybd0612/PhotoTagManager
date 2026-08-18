@@ -20,18 +20,23 @@ function subscribe<T>(channel: string, cb: (payload: T) => void): () => void {
 const api: PhotoTagApi = {
   // 目录选择
   pickDirectory: () => ipcRenderer.invoke('dialog:pick-directory'),
-  // 扫描
-  scanStart: (rootPath: string) => ipcRenderer.invoke('scan:start', rootPath),
+  // 多根目录（R10）
+  listRoots: () => ipcRenderer.invoke('roots:list'),
+  addRoot: (path: string, alias?: string) => ipcRenderer.invoke('roots:add', path, alias),
+  removeRoot: (rootId: string) => ipcRenderer.invoke('roots:remove', rootId),
+  renameRoot: (rootId: string, alias: string) => ipcRenderer.invoke('roots:rename', rootId, alias),
+  // 扫描（带 rootId）
+  scanStart: (rootId: string, rootPath: string) => ipcRenderer.invoke('scan:start', rootId, rootPath),
   scanCancel: () => ipcRenderer.invoke('scan:cancel'),
   onScanProgress: (cb: (batch: ScanBatch) => void) => subscribe<ScanBatch>('scan:progress', cb),
-  onScanDone: (cb: (payload: { rootPath: string; stats: ScanStats }) => void) =>
-    subscribe<{ rootPath: string; stats: ScanStats }>('scan:done', cb),
+  onScanDone: (cb: (payload: { rootId: string; rootPath: string; stats: ScanStats }) => void) =>
+    subscribe<{ rootId: string; rootPath: string; stats: ScanStats }>('scan:done', cb),
   onScanError: (cb: (error: { code: string; message: string }) => void) =>
     subscribe<{ code: string; message: string }>('scan:error', cb),
-  // 文件夹隐藏
-  hideFolder: (relPath: string) => ipcRenderer.invoke('folder:hide', relPath),
-  unhideFolder: (relPath: string) => ipcRenderer.invoke('folder:unhide', relPath),
-  listHiddenFolders: () => ipcRenderer.invoke('folder:list-hidden'),
+  // 文件夹隐藏（按根）
+  hideFolder: (rootId: string, relPath: string) => ipcRenderer.invoke('folder:hide', rootId, relPath),
+  unhideFolder: (rootId: string, relPath: string) => ipcRenderer.invoke('folder:unhide', rootId, relPath),
+  listHiddenFolders: (rootId: string) => ipcRenderer.invoke('folder:list-hidden', rootId),
   // 标签
   readImageTags: (absPath: string) => ipcRenderer.invoke('tags:read-image', absPath),
   readBulkTags: (absPaths: string[]) => ipcRenderer.invoke('tags:read-bulk', absPaths),

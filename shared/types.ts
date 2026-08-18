@@ -28,8 +28,17 @@ export interface FolderNode {
   children: FolderNode[]; // 子目录（按名称排序）
 }
 
-/** 扫描增量批（Worker → 主 → 渲染，每 ~200 文件一批） */
+/** 根目录条目（多根 + 别名）：根列表持久化于 userData/roots.json */
+export interface RootEntry {
+  id: string; // sha1(path) 前 8 位，稳定唯一
+  path: string; // 绝对路径
+  alias: string; // 别名（默认目录名，可改），如"照片""资料"
+  addedAt: number; // 添加时间戳
+}
+
+/** 扫描增量批（Worker → 主 → 渲染，每 ~200 文件一批；rootId 由主进程补全） */
 export interface ScanBatch {
+  rootId: string; // 所属根目录 id（worker 侧为空串，主进程转发时填充）
   batchIndex: number;
   folders: FolderNode[]; // 本批新增/更新的目录节点（覆盖合并到 store 树）
   images: ImageFile[]; // 本批图片
@@ -43,8 +52,9 @@ export interface ScanStats {
   done: boolean; // 是否最后一批
 }
 
-/** 隐藏持久化记录（D2：相对根目录路径） */
+/** 隐藏持久化记录（D2：按 rootId + 相对根目录路径） */
 export interface HiddenFolderRecord {
+  rootId: string; // 所属根目录 id
   relPath: string; // 如 '2024/01' 或 ''（隐藏整个根目录的场景允许，UI 上根目录隐藏被禁用）
   hiddenAt: number; // 时间戳
 }
@@ -97,16 +107,21 @@ export type IpcResult<T> =
 export interface PhotoTagApi {
   // 目录选择
   pickDirectory(): Promise<IpcResult<string | null>>;
-  // 扫描
-  scanStart(rootPath: string): Promise<IpcResult<{ rootPath: string }>>;
+  // 多根目录（R10：多根 + 别名）
+  listRoots(): Promise<IpcResult<RootEntry[]>>;
+  addRoot(path: string, alias?: string): Promise<IpcResult<RootEntry>>;
+  removeRoot(rootId: string): Promise<IpcResult<void>>;
+  renameRoot(rootId: string, alias: string): Promise<IpcResult<RootEntry | null>>;
+  // 扫描（懒扫描：选中未扫过的根才触发；rootId 标识所属根）
+  scanStart(rootId: string, rootPath: string): Promise<IpcResult<{ rootId: string; rootPath: string }>>;
   scanCancel(): Promise<IpcResult<void>>;
   onScanProgress(cb: (batch: ScanBatch) => void): () => void;
-  onScanDone(cb: (payload: { rootPath: string; stats: ScanStats }) => void): () => void;
+  onScanDone(cb: (payload: { rootId: string; rootPath: string; stats: ScanStats }) => void): () => void;
   onScanError(cb: (error: { code: string; message: string }) => void): () => void;
-  // 文件夹隐藏
-  hideFolder(relPath: string): Promise<IpcResult<void>>;
-  unhideFolder(relPath: string): Promise<IpcResult<void>>;
-  listHiddenFolders(): Promise<IpcResult<HiddenFolderRecord[]>>;
+  // 文件夹隐藏（按根隔离）
+  hideFolder(rootId: string, relPath: string): Promise<IpcResult<void>>;
+  unhideFolder(rootId: string, relPath: string): Promise<IpcResult<void>>;
+  listHiddenFolders(rootId: string): Promise<IpcResult<HiddenFolderRecord[]>>;
   // 标签
   readImageTags(absPath: string): Promise<IpcResult<TagInfo>>;
   readBulkTags(absPaths: string[]): Promise<IpcResult<TagInfo[]>>;

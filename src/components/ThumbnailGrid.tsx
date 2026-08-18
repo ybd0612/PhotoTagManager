@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { Box, Card, Chip, Stack, Typography } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { FixedSizeGrid } from 'react-window';
-import { useAppStore } from '../store/useAppStore';
+import { rootKey, useAppStore } from '../store/useAppStore';
 import { useThumbnails } from '../hooks/useThumbnails';
 import { toFileUrl } from '../api';
 import type { FolderNode, ImageFile } from '../../shared/types';
@@ -75,6 +75,8 @@ interface GridRange {
 }
 
 export function ThumbnailGrid(): JSX.Element {
+  const selectedRootId = useAppStore((s) => s.selectedRootId);
+  const scannedRoots = useAppStore((s) => s.scannedRoots);
   const selectedDir = useAppStore((s) => s.selectedDir);
   const tree = useAppStore((s) => s.tree);
   const imagesByDir = useAppStore((s) => s.imagesByDir);
@@ -84,17 +86,18 @@ export function ThumbnailGrid(): JSX.Element {
   const toggleSelectImage = useAppStore((s) => s.toggleSelectImage);
   const setPreview = useAppStore((s) => s.setPreview);
 
-  // 递归汇总：选中目录 + 全部后代目录的图片（选根目录 = 全盘图片）
+  // 递归汇总：选中目录 + 全部后代目录的图片（选根目录 = 全盘图片），按当前根分桶
   const images = useMemo(() => {
-    if (selectedDir === null) return [];
+    if (selectedRootId === null || selectedDir === null) return [];
     const dirs = collectDirAndDescendants(tree, selectedDir);
     const list: ImageFile[] = [];
     for (const d of dirs) {
-      const arr = imagesByDir.get(d);
+      const arr = imagesByDir.get(rootKey(selectedRootId, d));
       if (arr) list.push(...arr);
     }
     return list.sort((a, b) => a.relPath.localeCompare(b.relPath, 'zh-Hans-CN'));
-  }, [selectedDir, tree, imagesByDir]);
+  }, [selectedRootId, selectedDir, tree, imagesByDir]);
+  const rootScanned = selectedRootId !== null && scannedRoots.has(selectedRootId);
   const filtered = useMemo(
     () => applyTagFilter(images, tagFilter.tags, tagFilter.mode, tagCache),
     [images, tagFilter.tags, tagFilter.mode, tagCache]
@@ -149,7 +152,11 @@ export function ThumbnailGrid(): JSX.Element {
       <div ref={containerRef} className="flex h-full w-full items-center justify-center">
         <Stack alignItems="center" spacing={1}>
           <Typography variant="body2" color="text.secondary">
-            {images.length === 0 ? '该目录暂无图片' : '没有符合当前标签筛选的图片'}
+            {!rootScanned
+              ? '该根目录尚未扫描完成，图片会自动出现…'
+              : images.length === 0
+                ? '该目录暂无图片'
+                : '没有符合当前标签筛选的图片'}
           </Typography>
         </Stack>
       </div>

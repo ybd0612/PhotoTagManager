@@ -6,17 +6,30 @@ import type { PhotoTagApi } from '../shared/types';
 
 /**
  * app.test.tsx —— 渲染集成冒烟（vitest + testing-library，mock window.api）。
- * 验证空状态引导正确渲染，且 App 挂载/订阅不崩溃。
+ * 验证空状态引导正确渲染，且 App 挂载/订阅不崩溃（多根 R10）。
  */
 
 function createMockApi(): PhotoTagApi {
   return {
     pickDirectory: vi.fn(async () => ({ ok: true as const, data: null })),
-    scanStart: vi.fn(async () => ({ ok: true as const, data: { rootPath: '' } })),
+    // 多根（R10）
+    listRoots: vi.fn(async () => ({ ok: true as const, data: [] })),
+    addRoot: vi.fn(async () => ({
+      ok: true as const,
+      data: { id: 'r1', path: 'C:/Photos', alias: '照片', addedAt: 1 }
+    })),
+    removeRoot: vi.fn(async () => ({ ok: true as const, data: undefined })),
+    renameRoot: vi.fn(async () => ({
+      ok: true as const,
+      data: { id: 'r1', path: 'C:/Photos', alias: '新名', addedAt: 1 }
+    })),
+    // 扫描（带 rootId）
+    scanStart: vi.fn(async () => ({ ok: true as const, data: { rootId: 'r1', rootPath: 'C:/Photos' } })),
     scanCancel: vi.fn(async () => ({ ok: true as const, data: undefined })),
     onScanProgress: vi.fn(() => () => undefined),
     onScanDone: vi.fn(() => () => undefined),
     onScanError: vi.fn(() => () => undefined),
+    // 隐藏（按根）
     hideFolder: vi.fn(async () => ({ ok: true as const, data: undefined })),
     unhideFolder: vi.fn(async () => ({ ok: true as const, data: undefined })),
     listHiddenFolders: vi.fn(async () => ({ ok: true as const, data: [] })),
@@ -46,11 +59,10 @@ beforeEach(() => {
 });
 
 describe('App 冒烟', () => {
-  it('空状态下渲染标题与「选择根目录」引导（R01 入口）', () => {
+  it('无根目录时渲染空状态引导与「添加根目录」入口（R10）', () => {
     render(<App />);
     expect(screen.getByText('PhotoTagManager')).toBeTruthy();
-    expect(screen.getByText('选择一个包含图片的文件夹开始管理标签')).toBeTruthy();
-    // 至少存在一个「选择根目录」按钮（顶栏 + 空态）
-    expect(screen.getAllByText('选择根目录').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('添加一个或多个图片根目录，起个名字方便管理')).toBeTruthy();
+    expect(screen.getAllByText('添加根目录').length).toBeGreaterThanOrEqual(1);
   });
 });

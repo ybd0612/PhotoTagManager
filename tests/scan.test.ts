@@ -223,30 +223,36 @@ describe('FolderStore 隐藏持久化', () => {
     await rm(tempDir, { recursive: true, force: true });
   });
 
-  it('hide/isHidden/list/unhide 往返一致，且跨实例持久化（R06）', async () => {
+  it('hide/isHidden/list/unhide 往返一致，跨实例持久化，且按根隔离（R06/R10）', async () => {
     const store = new FolderStore(tempDir);
-    expect(await store.isHidden('2024')).toBe(false);
+    expect(await store.isHidden('r1', '2024')).toBe(false);
 
-    await store.hide('2024');
-    await store.hide('2024/01');
-    expect(await store.isHidden('2024')).toBe(true);
+    await store.hide('r1', '2024');
+    await store.hide('r1', '2024/01');
+    expect(await store.isHidden('r1', '2024')).toBe(true);
 
-    const list1 = await store.list();
-    expect(list1.map((r) => r.relPath).sort()).toEqual(['2024', '2024/01']);
-    expect(list1.every((r) => typeof r.hiddenAt === 'number')).toBe(true);
+    // 不同根同 relPath 互不干扰
+    await store.hide('r2', '2024');
+    expect(await store.isHidden('r1', '2024')).toBe(true);
+    expect(await store.isHidden('r2', '2024')).toBe(true);
+    const listR1 = await store.list('r1');
+    expect(listR1.map((r) => r.relPath).sort()).toEqual(['2024', '2024/01']);
+    expect(listR1.every((r) => r.rootId === 'r1')).toBe(true);
+    expect(listR1.every((r) => typeof r.hiddenAt === 'number')).toBe(true);
+    expect(await store.list('r2').then((l) => l.map((r) => r.relPath))).toEqual(['2024']);
 
     // 新实例（模拟重启）仍能读到
     const store2 = new FolderStore(tempDir);
-    expect(await store2.isHidden('2024')).toBe(true);
-    expect(await store2.isHidden('2024/01')).toBe(true);
+    expect(await store2.isHidden('r1', '2024')).toBe(true);
+    expect(await store2.isHidden('r1', '2024/01')).toBe(true);
 
     // 取消隐藏只清除自身
-    await store2.unhide('2024');
-    expect(await store2.isHidden('2024')).toBe(false);
-    expect(await store2.isHidden('2024/01')).toBe(true);
+    await store2.unhide('r1', '2024');
+    expect(await store2.isHidden('r1', '2024')).toBe(false);
+    expect(await store2.isHidden('r1', '2024/01')).toBe(true);
 
     const store3 = new FolderStore(tempDir);
-    const list3 = await store3.list();
+    const list3 = await store3.list('r1');
     expect(list3.map((r) => r.relPath)).toEqual(['2024/01']);
   });
 });

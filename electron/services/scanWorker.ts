@@ -50,6 +50,7 @@ export async function walkDirectory(options: ScanOptions): Promise<ScanStats> {
     if (done || pendingImages.length >= batchSize || pendingFolders.length >= FOLDER_BATCH_FLUSH) {
       if (pendingImages.length === 0 && pendingFolders.length === 0 && !done) return;
       options.onBatch({
+        rootId: '', // 由主进程 scanService 转发时填充真实 rootId
         batchIndex: batchIndex++,
         folders: pendingFolders,
         images: pendingImages,

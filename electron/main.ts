@@ -6,6 +6,7 @@ import { ScanService } from './services/scanService';
 import { XmpService } from './services/xmpService';
 import { ThumbnailService } from './services/thumbnailService';
 import { FolderStore } from './services/folderStore';
+import { RootStore } from './services/rootStore';
 import { registerIpc } from './ipc';
 
 electronLog.initialize();
@@ -32,6 +33,7 @@ let scan: ScanService | null = null;
 let xmp: XmpService | null = null;
 let thumb: ThumbnailService | null = null;
 let folders: FolderStore | null = null;
+let roots: RootStore | null = null;
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -74,6 +76,7 @@ void app.whenReady().then(() => {
   xmp = new XmpService();
   thumb = new ThumbnailService(xmp, userDataPath);
   folders = new FolderStore(userDataPath);
+  roots = new RootStore(userDataPath);
 
   // 本地文件协议处理：ptm-file://local/<encodeURIComponent(absPath)>
   protocol.handle('ptm-file', async (request) => {
@@ -95,6 +98,7 @@ void app.whenReady().then(() => {
     xmp,
     thumb,
     folders,
+    roots,
     getWindow: () => mainWindow
   });
 

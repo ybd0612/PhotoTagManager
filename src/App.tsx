@@ -1,5 +1,8 @@
+import { useEffect } from 'react';
 import { createTheme, CssBaseline, ThemeProvider } from '@mui/material';
+import { getApi } from './api';
 import { useScanSubscriptions } from './hooks/useScan';
+import { useAppStore } from './store/useAppStore';
 import { AppLayout } from './components/AppLayout';
 
 /** 现代化浅色主题（MUI 负责交互组件与主题，Tailwind 负责布局间距） */
@@ -50,6 +53,25 @@ const theme = createTheme({
 export default function App(): JSX.Element {
   // 全局订阅扫描事件（progress/done/error）——唯一订阅者
   useScanSubscriptions();
+
+  // 启动加载持久化根列表（R10：多根 + 别名）；默认选中第一个根（懒扫描，不自动扫）
+  useEffect(() => {
+    let cancelled = false;
+    void getApi()
+      .listRoots()
+      .then((result) => {
+        if (cancelled || !result.ok) return;
+        const roots = result.data;
+        useAppStore.getState().setRoots(roots);
+        if (roots.length > 0) {
+          useAppStore.getState().selectRoot(roots[0].id);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <ThemeProvider theme={theme}>

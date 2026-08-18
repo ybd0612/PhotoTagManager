@@ -4,12 +4,14 @@ import type { ScanService } from './services/scanService';
 import type { XmpService } from './services/xmpService';
 import type { ThumbnailService } from './services/thumbnailService';
 import type { FolderStore } from './services/folderStore';
+import type { RootStore } from './services/rootStore';
 
 export interface IpcDeps {
   scan: ScanService;
   xmp: XmpService;
   thumb: ThumbnailService;
   folders: FolderStore;
+  roots: RootStore;
   getWindow: () => BrowserWindow | null;
 }
 
@@ -50,24 +52,31 @@ export function registerIpc(deps: IpcDeps): void {
     return result.filePaths[0];
   });
 
-  // 扫描（R01/R02）
-  handle('scan:start', (rootPath: string): { rootPath: string } => {
+  // 多根目录（R10）：增删改查
+  handle('roots:list', (): Promise<unknown> => deps.roots.list());
+  handle('roots:add', (path: string, alias?: string): Promise<unknown> => deps.roots.add(path, alias));
+  handle('roots:remove', (rootId: string): Promise<unknown> => deps.roots.remove(rootId));
+  handle('roots:rename', (rootId: string, alias: string): Promise<unknown> => deps.roots.rename(rootId, alias));
+
+  // 扫描（R01/R02，带 rootId）
+  handle('scan:start', (rootId: string, rootPath: string): { rootId: string; rootPath: string } => {
+    if (!rootId) throw new Error('rootId 不能为空');
     if (!rootPath) throw new Error('rootPath 不能为空');
     const win = deps.getWindow();
     if (win && !win.isDestroyed()) {
-      deps.scan.startScan(rootPath, win.webContents);
+      deps.scan.startScan(rootId, rootPath, win.webContents);
     }
-    return { rootPath };
+    return { rootId, rootPath };
   });
 
   handle('scan:cancel', (): void => {
     deps.scan.cancel();
   });
 
-  // 文件夹隐藏（R05/R06）
-  handle('folder:hide', (relPath: string): Promise<void> => deps.folders.hide(relPath));
-  handle('folder:unhide', (relPath: string): Promise<void> => deps.folders.unhide(relPath));
-  handle('folder:list-hidden', (): Promise<unknown> => deps.folders.list());
+  // 文件夹隐藏（R05/R06，按根隔离）
+  handle('folder:hide', (rootId: string, relPath: string): Promise<void> => deps.folders.hide(rootId, relPath));
+  handle('folder:unhide', (rootId: string, relPath: string): Promise<void> => deps.folders.unhide(rootId, relPath));
+  handle('folder:list-hidden', (rootId: string): Promise<unknown> => deps.folders.list(rootId));
 
   // 标签（R07）
   handle('tags:read-image', (absPath: string): Promise<unknown> => deps.xmp.read(absPath));

@@ -2,14 +2,17 @@ import { create } from 'zustand';
 import type {
   FolderNode,
   ImageFile,
+  RootEntry,
   ScanBatch,
   ScanStats,
   TagInfo
 } from '../../shared/types';
 
 /**
- * 全局内存模型（ARCHITECTURE §3.2）。
- * 目录树节点用模块级 nodeMap 保存（增量合并，不参与响应式）；store 只暴露 tree。
+ * 全局内存模型（ARCHITECTURE §3.2，多根 R10）。
+ * - 多根：roots[] + selectedRootId；目录树/图片/隐藏均按 rootId 分桶。
+ * - 目录树节点用模块级 nodeMap 保存（增量合并，不参与响应式）；store 只暴露当前根 tree。
+ * - 复合 key = `${rootId}\u0000${relPath}`，避免不同根同 relPath 冲突。
  */
 
 export type ScanState = 'idle' | 'scanning' | 'done' | 'error';
@@ -25,15 +28,21 @@ export interface TagFilterState {
   mode: 'AND' | 'OR';
 }
 
+/** 复合 key：rootId + 根内相对路径 */
+export const rootKey = (rootId: string, relPath: string): string => `${rootId}\u0000${relPath}`;
+
 interface AppState {
-  rootPath: string | null;
+  roots: RootEntry[];
+  selectedRootId: string | null;
   scanState: ScanState;
   scanStats: ScanStats | null;
-  tree: FolderNode[];
-  imagesByDir: Map<string, ImageFile[]>;
-  hiddenSet: Set<string>;
+  tree: FolderNode[]; // 当前选中根的顶层目录（由 treesByRoot 派生，切换根时重建）
+  treesByRoot: Map<string, FolderNode[]>;
+  imagesByDir: Map<string, ImageFile[]>; // key = rootKey(rootId, dirRelPath)
+  scannedRoots: Set<string>; // 懒扫描：已扫过的根集合
+  hiddenSet: Set<string>; // key = rootKey(rootId, relPath)
   tagFilter: TagFilterState;
-  selectedDir: string | null;
+  selectedDir: string | null; // 当前根内相对路径
   selectedImages: Set<string>;
   tagCache: Map<string, string[]>;
   tagCounts: Map<string, number>;
@@ -41,16 +50,21 @@ interface AppState {
   preview: PreviewState | null;
   snackbar: string | null;
 
+  // 根目录
+  setRoots(roots: RootEntry[]): void;
+  addRootLocal(entry: RootEntry): void;
+  removeRootLocal(rootId: string): void;
+  renameRootLocal(rootId: string, alias: string): void;
+  selectRoot(rootId: string): void;
   // 扫描
-  setRootPath(rootPath: string | null): void;
   setScanState(state: ScanState): void;
   setScanStats(stats: ScanStats | null): void;
-  resetScan(): void;
+  resetScan(rootId: string): void;
   mergeScanBatch(batch: ScanBatch): void;
   // 隐藏
-  setHiddenSet(relPaths: string[]): void;
-  hideFolderLocal(relPath: string): void;
-  unhideFolderLocal(relPath: string): void;
+  setHiddenSet(rootId: string, relPaths: string[]): void;
+  hideFolderLocal(rootId: string, relPath: string): void;
+  unhideFolderLocal(rootId: string, relPath: string): void;
   // 目录/选择
   selectDir(relPath: string): void;
   toggleSelectImage(id: string): void;
@@ -71,7 +85,7 @@ interface AppState {
   setSnackbar(message: string | null): void;
 }
 
-// 模块级目录节点索引：relPath → FolderNode（增量合并用）
+// 模块级目录节点索引：rootKey(rootId, relPath) → FolderNode（增量合并用）
 const nodeMap = new Map<string, FolderNode>();
 
 /** 取父目录 relPath（'' 表示根目录） */
@@ -80,26 +94,31 @@ export function getParentRelPath(relPath: string): string {
   return idx === -1 ? '' : relPath.slice(0, idx);
 }
 
-/** 递归写入节点及其子树到索引（保证索引对象与最新克隆一致） */
-function setNodeSubtree(map: Map<string, FolderNode>, node: FolderNode): void {
-  map.set(node.relPath, node);
+/** 递归写入节点及其子树到索引（key 带 rootId 前缀，保证索引对象与最新克隆一致） */
+function setNodeSubtree(map: Map<string, FolderNode>, rootId: string, node: FolderNode): void {
+  map.set(rootKey(rootId, node.relPath), node);
   for (const child of node.children) {
-    setNodeSubtree(map, child);
+    setNodeSubtree(map, rootId, child);
   }
 }
 
-function markHiddenFromSet(): void {
+function markHiddenFromSet(rootId: string): void {
   const { hiddenSet } = useAppStore.getState();
-  for (const node of nodeMap.values()) {
-    node.hidden = hiddenSet.has(node.relPath);
+  const prefix = `${rootId}\u0000`;
+  for (const [key, node] of nodeMap) {
+    if (key.startsWith(prefix)) {
+      node.hidden = hiddenSet.has(key);
+    }
   }
 }
 
-/** 重建根目录子节点列表（父 relPath 为 '' 的节点） */
-function rebuildRootChildren(): FolderNode[] {
+/** 重建指定根的顶层目录子节点列表（父 relPath 为 '' 的节点） */
+function rebuildRootChildren(rootId: string): FolderNode[] {
+  const prefix = `${rootId}\u0000`;
   const roots: FolderNode[] = [];
-  for (const node of nodeMap.values()) {
-    if (getParentRelPath(node.relPath) === '') {
+  for (const [key, node] of nodeMap) {
+    if (!key.startsWith(prefix)) continue;
+    if (getParentRelPath(key.slice(prefix.length)) === '') {
       roots.push(node);
     }
   }
@@ -139,11 +158,14 @@ function updateImageTagsInDir(
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
-  rootPath: null,
+  roots: [],
+  selectedRootId: null,
   scanState: 'idle',
   scanStats: null,
   tree: [],
+  treesByRoot: new Map(),
   imagesByDir: new Map(),
+  scannedRoots: new Set(),
   hiddenSet: new Set(),
   tagFilter: { tags: [], mode: 'AND' },
   selectedDir: null,
@@ -154,64 +176,164 @@ export const useAppStore = create<AppState>((set, get) => ({
   preview: null,
   snackbar: null,
 
-  setRootPath: (rootPath) => set({ rootPath }),
+  // ---- 根目录（R10） ----
+  setRoots: (roots) => {
+    const selectedRootId = get().selectedRootId;
+    const treesByRoot = new Map<string, FolderNode[]>();
+    for (const root of roots) {
+      treesByRoot.set(root.id, rebuildRootChildren(root.id));
+    }
+    set({
+      roots,
+      treesByRoot,
+      tree: selectedRootId ? (treesByRoot.get(selectedRootId) ?? []) : []
+    });
+  },
+
+  addRootLocal: (entry) => {
+    const roots = [...get().roots, entry];
+    const treesByRoot = new Map(get().treesByRoot);
+    treesByRoot.set(entry.id, rebuildRootChildren(entry.id));
+    set({ roots, treesByRoot });
+  },
+
+  removeRootLocal: (rootId) => {
+    const roots = get().roots.filter((r) => r.id !== rootId);
+    const prefix = `${rootId}\u0000`;
+    for (const key of [...nodeMap.keys()]) {
+      if (key.startsWith(prefix)) nodeMap.delete(key);
+    }
+    const treesByRoot = new Map(get().treesByRoot);
+    treesByRoot.delete(rootId);
+    const imagesByDir = new Map(get().imagesByDir);
+    for (const key of [...imagesByDir.keys()]) {
+      if (key.startsWith(prefix)) imagesByDir.delete(key);
+    }
+    const scannedRoots = new Set(get().scannedRoots);
+    scannedRoots.delete(rootId);
+    const hiddenSet = new Set(get().hiddenSet);
+    for (const key of [...hiddenSet]) {
+      if (key.startsWith(prefix)) hiddenSet.delete(key);
+    }
+    const selectedRootId = get().selectedRootId === rootId ? (roots[0]?.id ?? null) : get().selectedRootId;
+    set({
+      roots,
+      treesByRoot,
+      imagesByDir,
+      scannedRoots,
+      hiddenSet,
+      selectedRootId,
+      selectedDir: selectedRootId ? get().selectedDir : null,
+      tree: selectedRootId ? (treesByRoot.get(selectedRootId) ?? []) : []
+    });
+  },
+
+  renameRootLocal: (rootId, alias) => {
+    const roots = get().roots.map((r) => (r.id === rootId ? { ...r, alias } : r));
+    set({ roots });
+  },
+
+  selectRoot: (rootId) => {
+    const treesByRoot = get().treesByRoot;
+    set({
+      selectedRootId: rootId,
+      selectedDir: '',
+      selectedImages: new Set(),
+      tree: treesByRoot.get(rootId) ?? []
+    });
+  },
+
+  // ---- 扫描 ----
   setScanState: (scanState) => set({ scanState }),
   setScanStats: (scanStats) => set({ scanStats }),
 
-  resetScan: () => {
-    nodeMap.clear();
+  resetScan: (rootId) => {
+    const prefix = `${rootId}\u0000`;
+    for (const key of [...nodeMap.keys()]) {
+      if (key.startsWith(prefix)) nodeMap.delete(key);
+    }
+    const treesByRoot = new Map(get().treesByRoot);
+    treesByRoot.set(rootId, []);
+    const imagesByDir = new Map(get().imagesByDir);
+    for (const key of [...imagesByDir.keys()]) {
+      if (key.startsWith(prefix)) imagesByDir.delete(key);
+    }
     set({
       scanState: 'scanning',
       scanStats: null,
-      tree: [],
-      imagesByDir: new Map(),
-      selectedDir: null,
+      treesByRoot,
+      imagesByDir,
+      selectedDir: '',
       selectedImages: new Set(),
-      tagCache: new Map(),
-      tagCounts: new Map(),
-      preview: null
+      tree: []
     });
   },
 
   mergeScanBatch: (batch) => {
+    const rootId = batch.rootId;
     for (const folder of batch.folders) {
-      setNodeSubtree(nodeMap, folder);
+      setNodeSubtree(nodeMap, rootId, folder);
     }
-    const tree = rebuildRootChildren();
+    const treesByRoot = new Map(get().treesByRoot);
+    treesByRoot.set(rootId, rebuildRootChildren(rootId));
 
     const imagesByDir = new Map(get().imagesByDir);
     for (const image of batch.images) {
-      const arr = imagesByDir.get(image.dirRelPath) ?? [];
+      const key = rootKey(rootId, image.dirRelPath);
+      const arr = imagesByDir.get(key) ?? [];
       arr.push(image);
-      imagesByDir.set(image.dirRelPath, arr);
+      imagesByDir.set(key, arr);
     }
 
-    set({ tree, imagesByDir, scanStats: batch.stats });
+    const scannedRoots = new Set(get().scannedRoots);
+    scannedRoots.add(rootId);
+
+    const tree = get().selectedRootId === rootId ? (treesByRoot.get(rootId) ?? []) : get().tree;
+
+    set({ treesByRoot, tree, imagesByDir, scannedRoots, scanStats: batch.stats });
   },
 
-  setHiddenSet: (relPaths) => {
-    const hiddenSet = new Set(relPaths);
+  // ---- 隐藏（按根） ----
+  setHiddenSet: (rootId, relPaths) => {
+    const hiddenSet = new Set(get().hiddenSet);
+    const prefix = `${rootId}\u0000`;
+    for (const key of [...hiddenSet]) {
+      if (key.startsWith(prefix)) hiddenSet.delete(key);
+    }
+    for (const relPath of relPaths) {
+      hiddenSet.add(rootKey(rootId, relPath));
+    }
     set({ hiddenSet });
-    markHiddenFromSet();
-    set({ tree: rebuildRootChildren() });
+    markHiddenFromSet(rootId);
+    const treesByRoot = new Map(get().treesByRoot);
+    treesByRoot.set(rootId, rebuildRootChildren(rootId));
+    const tree = get().selectedRootId === rootId ? (treesByRoot.get(rootId) ?? []) : get().tree;
+    set({ treesByRoot, tree });
   },
 
-  hideFolderLocal: (relPath) => {
+  hideFolderLocal: (rootId, relPath) => {
     const hiddenSet = new Set(get().hiddenSet);
-    hiddenSet.add(relPath);
-    const node = nodeMap.get(relPath);
+    hiddenSet.add(rootKey(rootId, relPath));
+    const node = nodeMap.get(rootKey(rootId, relPath));
     if (node) node.hidden = true;
-    set({ hiddenSet, tree: rebuildRootChildren() });
+    const treesByRoot = new Map(get().treesByRoot);
+    treesByRoot.set(rootId, rebuildRootChildren(rootId));
+    const tree = get().selectedRootId === rootId ? (treesByRoot.get(rootId) ?? []) : get().tree;
+    set({ hiddenSet, treesByRoot, tree });
   },
 
-  unhideFolderLocal: (relPath) => {
+  unhideFolderLocal: (rootId, relPath) => {
     const hiddenSet = new Set(get().hiddenSet);
-    hiddenSet.delete(relPath);
-    const node = nodeMap.get(relPath);
+    hiddenSet.delete(rootKey(rootId, relPath));
+    const node = nodeMap.get(rootKey(rootId, relPath));
     if (node) node.hidden = false;
-    set({ hiddenSet, tree: rebuildRootChildren() });
+    const treesByRoot = new Map(get().treesByRoot);
+    treesByRoot.set(rootId, rebuildRootChildren(rootId));
+    const tree = get().selectedRootId === rootId ? (treesByRoot.get(rootId) ?? []) : get().tree;
+    set({ hiddenSet, treesByRoot, tree });
   },
 
+  // ---- 目录/选择 ----
   selectDir: (relPath) => {
     set({ selectedDir: relPath, selectedImages: new Set() });
   },
@@ -225,6 +347,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   clearSelection: () => set({ selectedImages: new Set() }),
 
+  // ---- 标签筛选 ----
   toggleFilterTag: (tag) => {
     const { tags } = get().tagFilter;
     const next = tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag];
@@ -235,6 +358,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   clearFilter: () => set({ tagFilter: { tags: [], mode: get().tagFilter.mode } }),
 
+  // ---- 标签数据（按 absPath 全局，跨根天然唯一） ----
   setTagsForImages: (results) => {
     const tagCache = new Map(get().tagCache);
     let imagesByDir = get().imagesByDir;
@@ -255,6 +379,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   bumpTagEpoch: () => set({ tagEpoch: get().tagEpoch + 1 }),
 
+  // ---- 预览 ----
   setPreview: (image, list) => {
     const index = Math.max(
       0,
