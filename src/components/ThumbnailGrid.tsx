@@ -5,7 +5,7 @@ import { FixedSizeGrid } from 'react-window';
 import { useAppStore } from '../store/useAppStore';
 import { useThumbnails } from '../hooks/useThumbnails';
 import { toFileUrl } from '../api';
-import type { ImageFile } from '../../shared/types';
+import type { FolderNode, ImageFile } from '../../shared/types';
 
 /**
  * 缩略图网格（R09）：react-window 虚拟滚动，只渲染可视区；D4 性能策略④。
@@ -35,6 +35,38 @@ function applyTagFilter(
   });
 }
 
+/**
+ * 收集目录及其全部后代目录的 relPath（含自身；'' 额外包含根目录直接图片）。
+ * 用于递归汇总视图：选中根目录显示全盘图片，选中子目录显示该目录及子树图片。
+ */
+function collectDirAndDescendants(tree: FolderNode[], dir: string): string[] {
+  const out: string[] = [];
+  const walk = (nodes: FolderNode[]): void => {
+    for (const n of nodes) {
+      out.push(n.relPath);
+      if (n.children.length > 0) walk(n.children);
+    }
+  };
+  if (dir === '') {
+    out.push('');
+    walk(tree);
+    return out;
+  }
+  const find = (nodes: FolderNode[]): boolean => {
+    for (const n of nodes) {
+      if (n.relPath === dir) {
+        out.push(n.relPath);
+        walk(n.children);
+        return true;
+      }
+      if (find(n.children)) return true;
+    }
+    return false;
+  };
+  find(tree);
+  return out;
+}
+
 interface GridRange {
   r0: number;
   r1: number;
@@ -44,6 +76,7 @@ interface GridRange {
 
 export function ThumbnailGrid(): JSX.Element {
   const selectedDir = useAppStore((s) => s.selectedDir);
+  const tree = useAppStore((s) => s.tree);
   const imagesByDir = useAppStore((s) => s.imagesByDir);
   const tagFilter = useAppStore((s) => s.tagFilter);
   const tagCache = useAppStore((s) => s.tagCache);
@@ -51,7 +84,17 @@ export function ThumbnailGrid(): JSX.Element {
   const toggleSelectImage = useAppStore((s) => s.toggleSelectImage);
   const setPreview = useAppStore((s) => s.setPreview);
 
-  const images = selectedDir !== null ? (imagesByDir.get(selectedDir) ?? []) : [];
+  // 递归汇总：选中目录 + 全部后代目录的图片（选根目录 = 全盘图片）
+  const images = useMemo(() => {
+    if (selectedDir === null) return [];
+    const dirs = collectDirAndDescendants(tree, selectedDir);
+    const list: ImageFile[] = [];
+    for (const d of dirs) {
+      const arr = imagesByDir.get(d);
+      if (arr) list.push(...arr);
+    }
+    return list.sort((a, b) => a.relPath.localeCompare(b.relPath, 'zh-Hans-CN'));
+  }, [selectedDir, tree, imagesByDir]);
   const filtered = useMemo(
     () => applyTagFilter(images, tagFilter.tags, tagFilter.mode, tagCache),
     [images, tagFilter.tags, tagFilter.mode, tagCache]
