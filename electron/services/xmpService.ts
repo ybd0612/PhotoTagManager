@@ -1,6 +1,6 @@
 import { ExifTool } from 'exiftool-vendored';
 import { promises as fs } from 'fs';
-import { dirname, join } from 'path';
+import { join } from 'path';
 import type { ImageInfo, TagInfo, TagWriteRequest } from '../../shared/types';
 
 /**
@@ -38,10 +38,15 @@ const PTM_CONFIG_CONTENT = `# PhotoTagManager custom XMP namespace (ptm)
 export class XmpService {
   private exif: ExifTool | null = null;
   private queue: Promise<unknown> = Promise.resolve();
+  private readonly configHome: string;
   private readonly configPath: string;
 
   constructor(userDataPath: string) {
-    this.configPath = join(userDataPath, 'ptm.config');
+    // exiftool 启动时自动加载 $EXIFTOOL_HOME/.ExifTool_config，
+    // 用环境变量注册自定义命名空间，避免 -config 参数在 exiftool-vendored
+    // 常驻模式（-stay_open）下挂起或位置错乱导致写入失效。
+    this.configHome = join(userDataPath, 'exiftool-config');
+    this.configPath = join(this.configHome, '.ExifTool_config');
   }
 
   /** 串行入队 */
@@ -56,7 +61,7 @@ export class XmpService {
     try {
       await fs.access(this.configPath);
     } catch {
-      await fs.mkdir(dirname(this.configPath), { recursive: true });
+      await fs.mkdir(this.configHome, { recursive: true });
       await fs.writeFile(this.configPath, PTM_CONFIG_CONTENT, 'utf-8');
     }
   }
@@ -67,8 +72,8 @@ export class XmpService {
       this.exif = new ExifTool({
         spawnTimeoutMillis: 30000,
         taskTimeoutMillis: 30000,
-        // 启动参数注册自定义命名空间，所有读写任务自动生效
-        exiftoolArgs: ['-config', this.configPath]
+        // 通过 EXIFTOOL_HOME 自动加载 .ExifTool_config（注册 ptm 命名空间）
+        exiftoolEnv: { EXIFTOOL_HOME: this.configHome }
       });
     }
     return this.exif;

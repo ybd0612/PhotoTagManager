@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
   Box,
-  Button,
   Chip,
   CircularProgress,
   Divider,
@@ -206,14 +205,6 @@ export function PreviewOverlay(): JSX.Element | null {
               {[info?.make, info?.model].filter(Boolean).join(' ') || '相机 -'}
             </Typography>
           )}
-          <Button
-            size="small"
-            variant="outlined"
-            sx={{ color: 'white', borderColor: 'rgba(255,255,255,0.4)', ml: 'auto' }}
-            onClick={closePreview}
-          >
-            关闭
-          </Button>
         </Stack>
       </Box>
     </Box>
