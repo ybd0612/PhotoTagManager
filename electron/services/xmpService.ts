@@ -1,15 +1,48 @@
 import { ExifTool } from 'exiftool-vendored';
+import { promises as fs } from 'fs';
+import { dirname, join } from 'path';
 import type { ImageInfo, TagInfo, TagWriteRequest } from '../../shared/types';
 
 /**
  * XMP 标签服务（D3）：exiftool-vendored 封装。
  * - 串行队列：所有读写任务排队执行，天然限流（exiftool 单实例）
- * - 写标签只更新 dc:subject / xmp:Label，保留 XMP 其他字段（无损）
+ * - 标签存储于**自定义 XMP 命名空间 XMP-ptm:Tags**（JSON 数组），
+ *   Windows 属性面板不识别该命名空间 → "标记"属性不显示（普通图片与 GIF 一致）
+ * - 写入时同时清空标准 dc:subject（Windows 标记来源），实现渐进迁移；
+ *   读取时兼容旧 dc:subject 数据（迁移前打的标签仍可见）
  * - 单个任务超时 30s，失败进入错误映射表，不阻塞队列
  */
+
+/** 自定义命名空间配置文件内容（exiftool 需 -config 注册 ptm 命名空间） */
+const PTM_CONFIG_CONTENT = `# PhotoTagManager custom XMP namespace (ptm)
+# Tags are stored in XMP-ptm:Tags; Windows Explorer does not recognize this
+# namespace, so the "Tags" property stays empty for both regular images and GIF.
+%Image::ExifTool::UserDefined = (
+    'Image::ExifTool::XMP::Main' => {
+        ptm => {
+            SubDirectory => { TagTable => 'Image::ExifTool::UserDefined::ptm' },
+        },
+    },
+);
+
+%Image::ExifTool::UserDefined::ptm = (
+    GROUPS => { 0 => 'XMP', 1 => 'XMP-ptm', 2 => 'Image' },
+    NAMESPACE => { 'ptm' => 'https://phototagmanager.local/ptm/1.0/' },
+    WRITABLE => 'string',
+    Tags => { Writable => 'string' },
+);
+
+1;
+`;
+
 export class XmpService {
   private exif: ExifTool | null = null;
   private queue: Promise<unknown> = Promise.resolve();
+  private readonly configPath: string;
+
+  constructor(userDataPath: string) {
+    this.configPath = join(userDataPath, 'ptm.config');
+  }
 
   /** 串行入队 */
   private enqueue<T>(task: () => Promise<T>): Promise<T> {
@@ -18,9 +51,25 @@ export class XmpService {
     return run;
   }
 
-  private getExif(): ExifTool {
+  /** 确保自定义命名空间配置文件存在（不存在则写入 userData） */
+  private async ensureConfig(): Promise<void> {
+    try {
+      await fs.access(this.configPath);
+    } catch {
+      await fs.mkdir(dirname(this.configPath), { recursive: true });
+      await fs.writeFile(this.configPath, PTM_CONFIG_CONTENT, 'utf-8');
+    }
+  }
+
+  private async getExif(): Promise<ExifTool> {
     if (!this.exif) {
-      this.exif = new ExifTool({ spawnTimeoutMillis: 30000, taskTimeoutMillis: 30000 });
+      await this.ensureConfig();
+      this.exif = new ExifTool({
+        spawnTimeoutMillis: 30000,
+        taskTimeoutMillis: 30000,
+        // 启动参数注册自定义命名空间，所有读写任务自动生效
+        exiftoolArgs: ['-config', this.configPath]
+      });
     }
     return this.exif;
   }
@@ -29,6 +78,26 @@ export class XmpService {
   private normalizeSubjects(raw: unknown): string[] {
     const arr = Array.isArray(raw) ? raw : raw == null ? [] : [raw];
     return [...new Set(arr.map((s) => String(s).trim()).filter((s) => s.length > 0))];
+  }
+
+  /**
+   * 读取标签：XMP-ptm:Tags（JSON 数组）优先；
+   * 回退旧 dc:subject（迁移前写入的标签仍可见，渐进迁移）。
+   */
+  private parseTags(tags: Record<string, unknown>): string[] {
+    const raw = tags.Tags;
+    if (typeof raw === 'string' && raw.trim().length > 0) {
+      try {
+        const parsed = JSON.parse(raw) as unknown;
+        if (Array.isArray(parsed)) {
+          return [...new Set(parsed.map((s) => String(s).trim()).filter((s) => s.length > 0))];
+        }
+      } catch {
+        // 非 JSON（异常数据）走字符串归一化兜底
+      }
+      return this.normalizeSubjects(raw);
+    }
+    return this.normalizeSubjects(tags.Subject);
   }
 
   /** 错误映射：尽量给出稳定的错误码 */
@@ -40,12 +109,13 @@ export class XmpService {
     return 'EXIF_TOOL_ERROR';
   }
 
-  /** 读取单张图片 XMP 标签（dc:subject 合并去重 + xmp:Label） */
+  /** 读取单张图片标签（XMP-ptm:Tags 解析 + xmp:Label） */
   async read(absPath: string): Promise<TagInfo> {
     return this.enqueue(async () => {
       try {
-        const tags = await this.getExif().read(absPath);
-        const subjects = this.normalizeSubjects(tags.Subject);
+        const exif = await this.getExif();
+        const tags = (await exif.read(absPath)) as Record<string, unknown>;
+        const subjects = this.parseTags(tags);
         const label = typeof tags.Label === 'string' && tags.Label.length > 0 ? tags.Label : undefined;
         return { absPath, subjects, label, ok: true };
       } catch (err) {
@@ -54,13 +124,13 @@ export class XmpService {
     });
   }
 
-  /** 写回标签：读当前 → 差量应用 → 写 dc:subject / xmp:Label，保留其他字段 */
+  /** 写回标签：读当前 → 差量应用 → 写 XMP-ptm:Tags + 清空 dc:subject（Windows 标记），保留 Label */
   async write(req: TagWriteRequest): Promise<TagInfo> {
     return this.enqueue(async () => {
       try {
-        const exif = this.getExif();
-        const current = await exif.read(req.absPath);
-        const currentSubjects = this.normalizeSubjects(current.Subject);
+        const exif = await this.getExif();
+        const current = (await exif.read(req.absPath)) as Record<string, unknown>;
+        const currentSubjects = this.parseTags(current);
         const currentLabel = typeof current.Label === 'string' ? current.Label : undefined;
 
         const add = req.add ?? [];
@@ -71,7 +141,8 @@ export class XmpService {
         const nextLabel = req.setLabel !== undefined ? req.setLabel : currentLabel;
 
         const writeArgs: Record<string, unknown> = {
-          Subject: nextSubjects.length > 0 ? nextSubjects : ''
+          Tags: JSON.stringify(nextSubjects),
+          Subject: '' // 清空标准 dc:subject（Windows 属性面板"标记"来源），渐进迁移
         };
         if (nextLabel !== undefined) {
           writeArgs.Label = nextLabel;
@@ -133,7 +204,8 @@ export class XmpService {
   async getImageInfo(absPath: string): Promise<ImageInfo> {
     return this.enqueue(async () => {
       try {
-        const tags = await this.getExif().read(absPath);
+        const exif = await this.getExif();
+        const tags = (await exif.read(absPath)) as Record<string, unknown>;
         const num = (v: unknown): number | undefined => {
           if (typeof v === 'number') return v;
           if (typeof v === 'string') {
@@ -146,7 +218,7 @@ export class XmpService {
           absPath,
           width: num(tags.ImageWidth) ?? num(tags.ExifImageWidth),
           height: num(tags.ImageHeight) ?? num(tags.ExifImageHeight),
-          sizeBytes: tags.FileSize ? parseInt(tags.FileSize, 10) : undefined,
+          sizeBytes: tags.FileSize ? parseInt(String(tags.FileSize), 10) : undefined,
           dateTimeOriginal: typeof tags.DateTimeOriginal === 'string' ? tags.DateTimeOriginal : undefined,
           make: typeof tags.Make === 'string' ? tags.Make : undefined,
           model: typeof tags.Model === 'string' ? tags.Model : undefined,
@@ -164,7 +236,7 @@ export class XmpService {
    */
   async extractPreviewBuffer(absPath: string): Promise<Buffer | null> {
     return this.enqueue(async () => {
-      const exif = this.getExif();
+      const exif = await this.getExif();
       const candidates = ['PreviewImage', 'JpgFromRaw', 'ThumbnailImage'];
       for (const key of candidates) {
         try {

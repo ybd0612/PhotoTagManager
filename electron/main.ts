@@ -73,7 +73,7 @@ void app.whenReady().then(() => {
   const userDataPath = app.getPath('userData');
 
   scan = new ScanService();
-  xmp = new XmpService();
+  xmp = new XmpService(userDataPath);
   thumb = new ThumbnailService(xmp, userDataPath);
   folders = new FolderStore(userDataPath);
   roots = new RootStore(userDataPath);
