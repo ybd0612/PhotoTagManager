@@ -35,6 +35,20 @@ const PTM_CONFIG_CONTENT = `# PhotoTagManager custom XMP namespace (ptm)
 1;
 `;
 
+/** 解析 exiftool FileSize 文本（如 "2.5 MB" / "160 bytes"）→ 字节数；失败返回 undefined */
+function parseFileSizeText(text: string | undefined): number | undefined {
+  if (!text) return undefined;
+  const m = /^([\d.]+)\s*(bytes?|kb|mb|gb)?$/i.exec(text.trim());
+  if (!m) return undefined;
+  const n = parseFloat(m[1]);
+  if (Number.isNaN(n)) return undefined;
+  const unit = (m[2] ?? 'bytes').toLowerCase();
+  if (unit === 'kb') return Math.round(n * 1024);
+  if (unit === 'mb') return Math.round(n * 1024 * 1024);
+  if (unit === 'gb') return Math.round(n * 1024 * 1024 * 1024);
+  return Math.round(n);
+}
+
 export class XmpService {
   private exif: ExifTool | null = null;
   private queue: Promise<unknown> = Promise.resolve();
@@ -219,11 +233,14 @@ export class XmpService {
           }
           return undefined;
         };
+        // 文件大小优先用 fs.stat 真实字节数；失败回退解析 exiftool 的 FileSize 文本
+        const st = await fs.stat(absPath).catch(() => null);
+        const sizeBytes = st ? st.size : parseFileSizeText(typeof tags.FileSize === 'string' ? tags.FileSize : undefined);
         return {
           absPath,
           width: num(tags.ImageWidth) ?? num(tags.ExifImageWidth),
           height: num(tags.ImageHeight) ?? num(tags.ExifImageHeight),
-          sizeBytes: tags.FileSize ? parseInt(String(tags.FileSize), 10) : undefined,
+          sizeBytes,
           dateTimeOriginal: typeof tags.DateTimeOriginal === 'string' ? tags.DateTimeOriginal : undefined,
           make: typeof tags.Make === 'string' ? tags.Make : undefined,
           model: typeof tags.Model === 'string' ? tags.Model : undefined,

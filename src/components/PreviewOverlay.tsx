@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Box,
   Chip,
@@ -33,6 +33,26 @@ export function PreviewOverlay(): JSX.Element | null {
   const [info, setInfo] = useState<ImageInfo | null>(null);
   const [infoLoading, setInfoLoading] = useState(false);
   const [newTag, setNewTag] = useState('');
+  // 长图查看：缩放（0.5~5，光标为中心）+ 拖动平移；ref 镜像避免闭包
+  const [zoom, setZoomState] = useState(1);
+  const [offset, setOffsetState] = useState({ x: 0, y: 0 });
+  const zoomRef = useRef(1);
+  const offsetRef = useRef({ x: 0, y: 0 });
+  const dragRef = useRef<{ startX: number; startY: number; ox: number; oy: number } | null>(null);
+  const imgBoxRef = useRef<HTMLDivElement>(null);
+
+  const setZoom = (z: number): void => {
+    zoomRef.current = z;
+    setZoomState(z);
+  };
+  const setOffset = (o: { x: number; y: number }): void => {
+    offsetRef.current = o;
+    setOffsetState(o);
+  };
+  const resetView = (): void => {
+    setZoom(1);
+    setOffset({ x: 0, y: 0 });
+  };
 
   const absPath = preview?.image.absPath ?? null;
 
@@ -54,6 +74,52 @@ export function PreviewOverlay(): JSX.Element | null {
       cancelled = true;
     };
   }, [absPath]);
+
+  // 切换图片时重置缩放/平移
+  useEffect(() => {
+    resetView();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [absPath]);
+
+  // 滚轮缩放（光标为中心）；原生监听以允许 preventDefault（React wheel 是 passive）
+  useEffect(() => {
+    const el = imgBoxRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent): void => {
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const px = e.clientX - rect.left;
+      const py = e.clientY - rect.top;
+      const prev = zoomRef.current;
+      const next = Math.min(5, Math.max(0.5, prev * (e.deltaY < 0 ? 1.15 : 0.87)));
+      const ratio = next / prev;
+      setZoom(next);
+      setOffset({
+        x: px - (px - offsetRef.current.x) * ratio,
+        y: py - (py - offsetRef.current.y) * ratio
+      });
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
+
+  // 拖动平移（仅在缩放 >1 时生效）
+  useEffect(() => {
+    const onMove = (e: MouseEvent): void => {
+      const d = dragRef.current;
+      if (!d) return;
+      setOffset({ x: d.ox + (e.clientX - d.startX), y: d.oy + (e.clientY - d.startY) });
+    };
+    const onUp = (): void => {
+      dragRef.current = null;
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, []);
 
   // 键盘：←/→ 翻页、Esc 关闭
   useEffect(() => {
@@ -138,15 +204,45 @@ export function PreviewOverlay(): JSX.Element | null {
         </Tooltip>
       </Stack>
 
-      {/* 大图区 */}
-      <Box className="flex min-h-0 flex-1 items-center justify-center p-4">
+      {/* 大图区：滚轮缩放（光标为中心）+ 拖动平移（长图），双击重置 */}
+      <Box
+        ref={imgBoxRef}
+        className={`relative flex min-h-0 flex-1 select-none items-center justify-center overflow-hidden p-4 ${
+          zoom > 1 ? 'cursor-grab active:cursor-grabbing' : ''
+        }`}
+        sx={{ touchAction: 'none' }}
+        onMouseDown={(e) => {
+          if (zoomRef.current <= 1) return;
+          dragRef.current = {
+            startX: e.clientX,
+            startY: e.clientY,
+            ox: offsetRef.current.x,
+            oy: offsetRef.current.y
+          };
+          e.preventDefault();
+        }}
+        onDoubleClick={resetView}
+      >
         <img
           key={image.absPath}
           src={toFileUrl(image.absPath)}
           alt={image.name}
-          className="max-h-full max-w-full object-contain"
           draggable={false}
+          className="max-h-full max-w-full object-contain"
+          style={{
+            transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`,
+            transition: 'transform 0.06s linear'
+          }}
         />
+        {zoom !== 1 && (
+          <Typography
+            className="pointer-events-none absolute bottom-2 right-3"
+            variant="caption"
+            sx={{ color: 'rgba(255,255,255,0.55)' }}
+          >
+            {Math.round(zoom * 100)}% · 双击还原
+          </Typography>
+        )}
       </Box>
 
       {/* 底栏：标签 + 信息 */}

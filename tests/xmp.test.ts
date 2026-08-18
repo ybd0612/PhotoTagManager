@@ -208,4 +208,14 @@ describe('XmpService readBulk / writeBatch / renameTag', () => {
     const tagsWrites = mockExif.writeCalls.map((c) => c.args.Tags);
     expect(tagsWrites).toEqual([tagsJson(['b'])]);
   });
+
+  it('getImageInfo：文件不存在时正确解析 exiftool FileSize 文本（如 2.5 MB）', async () => {
+    mockExif.metadata = { FileSize: '2.5 MB', ImageWidth: 100, ImageHeight: 50 };
+    const info = await svc.getImageInfo(ABS_PATH); // 该路径不存在 → fs.stat 失败走文本解析
+
+    expect(info.ok).toBe(true);
+    expect(info.width).toBe(100);
+    expect(info.height).toBe(50);
+    expect(info.sizeBytes).toBe(Math.round(2.5 * 1024 * 1024));
+  });
 });
