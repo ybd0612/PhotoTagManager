@@ -12,8 +12,8 @@ import {
   Tooltip,
   Typography
 } from '@mui/material';
-import AddIcon from '@mui/icons-material/Add';
 import FilterAltIcon from '@mui/icons-material/FilterAlt';
+import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 import { rootKey, useAppStore } from '../store/useAppStore';
 import { collectDirAndDescendants } from '../utils/folders';
 
@@ -100,15 +100,6 @@ export function TagFilterBar(): JSX.Element {
           </Stack>
         )}
 
-        <Button
-          size="small"
-          startIcon={<AddIcon />}
-          className="shrink-0"
-          onClick={(e) => setAnchor(e.currentTarget)}
-        >
-          高级筛选
-        </Button>
-
         <ToggleButtonGroup
           exclusive
           size="small"
@@ -133,7 +124,7 @@ export function TagFilterBar(): JSX.Element {
         )}
       </Stack>
 
-      {/* 第二行：热门标签（当前上下文范围） */}
+      {/* 第二行：热门标签（当前上下文范围）+ 更多（全量标签列表） */}
       <Stack direction="row" alignItems="center" spacing={0.5} className="mt-1.5 flex-wrap">
         <Typography variant="caption" color="text.secondary" className="shrink-0">
           热门
@@ -158,6 +149,18 @@ export function TagFilterBar(): JSX.Element {
               </Tooltip>
             );
           })
+        )}
+        {/* 标签数量超过热门上限时提供全量列表入口 */}
+        {hasContext && hotTags.length > 0 && allTags.length > hotTags.length && (
+          <Button
+            size="small"
+            color="inherit"
+            startIcon={<MoreHorizIcon />}
+            className="shrink-0"
+            onClick={(e) => setAnchor(e.currentTarget)}
+          >
+            更多标签…
+          </Button>
         )}
       </Stack>
 
