@@ -52,7 +52,12 @@ function createMockApi(): PhotoTagApi {
     getImageInfo: vi.fn(async () => ({
       ok: true as const,
       data: { absPath: '', ok: true }
-    }))
+    })),
+    // 自动更新
+    checkUpdate: vi.fn(async () => ({ ok: true as const, data: { state: 'not-available' as const } })),
+    downloadUpdate: vi.fn(async () => ({ ok: true as const, data: undefined })),
+    installUpdate: vi.fn(async () => ({ ok: true as const, data: undefined })),
+    onUpdateStatus: vi.fn(() => () => undefined)
   };
 }
 

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
-import type { PhotoTagApi, ScanBatch, ScanStats, ThumbnailResult } from '../shared/types';
+import type { PhotoTagApi, ScanBatch, ScanStats, ThumbnailResult, UpdateStatus } from '../shared/types';
 
 /**
  * 事件订阅辅助：返回取消订阅函数（渲染侧 useScan / useThumbnails 依赖）。
@@ -53,7 +53,12 @@ const api: PhotoTagApi = {
   getThumbnail: (absPath: string) => ipcRenderer.invoke('thumb:get', absPath),
   onThumbReady: (cb: (thumb: ThumbnailResult) => void) => subscribe<ThumbnailResult>('thumb:ready', cb),
   // 图片信息（P1）
-  getImageInfo: (absPath: string) => ipcRenderer.invoke('image:info', absPath)
+  getImageInfo: (absPath: string) => ipcRenderer.invoke('image:info', absPath),
+  // 自动更新
+  checkUpdate: () => ipcRenderer.invoke('update:check'),
+  downloadUpdate: () => ipcRenderer.invoke('update:download'),
+  installUpdate: () => ipcRenderer.invoke('update:install'),
+  onUpdateStatus: (cb: (status: UpdateStatus) => void) => subscribe<UpdateStatus>('update:status', cb)
 };
 
 contextBridge.exposeInMainWorld('api', api);

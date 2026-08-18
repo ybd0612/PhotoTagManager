@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Box,
   Button,
@@ -24,6 +24,7 @@ import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import DriveFileRenameOutlineIcon from '@mui/icons-material/DriveFileRenameOutline';
+import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
 import { call, getApi } from '../api';
 import { useAppStore } from '../store/useAppStore';
 import { cancelScan, rescan, startScan } from '../hooks/useScan';
@@ -31,6 +32,7 @@ import { FolderTree } from './FolderTree';
 import { TagFilterBar } from './TagFilterBar';
 import { ThumbnailGrid } from './ThumbnailGrid';
 import { PreviewOverlay } from './PreviewOverlay';
+import { UpdateDialog } from './UpdateDialog';
 import type { RootEntry } from '../../shared/types';
 
 /**
@@ -53,6 +55,7 @@ export function AppLayout(): JSX.Element {
   const [renameTarget, setRenameTarget] = useState<RootEntry | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [removeTarget, setRemoveTarget] = useState<RootEntry | null>(null);
+  const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
 
   const selectedRoot = roots.find((r) => r.id === selectedRootId) ?? null;
 
@@ -136,6 +139,35 @@ export function AppLayout(): JSX.Element {
     void cancelScan();
   }, [cancelScan]);
 
+  // 启动静默检查更新：仅发现新版本（available）时才弹出提示框
+  useEffect(() => {
+    let cancelled = false;
+    const unsubscribe = getApi().onUpdateStatus((s) => {
+      if (s.state === 'available' && !cancelled) setUpdateDialogOpen(true);
+    });
+    void getApi()
+      .checkUpdate()
+      .then((result) => {
+        if (cancelled || !result.ok) return;
+        if (result.data.state === 'available') setUpdateDialogOpen(true);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, []);
+
+  /** 手动检查更新：先打开对话框展示状态，再触发检查 */
+  const handleCheckUpdate = useCallback(async () => {
+    setUpdateDialogOpen(true);
+    try {
+      await call(getApi().checkUpdate());
+    } catch (error) {
+      setSnackbar(`检查更新失败：${error instanceof Error ? error.message : String(error)}`);
+    }
+  }, [setSnackbar]);
+
   const scanning = scanState === 'scanning';
   const hasRoot = roots.length > 0 && selectedRootId !== null;
 
@@ -188,6 +220,11 @@ export function AppLayout(): JSX.Element {
               取消
             </Button>
           )}
+          <Tooltip title="检查更新">
+            <IconButton onClick={() => void handleCheckUpdate()} aria-label="检查更新">
+              <SystemUpdateAltIcon />
+            </IconButton>
+          </Tooltip>
         </Stack>
       </Paper>
 
@@ -285,6 +322,9 @@ export function AppLayout(): JSX.Element {
 
       {/* 预览覆盖层 */}
       <PreviewOverlay />
+
+      {/* 更新状态对话框 */}
+      <UpdateDialog open={updateDialogOpen} onClose={() => setUpdateDialogOpen(false)} />
 
       {/* 改别名对话框 */}
       <Dialog open={renameTarget !== null} onClose={() => setRenameTarget(null)} fullWidth maxWidth="xs">

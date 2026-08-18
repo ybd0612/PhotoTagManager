@@ -12,7 +12,25 @@
     "start": "electron-vite preview",
     "typecheck": "tsc --build tsconfig.json",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "dist": "electron-builder"
+  },
+  "build": {
+    "appId": "com.ybd0612.phototagmanager",
+    "productName": "PhotoTagManager",
+    "directories": { "output": "dist" },
+    "files": ["out/**/*", "package.json"],
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "PhotoTagManager"
+    },
+    "publish": { "provider": "github", "owner": "ybd0612", "repo": "PhotoTagManager" }
   },
   "dependencies": {
     "@emotion/react": "^11.13.0",
@@ -36,6 +54,8 @@
     "@vitejs/plugin-react": "^4.3.0",
     "autoprefixer": "^10.4.0",
     "electron": "^31.0.0",
+    "electron-builder": "^24.13.3",
+    "electron-updater": "^6.3.9",
     "electron-vite": "^2.3.0",
     "jsdom": "^24.0.0",
     "postcss": "^8.4.0",

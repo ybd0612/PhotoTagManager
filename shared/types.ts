@@ -98,6 +98,14 @@ export interface ImageInfo {
   error?: string;
 }
 
+/** 自动更新状态（electron-updater → 主进程 → 渲染进程，经 'update:status' 通道推送） */
+export interface UpdateStatus {
+  state: 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error' | 'dev-mode';
+  version?: string; // 可用新版本号
+  percent?: number; // 下载进度 0-100
+  message?: string; // 错误信息
+}
+
 /** IPC 统一响应信封 */
 export type IpcResult<T> =
   | { ok: true; data: T }
@@ -138,4 +146,9 @@ export interface PhotoTagApi {
   onThumbReady(cb: (thumb: ThumbnailResult) => void): () => void;
   // 图片信息（P1）
   getImageInfo(absPath: string): Promise<IpcResult<ImageInfo>>;
+  // 自动更新（electron-updater + GitHub Releases）
+  checkUpdate(): Promise<IpcResult<UpdateStatus>>;
+  downloadUpdate(): Promise<IpcResult<void>>;
+  installUpdate(): Promise<IpcResult<void>>;
+  onUpdateStatus(cb: (status: UpdateStatus) => void): () => void;
 }

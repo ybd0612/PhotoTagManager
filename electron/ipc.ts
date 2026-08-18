@@ -1,10 +1,11 @@
 import { app, clipboard, dialog, ipcMain, shell, type BrowserWindow } from 'electron';
-import type { IpcResult, TagWriteRequest } from '../shared/types';
+import type { IpcResult, TagWriteRequest, UpdateStatus } from '../shared/types';
 import type { ScanService } from './services/scanService';
 import type { XmpService } from './services/xmpService';
 import type { ThumbnailService } from './services/thumbnailService';
 import type { FolderStore } from './services/folderStore';
 import type { RootStore } from './services/rootStore';
+import type { UpdaterService } from './services/updaterService';
 
 export interface IpcDeps {
   scan: ScanService;
@@ -12,6 +13,7 @@ export interface IpcDeps {
   thumb: ThumbnailService;
   folders: FolderStore;
   roots: RootStore;
+  updater: UpdaterService;
   getWindow: () => BrowserWindow | null;
 }
 
@@ -132,4 +134,9 @@ export function registerIpc(deps: IpcDeps): void {
 
   // 调试用
   handle('app:get-user-data', (): string => app.getPath('userData'));
+
+  // 自动更新（electron-updater + GitHub Releases；开发模式返回 dev-mode）
+  handle('update:check', (): Promise<UpdateStatus> => deps.updater.check());
+  handle('update:download', (): Promise<void> => deps.updater.download());
+  handle('update:install', (): void => deps.updater.install());
 }

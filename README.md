@@ -35,6 +35,21 @@ npm run dev        # 启动应用（dev server 端口 51783）
 | `npm run start` | 预览构建产物 |
 | `npm run typecheck` | TypeScript 全量类型检查（node + web 两套工程） |
 | `npm run test` | Vitest 单元测试（worker 统计 / 持久化 / XMP 读写 / 渲染冒烟） |
+| `npm run dist` | electron-builder 打包 NSIS 安装包（输出到 `dist/`，同时生成 `latest.yml` 供自动更新） |
+
+## 发布与更新
+
+- **发版流程**：打 tag 并推送，GitHub Actions 自动打包并发布到 GitHub Releases：
+
+  ```bash
+  git tag v0.2.0 && git push origin v0.2.0
+  ```
+
+  Actions（`.github/workflows/release.yml`）在 `windows-latest` 上执行 `npm ci` → `npm run build` → `npx electron-builder --publish always`，产出 NSIS 安装包（`dist/PhotoTagManager-<version>-x64.exe`）与 `latest.yml` 更新清单。
+
+- **更新渠道**：`electron-updater` 读取 GitHub Releases（`publish` 配置为 github 源），应用**启动时静默检查** + 顶栏「检查更新」**手动检查**；发现新版本后下载进度条展示，下载完成可一键重启安装。
+
+- **本地打包**：也可在本机执行 `npm run dist` 生成安装包（首次打包会自动下载 electron 发行版与 NSIS 工具链，需联网）。
 
 ## 使用流程
 
@@ -84,6 +99,6 @@ npm run test        # 24 用例全绿（worker 统计 / 多根持久化 / XMP �
 
 ## 已知限制
 
-- 打包分发（electron-builder 安装包）尚未配置，当前以开发模式运行
+- `electron-builder` / `electron-updater` 为开发依赖，首次执行 `npm install` 或 `npm run dist` 前需先在本机安装依赖（`npm install`），首次打包会联网下载打包工具链，耗时较长
 - `ptm` 命名空间仅本应用识别：其他图片软件与 Windows 属性面板不会显示这些标签（有意为之）
 - 部分 RAW/HEIC 写回 XMP 可能不被 exiftool 支持 → 返回错误提示，不阻塞队列

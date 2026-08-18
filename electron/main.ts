@@ -7,6 +7,7 @@ import { XmpService } from './services/xmpService';
 import { ThumbnailService } from './services/thumbnailService';
 import { FolderStore } from './services/folderStore';
 import { RootStore } from './services/rootStore';
+import { UpdaterService } from './services/updaterService';
 import { registerIpc } from './ipc';
 
 electronLog.initialize();
@@ -34,6 +35,7 @@ let xmp: XmpService | null = null;
 let thumb: ThumbnailService | null = null;
 let folders: FolderStore | null = null;
 let roots: RootStore | null = null;
+let updater: UpdaterService | null = null;
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -61,6 +63,9 @@ function createWindow(): void {
     mainWindow = null;
   });
 
+  // 自动更新状态推送到该窗口（窗口可能重建，故在 createWindow 内绑定）
+  updater?.bind(mainWindow.webContents);
+
   // electron-vite dev 模式注入 ELECTRON_RENDERER_URL；生产加载构建产物
   if (process.env['ELECTRON_RENDERER_URL']) {
     void mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL']);
@@ -77,6 +82,7 @@ void app.whenReady().then(() => {
   thumb = new ThumbnailService(xmp, userDataPath);
   folders = new FolderStore(userDataPath);
   roots = new RootStore(userDataPath);
+  updater = new UpdaterService();
 
   // 本地文件协议处理：ptm-file://local/<encodeURIComponent(absPath)>
   protocol.handle('ptm-file', async (request) => {
@@ -99,6 +105,7 @@ void app.whenReady().then(() => {
     thumb,
     folders,
     roots,
+    updater,
     getWindow: () => mainWindow
   });
 
