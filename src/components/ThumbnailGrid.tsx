@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { Box, Card, Chip, Stack, Typography } from '@mui/material';
+import { Box, Button, Card, Chip, Paper, Stack, TextField, Typography } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { FixedSizeGrid } from 'react-window';
 import { rootKey, useAppStore } from '../store/useAppStore';
 import { useThumbnails } from '../hooks/useThumbnails';
-import { toFileUrl } from '../api';
+import { call, getApi, toFileUrl } from '../api';
 import { collectDirAndDescendants } from '../utils/folders';
 import type { ImageFile } from '../../shared/types';
 
@@ -105,10 +105,11 @@ export function ThumbnailGrid(): JSX.Element {
 
   const handleCellClick = (image: ImageFile, index: number, ctrl: boolean): void => {
     if (ctrl) {
+      // Ctrl/⌘ + 单击：显式多选切换
       toggleSelectImage(image.id);
       return;
     }
-    toggleSelectImage(image.id);
+    // 普通单击：仅打开预览，不改变选中状态（多选需 Ctrl/⌘，避免误选）
     setPreview(image, filtered);
   };
 
@@ -191,26 +192,103 @@ export function ThumbnailGrid(): JSX.Element {
   };
 
   return (
-    <div ref={containerRef} className="h-full w-full">
-      <FixedSizeGrid
-        columnCount={cols}
-        columnWidth={COL_WIDTH}
-        height={size.height}
-        rowCount={rowCount}
-        rowHeight={ROW_HEIGHT}
-        width={size.width}
-        overscanRowCount={2}
-        onItemsRendered={({ visibleRowStartIndex, visibleRowStopIndex, visibleColumnStartIndex, visibleColumnStopIndex }) => {
-          setRange({
-            r0: visibleRowStartIndex,
-            r1: visibleRowStopIndex,
-            c0: visibleColumnStartIndex,
-            c1: visibleColumnStopIndex
-          });
-        }}
-      >
-        {Cell}
-      </FixedSizeGrid>
+    <div className="flex h-full w-full flex-col">
+      {/* 多选操作条：批量添加标签 / 清除选择 */}
+      {selectedImages.size > 0 && <BatchTagBar selectedIds={selectedImages} />}
+      <div ref={containerRef} className="min-h-0 flex-1">
+        <FixedSizeGrid
+          columnCount={cols}
+          columnWidth={COL_WIDTH}
+          height={size.height}
+          rowCount={rowCount}
+          rowHeight={ROW_HEIGHT}
+          width={size.width}
+          overscanRowCount={2}
+          onItemsRendered={({ visibleRowStartIndex, visibleRowStopIndex, visibleColumnStartIndex, visibleColumnStopIndex }) => {
+            setRange({
+              r0: visibleRowStartIndex,
+              r1: visibleRowStopIndex,
+              c0: visibleColumnStartIndex,
+              c1: visibleColumnStopIndex
+            });
+          }}
+        >
+          {Cell}
+        </FixedSizeGrid>
+      </div>
     </div>
+  );
+}
+
+interface BatchTagBarProps {
+  selectedIds: Set<string>;
+}
+
+/** 多选后的批量操作条：统一为选中图片添加标签 / 清除选择 */
+function BatchTagBar({ selectedIds }: BatchTagBarProps): JSX.Element {
+  const imagesByDir = useAppStore((s) => s.imagesByDir);
+  const setSnackbar = useAppStore((s) => s.setSnackbar);
+  const clearSelection = useAppStore((s) => s.clearSelection);
+  const setTagsForImages = useAppStore((s) => s.setTagsForImages);
+  const [tag, setTag] = useState('');
+
+  // 选中图片的 absPath（跨所有根，selectedIds 全局唯一）
+  const absPaths = useMemo(() => {
+    const out: string[] = [];
+    for (const arr of imagesByDir.values()) {
+      for (const img of arr) {
+        if (selectedIds.has(img.id)) out.push(img.absPath);
+      }
+    }
+    return out;
+  }, [selectedIds, imagesByDir]);
+
+  const handleAdd = async (): Promise<void> => {
+    const t = tag.trim();
+    if (!t || absPaths.length === 0) return;
+    try {
+      const res = await call(
+        getApi().writeBatchTags(absPaths.map((absPath) => ({ absPath, add: [t] })))
+      );
+      // 批量写后重读标签，保证 tagCache/tagCounts 与 XMP 一致
+      const results = await call(getApi().readBulkTags(absPaths));
+      setTagsForImages(results);
+      setSnackbar(
+        `已为 ${res.okCount} 张图片添加标签「${t}」${res.failCount > 0 ? `，${res.failCount} 张失败` : ''}`
+      );
+      clearSelection();
+      setTag('');
+    } catch (error) {
+      setSnackbar(`批量添加标签失败：${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+
+  return (
+    <Paper className="flex shrink-0 items-center gap-2 rounded-none border-b border-slate-200 px-3 py-1.5">
+      <Typography variant="body2" color="text.secondary" className="shrink-0">
+        已选 {selectedIds.size} 张
+      </Typography>
+      <TextField
+        size="small"
+        placeholder="输入标签，回车批量添加"
+        value={tag}
+        onChange={(e) => setTag(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') void handleAdd();
+        }}
+        sx={{ width: 240 }}
+      />
+      <Button
+        size="small"
+        variant="contained"
+        disabled={!tag.trim() || absPaths.length === 0}
+        onClick={() => void handleAdd()}
+      >
+        批量添加标签
+      </Button>
+      <Button size="small" color="inherit" onClick={clearSelection}>
+        清除选择
+      </Button>
+    </Paper>
   );
 }
