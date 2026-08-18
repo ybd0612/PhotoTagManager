@@ -19,7 +19,6 @@ import {
 } from '@mui/material';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import SellIcon from '@mui/icons-material/Sell';
 import StopCircleIcon from '@mui/icons-material/StopCircle';
 import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary';
 import AddIcon from '@mui/icons-material/Add';
@@ -32,7 +31,6 @@ import { FolderTree } from './FolderTree';
 import { TagFilterBar } from './TagFilterBar';
 import { ThumbnailGrid } from './ThumbnailGrid';
 import { PreviewOverlay } from './PreviewOverlay';
-import { TagManagerDialog } from './TagManagerDialog';
 import type { RootEntry } from '../../shared/types';
 
 /**
@@ -49,7 +47,6 @@ export function AppLayout(): JSX.Element {
   const snackbar = useAppStore((s) => s.snackbar);
   const setSnackbar = useAppStore((s) => s.setSnackbar);
 
-  const [tagManagerOpen, setTagManagerOpen] = useState(false);
   const [renameTarget, setRenameTarget] = useState<RootEntry | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [removeTarget, setRemoveTarget] = useState<RootEntry | null>(null);
@@ -157,18 +154,6 @@ export function AppLayout(): JSX.Element {
           >
             重新扫描
           </Button>
-          <Tooltip title="标签管理（P1）">
-            <span>
-              <Button
-                variant="outlined"
-                startIcon={<SellIcon />}
-                disabled={!hasRoot}
-                onClick={() => setTagManagerOpen(true)}
-              >
-                标签管理
-              </Button>
-            </span>
-          </Tooltip>
           {scanning && (
             <Button
               variant="text"
@@ -276,9 +261,6 @@ export function AppLayout(): JSX.Element {
 
       {/* 预览覆盖层 */}
       <PreviewOverlay />
-
-      {/* 标签管理面板（P1） */}
-      <TagManagerDialog open={tagManagerOpen} onClose={() => setTagManagerOpen(false)} />
 
       {/* 改别名对话框 */}
       <Dialog open={renameTarget !== null} onClose={() => setRenameTarget(null)} fullWidth maxWidth="xs">

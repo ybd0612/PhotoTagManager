@@ -3,6 +3,7 @@ import { Box, Chip, Divider, IconButton, ListItemText, Menu, MenuItem, Stack, To
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import FolderIcon from '@mui/icons-material/Folder';
+import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -70,13 +71,26 @@ export function FolderTree(): JSX.Element {
     }
   };
 
-  const handleMenuAction = (action: 'hide' | 'unhide' | 'rescan'): void => {
+  const handleMenuAction = (action: 'open' | 'hide' | 'unhide' | 'rescan'): void => {
     const target = menu;
     setMenu(null);
     if (!target) return;
-    if (action === 'hide') void handleHide(target.relPath);
+    if (action === 'open') void handleOpenInExplorer(target.relPath);
+    else if (action === 'hide') void handleHide(target.relPath);
     else if (action === 'unhide') void handleUnhide(target.relPath);
     else void rescan();
+  };
+
+  /** 在资源管理器中打开目录（根节点 relPath='' 即根路径；子目录拼接相对路径） */
+  const handleOpenInExplorer = async (relPath: string): Promise<void> => {
+    if (!currentRoot) return;
+    const rootPath = currentRoot.path.replace(/[\\/]+$/, '');
+    const absPath = relPath ? `${rootPath}\\${relPath.replace(/\//g, '\\')}` : rootPath;
+    try {
+      await call(getApi().openFolderInExplorer(absPath));
+    } catch {
+      setSnackbar('在资源管理器中打开失败');
+    }
   };
 
   return (
@@ -177,6 +191,11 @@ export function FolderTree(): JSX.Element {
         anchorReference="anchorPosition"
         anchorPosition={menu ? { top: menu.mouseY, left: menu.mouseX } : undefined}
       >
+        <MenuItem onClick={() => handleMenuAction('open')}>
+          <FolderOpenIcon fontSize="small" sx={{ mr: 1 }} />
+          在资源管理器中打开
+        </MenuItem>
+        <Divider />
         <MenuItem disabled={menu?.relPath === ''} onClick={() => handleMenuAction('hide')}>
           隐藏文件夹
         </MenuItem>

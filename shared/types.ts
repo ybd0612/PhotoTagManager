@@ -122,6 +122,8 @@ export interface PhotoTagApi {
   hideFolder(rootId: string, relPath: string): Promise<IpcResult<void>>;
   unhideFolder(rootId: string, relPath: string): Promise<IpcResult<void>>;
   listHiddenFolders(rootId: string): Promise<IpcResult<HiddenFolderRecord[]>>;
+  // 在资源管理器中打开目录
+  openFolderInExplorer(absPath: string): Promise<IpcResult<void>>;
   // 标签
   readImageTags(absPath: string): Promise<IpcResult<TagInfo>>;
   readBulkTags(absPaths: string[]): Promise<IpcResult<TagInfo[]>>;

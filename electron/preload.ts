@@ -37,6 +37,8 @@ const api: PhotoTagApi = {
   hideFolder: (rootId: string, relPath: string) => ipcRenderer.invoke('folder:hide', rootId, relPath),
   unhideFolder: (rootId: string, relPath: string) => ipcRenderer.invoke('folder:unhide', rootId, relPath),
   listHiddenFolders: (rootId: string) => ipcRenderer.invoke('folder:list-hidden', rootId),
+  // 在资源管理器中打开目录
+  openFolderInExplorer: (absPath: string) => ipcRenderer.invoke('folder:open-in-explorer', absPath),
   // 标签
   readImageTags: (absPath: string) => ipcRenderer.invoke('tags:read-image', absPath),
   readBulkTags: (absPaths: string[]) => ipcRenderer.invoke('tags:read-bulk', absPaths),

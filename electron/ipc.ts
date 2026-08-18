@@ -1,4 +1,4 @@
-import { app, dialog, ipcMain, type BrowserWindow } from 'electron';
+import { app, dialog, ipcMain, shell, type BrowserWindow } from 'electron';
 import type { IpcResult, TagWriteRequest } from '../shared/types';
 import type { ScanService } from './services/scanService';
 import type { XmpService } from './services/xmpService';
@@ -82,6 +82,13 @@ export function registerIpc(deps: IpcDeps): void {
   handle('folder:hide', (rootId: string, relPath: string): Promise<void> => deps.folders.hide(rootId, relPath));
   handle('folder:unhide', (rootId: string, relPath: string): Promise<void> => deps.folders.unhide(rootId, relPath));
   handle('folder:list-hidden', (rootId: string): Promise<unknown> => deps.folders.list(rootId));
+
+  // 在资源管理器中打开目录（R11）
+  handle('folder:open-in-explorer', async (absPath: string): Promise<void> => {
+    if (!absPath) throw new Error('absPath 不能为空');
+    const errorMessage = await shell.openPath(absPath);
+    if (errorMessage) throw new Error(errorMessage);
+  });
 
   // 标签（R07）
   handle('tags:read-image', (absPath: string): Promise<unknown> => deps.xmp.read(absPath));

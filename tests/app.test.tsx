@@ -33,6 +33,7 @@ function createMockApi(): PhotoTagApi {
     hideFolder: vi.fn(async () => ({ ok: true as const, data: undefined })),
     unhideFolder: vi.fn(async () => ({ ok: true as const, data: undefined })),
     listHiddenFolders: vi.fn(async () => ({ ok: true as const, data: [] })),
+    openFolderInExplorer: vi.fn(async () => ({ ok: true as const, data: undefined })),
     readImageTags: vi.fn(async () => ({
       ok: true as const,
       data: { absPath: '', subjects: [], ok: true }
