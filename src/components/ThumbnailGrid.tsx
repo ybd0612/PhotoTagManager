@@ -4,6 +4,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { FixedSizeGrid } from 'react-window';
 import { useAppStore } from '../store/useAppStore';
 import { useThumbnails } from '../hooks/useThumbnails';
+import { toFileUrl } from '../api';
 import type { ImageFile } from '../../shared/types';
 
 /**
@@ -117,6 +118,7 @@ export function ThumbnailGrid(): JSX.Element {
     const image = filtered[index];
     if (!image) return null;
     const thumb = thumbnails.get(image.absPath);
+    const directPreview = image.ext === '.gif' || image.ext === '.webp';
     const tags = tagCache.get(image.absPath) ?? image.tags ?? [];
     const selected = selectedImages.has(image.id);
 
@@ -128,7 +130,7 @@ export function ThumbnailGrid(): JSX.Element {
           sx={selected ? { outline: '2px solid', outlineColor: 'primary.main' } : {}}
         >
           <img
-            src={thumb?.dataUrl ?? PLACEHOLDER}
+            src={directPreview ? toFileUrl(image.absPath) : (thumb?.dataUrl ?? PLACEHOLDER)}
             alt={image.name}
             loading="lazy"
             className="h-full w-full object-cover"
