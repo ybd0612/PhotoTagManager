@@ -324,7 +324,7 @@ function FolderRow({
       ) : (
         <FolderIcon fontSize="small" className="shrink-0" />
       )}
-      <Typography noWrap variant="body2" className="min-w-0 flex-1">
+      <Typography noWrap variant="body2" className="min-w-0 flex-1" title={name}>
         {name}
       </Typography>
       <Chip

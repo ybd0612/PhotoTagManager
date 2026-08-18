@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   Box,
   Button,
@@ -40,6 +40,7 @@ import type { RootEntry } from '../../shared/types';
 export function AppLayout(): JSX.Element {
   const roots = useAppStore((s) => s.roots);
   const selectedRootId = useAppStore((s) => s.selectedRootId);
+  const selectedDir = useAppStore((s) => s.selectedDir);
   const scannedRoots = useAppStore((s) => s.scannedRoots);
   const scanState = useAppStore((s) => s.scanState);
   const scanStats = useAppStore((s) => s.scanStats);
@@ -52,6 +53,13 @@ export function AppLayout(): JSX.Element {
   const [removeTarget, setRemoveTarget] = useState<RootEntry | null>(null);
 
   const selectedRoot = roots.find((r) => r.id === selectedRootId) ?? null;
+
+  // 当前选中目录的绝对路径（选中根时即根路径；选中子目录时拼接）
+  const selectedDirAbs = useMemo(() => {
+    if (!selectedRoot || selectedDir === null) return null;
+    if (selectedDir === '') return selectedRoot.path;
+    return `${selectedRoot.path.replace(/[\\/]+$/, '')}\\${selectedDir.replace(/\//g, '\\')}`;
+  }, [selectedRoot, selectedDir]);
 
   /** 添加根目录：选目录 → 持久化 → 选中 → 懒扫描（新根必未扫） */
   const handleAddRoot = useCallback(async () => {
@@ -130,10 +138,10 @@ export function AppLayout(): JSX.Element {
           {selectedRoot && (
             <Chip
               size="small"
-              label={`${selectedRoot.alias} · ${selectedRoot.path}`}
+              label={selectedDirAbs ? `${selectedRoot.alias} · ${selectedDirAbs}` : `${selectedRoot.alias} · ${selectedRoot.path}`}
               variant="outlined"
-              sx={{ maxWidth: 380 }}
-              title={selectedRoot.path}
+              sx={{ maxWidth: 420 }}
+              title={selectedDirAbs ?? selectedRoot.path}
             />
           )}
         </Stack>
