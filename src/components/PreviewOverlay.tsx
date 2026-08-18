@@ -287,19 +287,33 @@ export function PreviewOverlay(): JSX.Element | null {
 
         <Divider sx={{ borderColor: 'rgba(255,255,255,0.12)', my: 1 }} />
 
-        <Stack direction="row" spacing={3} alignItems="center">
+        <Stack direction="row" spacing={2} alignItems="center" className="flex-wrap">
           {infoLoading ? (
             <CircularProgress size={14} sx={{ color: 'rgba(255,255,255,0.6)' }} />
           ) : (
-            <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)' }}>
-              {info?.width && info?.height ? `${info.width} × ${info.height}` : '尺寸 -'}
-              <span className="mx-2">|</span>
-              {formatBytes(info?.sizeBytes)}
-              <span className="mx-2">|</span>
-              {info?.dateTimeOriginal ?? '拍摄时间 -'}
-              <span className="mx-2">|</span>
-              {[info?.make, info?.model].filter(Boolean).join(' ') || '相机 -'}
-            </Typography>
+            <>
+              {/* 属性按需展示：内容为空则隐藏该属性 */}
+              {info?.width && info?.height ? (
+                <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)' }}>
+                  {info.width} × {info.height}
+                </Typography>
+              ) : null}
+              {info?.sizeBytes != null ? (
+                <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)' }}>
+                  {formatBytes(info.sizeBytes)}
+                </Typography>
+              ) : null}
+              {info?.dateTimeOriginal ? (
+                <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)' }}>
+                  {info.dateTimeOriginal}
+                </Typography>
+              ) : null}
+              {[info?.make, info?.model].filter(Boolean).join(' ') ? (
+                <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)' }}>
+                  {[info?.make, info?.model].filter(Boolean).join(' ')}
+                </Typography>
+              ) : null}
+            </>
           )}
         </Stack>
       </Box>
