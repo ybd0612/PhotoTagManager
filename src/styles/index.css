@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 全局主题变量（§7 样式分工：Tailwind 管布局间距，MUI 管交互组件与主题） */
+:root {
+  --ptm-header-height: 56px;
+  --ptm-tree-width: 260px;
+  --ptm-statusbar-height: 28px;
+  color-scheme: light;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family:
+    'Segoe UI',
+    'Microsoft YaHei',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Helvetica Neue',
+    Arial,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* 细滚动条，贴合现代 UI */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.35);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.6);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 预览大图区域允许选中文件名文本 */
+.ptm-selectable {
+  user-select: text;
+}

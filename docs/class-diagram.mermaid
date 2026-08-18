@@ -1,0 +1,145 @@
+classDiagram
+    direction LR
+
+    class ImageFile {
+        +string id
+        +string absPath
+        +string relPath
+        +string name
+        +string ext
+        +number size
+        +number mtimeMs
+        +string dirRelPath
+        +string[] tags
+        +string label
+    }
+
+    class FolderNode {
+        +string relPath
+        +string name
+        +number directCount
+        +number totalCount
+        +boolean hidden
+        +boolean childrenLoaded
+        +FolderNode[] children
+    }
+
+    class ScanBatch {
+        +number batchIndex
+        +FolderNode[] folders
+        +ImageFile[] images
+        +ScanStats stats
+    }
+
+    class ScanStats {
+        +number scannedFiles
+        +number imageCount
+        +number totalFiles
+        +boolean done
+    }
+
+    class HiddenFolderRecord {
+        +string relPath
+        +number hiddenAt
+    }
+
+    class TagInfo {
+        +string absPath
+        +string[] subjects
+        +string label
+        +boolean ok
+        +string error
+    }
+
+    class TagWriteRequest {
+        +string absPath
+        +string[] add
+        +string[] remove
+        +string setLabel
+    }
+
+    class ThumbnailResult {
+        +string absPath
+        +string dataUrl
+        +number width
+        +number height
+        +string source
+    }
+
+    class ScanService {
+        +startScan(rootPath) void
+        +cancel() void
+    }
+
+    class ScanWorker {
+        +postMessage(msg) void
+    }
+
+    class XmpService {
+        +read(absPath) TagInfo
+        +write(req) TagInfo
+        +readBulk(absPaths) TagInfo[]
+        +writeBatch(reqs, onProgress) Result
+        +renameTag(from, to) number
+        +dispose() Promise
+    }
+
+    class ThumbnailService {
+        +get(absPath) ThumbnailResult
+        +generate(absPath) ThumbnailResult
+        +cachePath(absPath) string
+    }
+
+    class FolderStore {
+        +load() HiddenFolderRecord[]
+        +hide(relPath) void
+        +unhide(relPath) void
+    }
+
+    class UseAppStore {
+        +string rootPath
+        +string scanState
+        +ScanStats scanStats
+        +FolderNode[] tree
+        +Map imagesByDir
+        +Set hiddenSet
+        +TagFilter tagFilter
+        +string selectedDir
+        +Set selectedImages
+        +Map tagCache
+        +Map tagCounts
+        +Preview preview
+    }
+
+    class PhotoTagApi {
+        +pickDirectory() Promise
+        +scanStart(rootPath) Promise
+        +scanCancel() Promise
+        +onScanProgress(cb) unsub
+        +onScanDone(cb) unsub
+        +hideFolder(relPath) Promise
+        +unhideFolder(relPath) Promise
+        +listHiddenFolders() Promise
+        +readImageTags(absPath) Promise
+        +readBulkTags(absPaths) Promise
+        +writeImageTags(req) Promise
+        +writeBatchTags(reqs) Promise
+        +getThumbnail(absPath) Promise
+        +onThumbReady(cb) unsub
+    }
+
+    ScanService --> ScanWorker : spawn/terminate
+    ScanService --> ScanBatch : pushes batches
+    ScanBatch --> FolderNode : contains
+    ScanBatch --> ImageFile : contains
+    XmpService --> TagInfo : returns
+    XmpService --> TagWriteRequest : consumes
+    ThumbnailService --> ThumbnailResult : returns
+    FolderStore --> HiddenFolderRecord : persists
+    UseAppStore --> FolderNode : tree
+    UseAppStore --> ImageFile : imagesByDir
+    PhotoTagApi --> ScanService : ipc invoke
+    PhotoTagApi --> XmpService : ipc invoke
+    PhotoTagApi --> ThumbnailService : ipc invoke
+    PhotoTagApi --> FolderStore : ipc invoke
+    UseAppStore ..> PhotoTagApi : calls via hooks

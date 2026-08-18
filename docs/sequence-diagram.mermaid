@@ -1,0 +1,64 @@
+sequenceDiagram
+    participant U as 用户
+    participant R as 渲染进程(React)
+    participant M as 主进程(main/ipc)
+    participant S as ScanService
+    participant W as Worker(scanWorker)
+    U->>R: 点击「选择根目录」
+    R->>M: invoke('dialog:pick-directory')
+    M-->>R: { ok, data: rootPath }
+    R->>R: store.rootPath = rootPath; 清空旧树/图片
+    R->>M: invoke('scan:start', rootPath)
+    M->>S: startScan(rootPath)
+    S->>W: new Worker → postMessage({ type:'start', rootPath })
+    W->>W: DFS 遍历：readdir → isImageFile 过滤 → 后序累加 direct/total
+    loop 每收集 ~200 图片
+        W-->>S: postMessage({ type:'batch', folders, images, stats })
+        S-->>R: webContents.send('scan:progress', batch)
+        R->>R: useScan 增量合并：树节点覆盖合并 + imagesByDir 追加 + 状态栏更新
+    end
+    W-->>S: postMessage({ type:'done', stats })
+    S-->>R: webContents.send('scan:done', { rootPath, stats })
+    R->>R: scanState='done'; 按 totalCount>0 + hidden 剪枝渲染目录树
+
+sequenceDiagram
+    participant U as 用户
+    participant R as 渲染进程
+    participant M as 主进程(ipc)
+    participant X as XmpService(队列)
+    participant E as exiftool-vendored
+    U->>R: 预览大图 → 添加标签「风光」
+    R->>R: 乐观更新：本地 tags 立即 +「风光」
+    R->>M: invoke('tags:write-image', { absPath, add:['风光'] })
+    M->>X: write(req)（入队）
+    X->>E: writeMetadata({ Subject:[...], Label }, absPath, ['overwrite_original'])
+    E-->>X: 写入成功
+    X-->>M: { ok, data: TagInfo }
+    M-->>R: { ok, data }
+    R->>R: 若失败回滚乐观更新 + Snackbar 提示重试；成功则更新 tagCounts
+
+sequenceDiagram
+    participant G as ThumbnailGrid(虚拟滚动)
+    participant H as useThumbnails
+    participant M as 主进程(ipc)
+    participant T as ThumbnailService
+    participant C as 磁盘缓存(userData/thumbnails)
+    G->>G: 滚动/初始渲染 → 可视区 absPath 列表变化
+    G->>H: 请求可视区缩略图
+    H->>H: 过滤已在内存缓存的，收集缺失列表
+    loop 对每个缺失 absPath
+        H->>M: invoke('thumb:get', absPath)
+        M->>T: get(absPath)
+        T->>C: 检查 {hash}.jpg
+        alt 命中缓存
+            C-->>T: 图片
+            T-->>M: dataUrl(source=cache)
+            M-->>H: resolve(ThumbnailResult)
+        else 未命中
+            T->>T: 入生成队列（nativeImage → exiftool 回退）
+            T-->>C: 生成后写缓存
+            T-->>M: dataUrl
+            M-->>H: resolve + send('thumb:ready', {absPath, dataUrl})
+        end
+        H->>G: 更新卡片 src（内存缓存复用）
+    end

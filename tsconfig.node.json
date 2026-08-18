@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "composite": true,
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "strict": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "forceConsistentCasingInFileNames": true,
+    "outDir": "out/tsc-node",
+    "rootDir": "."
+  },
+  "include": [
+    "electron",
+    "shared",
+    "tests/scan.test.ts",
+    "tests/xmp.test.ts",
+    "electron.vite.config.ts",
+    "vitest.config.ts"
+  ]
+}
