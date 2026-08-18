@@ -31,7 +31,12 @@ const FOLDER_BATCH_FLUSH = 100;
  * @returns 最终统计（done=false 表示被取消）
  */
 export async function walkDirectory(options: ScanOptions): Promise<ScanStats> {
-  const rootAbs = options.rootPath.replace(/[\\/]+$/, '');
+  let rootAbs = options.rootPath.replace(/[\\/]+$/, '');
+  // 盘符根（如 C:\ → "C:"）必须保留分隔符：裸 "C:" 是 drive-relative 路径，
+  // fs 会把它解析为进程 cwd 所在的 C 盘目录（而非盘符根），导致扫到错误位置。
+  if (/^[a-zA-Z]:$/.test(rootAbs)) {
+    rootAbs += '\\';
+  }
   const batchSize = options.batchSize && options.batchSize > 0 ? options.batchSize : DEFAULT_BATCH_SIZE;
   const shouldCancel = options.shouldCancel ?? (() => false);
 

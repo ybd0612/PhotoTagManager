@@ -188,6 +188,28 @@ describe('scanWorker walkDirectory', () => {
     const folders = batches.flatMap((b) => b.folders);
     expect(folders.map((f: FolderNode) => f.relPath)).toEqual(['real']);
   });
+
+  it('盘符根（C:/）保持盘符根路径，不降级为 drive-relative "C:"', async () => {
+    const readDirs: string[] = [];
+    readdirMock.mockImplementation((dir: string) => {
+      readDirs.push(dir);
+      const p = dir.replace(/\\/g, '/');
+      if (p === 'C:/') return [dirent('a.jpg', false), dirent('sub', true)];
+      if (p === 'C:/sub') return [dirent('b.jpg', false)];
+      return [];
+    });
+
+    const batches: ScanBatch[] = [];
+    const stats = await walkDirectory({
+      rootPath: 'C:/',
+      onBatch: (batch) => batches.push(batch)
+    });
+
+    expect(stats.imageCount).toBe(2);
+    const normalized = readDirs.map((d) => d.replace(/\\/g, '/'));
+    expect(normalized).toContain('C:/'); // 第一层必须是盘符根
+    expect(normalized).not.toContain('C:'); // 绝不能出现裸 "C:"
+  });
 });
 
 describe('FolderStore 隐藏持久化', () => {
