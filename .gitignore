@@ -22,3 +22,6 @@ coverage/
 
 # local runtime data (userData cache 不入库)
 userData/
+
+# WorkBuddy 项目记忆（会话日志，不入库）
+.workbuddy/
