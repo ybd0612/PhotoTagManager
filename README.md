@@ -99,6 +99,6 @@ npm run test        # 24 用例全绿（worker 统计 / 多根持久化 / XMP �
 
 ## 已知限制
 
-- `electron-builder` / `electron-updater` 为开发依赖，首次执行 `npm install` 或 `npm run dist` 前需先在本机安装依赖（`npm install`），首次打包会联网下载打包工具链，耗时较长
+- `electron-builder` 为开发依赖，`electron-updater` 随应用运行时打包；首次执行 `npm install` 或 `npm run dist` 前需先在本机安装依赖（`npm install`），首次打包会联网下载打包工具链，耗时较长
 - `ptm` 命名空间仅本应用识别：其他图片软件与 Windows 属性面板不会显示这些标签（有意为之）
 - 部分 RAW/HEIC 写回 XMP 可能不被 exiftool 支持 → 返回错误提示，不阻塞队列
