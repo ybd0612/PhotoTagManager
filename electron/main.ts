@@ -39,6 +39,19 @@ let updater: UpdaterService | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
 
+// 同一台电脑只允许一个 PhotoTagManager 实例运行。
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+
+if (!hasSingleInstanceLock) {
+  // 已有实例时，当前进程不再创建窗口，直接退出。
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    // 已隐藏到托盘时也要恢复并聚焦已有窗口。
+    showMainWindow();
+  });
+}
+
 function showMainWindow(): void {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   if (mainWindow.isMinimized()) mainWindow.restore();
@@ -114,6 +127,8 @@ function createWindow(): void {
 }
 
 void app.whenReady().then(() => {
+  if (!hasSingleInstanceLock) return;
+
   const userDataPath = app.getPath('userData');
 
   scan = new ScanService();
