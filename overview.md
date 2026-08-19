@@ -18,4 +18,6 @@
 
 ## 提交
 
-- 本轮仅生成本地 `dist/` 产物并更新验证记录；不推送远程。
+- 已补充 GitHub Actions `permissions.contents: write`，提交为 `d487446`。
+- 已通过本地 `127.0.0.1:7897` mixed 代理推送 `master` 和 `v0.1.0` 标签；远程确认指向 `d487446`。
+- `v0.1.0` 已触发 GitHub Actions Release 工作流；后续需在 GitHub Actions / Releases 页面确认云端构建完成。
