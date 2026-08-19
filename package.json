@@ -30,7 +30,12 @@
       "createDesktopShortcut": true,
       "shortcutName": "PhotoTagManager"
     },
-    "publish": { "provider": "github", "owner": "ybd0612", "repo": "PhotoTagManager" }
+    "publish": {
+      "provider": "github",
+      "owner": "ybd0612",
+      "repo": "PhotoTagManager",
+      "releaseType": "release"
+    }
   },
   "dependencies": {
     "@emotion/react": "^11.13.0",
