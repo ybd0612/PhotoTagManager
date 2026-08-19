@@ -20,5 +20,5 @@
 
 - 已补充 GitHub Actions `permissions.contents: write`，提交为 `d487446`。
 - 已通过本地 `127.0.0.1:7897` mixed 代理推送 `master` 和 `v0.1.0` 标签；远程确认指向 `d487446`。
-- `v0.1.0` 已触发 GitHub Actions Release 工作流；远程 Release 已生成 Draft 且 Assets 已上传，需手动点击 Publish release 转为正式版本。
+- `v0.1.0` 已触发 GitHub Actions Release 工作流；最初生成 Draft，现已通过 GitHub CLI 转为正式 Release，标题为 `PhotoTagManager v0.1.0`，Assets 已全部可下载。
 - 后续发布配置已更新：Actions 构建使用 Node.js 24，electron-builder GitHub publish 设置 `releaseType: "release"`，并改由 `gh release create --title "PhotoTagManager <tag>" --generate-notes` 自动创建正式 Release、填写标题和提交记录说明。
