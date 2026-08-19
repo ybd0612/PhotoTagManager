@@ -25,6 +25,8 @@ export interface ScanOptions {
 const DEFAULT_BATCH_SIZE = 200;
 /** 目录节点积压阈值（避免大量小目录迟迟不推送给 UI） */
 const FOLDER_BATCH_FLUSH = 100;
+/** 扫描文件进度推送间隔（即使没有新图片也推送统计，保证进度条连续变化） */
+const PROGRESS_BATCH_FLUSH = 50;
 
 /**
  * 递归遍历 rootPath，增量推送目录树节点与图片批次。
@@ -61,6 +63,17 @@ export async function walkDirectory(options: ScanOptions): Promise<ScanStats> {
     }
   };
 
+  const emitProgress = (): void => {
+    if (pendingImages.length > 0 || pendingFolders.length > 0) return;
+    options.onBatch({
+      rootId: '',
+      batchIndex: batchIndex++,
+      folders: [],
+      images: [],
+      stats: { ...stats, done: false }
+    });
+  };
+
   /** 绝对路径 → 相对根目录路径（'/' 分隔；根目录直接子项无前缀） */
   const relPathOf = (abs: string): string => {
     const rel = abs.slice(rootAbs.length).replace(/\\/g, '/');
@@ -79,6 +92,9 @@ export async function walkDirectory(options: ScanOptions): Promise<ScanStats> {
       // 无权限/不存在等：跳过该目录，不中断扫描
       return null;
     }
+
+    // 当前目录的文件数先计入总量，供渲染层计算渐进百分比；递归子目录进入时继续补充。
+    stats.totalFiles += entries.filter((entry) => entry.isFile()).length;
 
     const subDirs: { abs: string; rel: string }[] = [];
     let directCount = 0;
@@ -104,6 +120,7 @@ export async function walkDirectory(options: ScanOptions): Promise<ScanStats> {
         });
       } else if (entry.isFile()) {
         stats.scannedFiles += 1;
+        if (stats.scannedFiles % PROGRESS_BATCH_FLUSH === 0) emitProgress();
         if (isImageFile(entry.name)) {
           const absPath = join(dirAbs, entry.name);
           const image: ImageFile = {

@@ -24,3 +24,4 @@
 - 后续发布配置已更新：Actions 构建使用 Node.js 24，electron-builder GitHub publish 设置 `releaseType: "release"`，并改由 `gh release create --title "PhotoTagManager <tag>" --generate-notes` 自动创建正式 Release、填写标题和提交记录说明。
 - 新增 Windows 系统托盘：关闭窗口仅隐藏到托盘，单击托盘图标恢复，右键菜单的“退出 PhotoTagManager”才真正退出。
 - 修复预览缩小后的拖动边界：缩放值不等于 1 时都允许抓取拖动，避免图片偏移到可视区外后无法找回。类型检查与 24 个测试用例均通过。
+- 扫描进度改为确定性百分比：Worker 每扫描约 50 个文件推送一次统计，底部按 `scannedFiles / totalFiles` 展示 0%～99%，完成后显示 100%；空目录和总数未知时安全显示 0%。

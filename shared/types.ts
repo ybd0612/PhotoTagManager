@@ -48,7 +48,7 @@ export interface ScanBatch {
 export interface ScanStats {
   scannedFiles: number; // 已扫描文件数（含非图片）
   imageCount: number; // 已发现图片数
-  totalFiles: number; // 预计总文件数（遍历中渐进估计；完成后等于 scannedFiles）
+  totalFiles: number; // 预计总文件数；扫描进行中按已知文件数估计，完成后等于 scannedFiles
   done: boolean; // 是否最后一批
 }
 

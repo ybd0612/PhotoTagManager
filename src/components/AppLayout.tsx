@@ -79,6 +79,13 @@ export function AppLayout(): JSX.Element {
 
   // 当前选中根的扫描统计
   const currentRootScanStats = selectedRootId ? (scanStatsByRoot.get(selectedRootId) ?? null) : null;
+  const scanProgress = currentRootScanStats
+    ? currentRootScanStats.done
+      ? 100
+      : currentRootScanStats.totalFiles > 0
+        ? Math.min(99, Math.round((currentRootScanStats.scannedFiles / currentRootScanStats.totalFiles) * 100))
+        : 0
+    : 0;
 
   /** 添加根目录：选目录 → 持久化 → 选中 → 懒扫描（新根必未扫） */
   const handleAddRoot = useCallback(async () => {
@@ -300,10 +307,10 @@ export function AppLayout(): JSX.Element {
           {scanning && (
             <>
               <Typography variant="caption" color="text.secondary">
-                扫描中…
+                扫描中… {scanProgress}%
               </Typography>
               <Box className="w-32">
-                <LinearProgress variant="indeterminate" sx={{ height: 4 }} />
+                <LinearProgress variant="determinate" value={scanProgress} sx={{ height: 4 }} />
               </Box>
             </>
           )}
