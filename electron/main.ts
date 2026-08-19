@@ -1,4 +1,4 @@
-import { app, BrowserWindow, net, protocol } from 'electron';
+import { app, BrowserWindow, Menu, nativeImage, net, protocol, Tray } from 'electron';
 import { pathToFileURL } from 'url';
 import { join } from 'path';
 import electronLog from 'electron-log';
@@ -36,6 +36,38 @@ let thumb: ThumbnailService | null = null;
 let folders: FolderStore | null = null;
 let roots: RootStore | null = null;
 let updater: UpdaterService | null = null;
+let tray: Tray | null = null;
+let isQuitting = false;
+
+function showMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function createTray(): void {
+  if (tray) return;
+  const trayIcon = nativeImage.createFromDataURL(
+    `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><rect x="1" y="1" width="14" height="14" rx="3" fill="#4f46e5"/><circle cx="5" cy="6" r="1.2" fill="#fff"/><circle cx="11" cy="6" r="1.2" fill="#fff"/><path d="M4 10c2 2 6 2 8 0" fill="none" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/></svg>'
+    )}`
+  );
+  tray = new Tray(trayIcon);
+  tray.setToolTip('PhotoTagManager');
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      {
+        label: '退出 PhotoTagManager',
+        click: () => {
+          isQuitting = true;
+          app.quit();
+        }
+      }
+    ])
+  );
+  tray.on('click', showMainWindow);
+}
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -57,6 +89,13 @@ function createWindow(): void {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow?.show();
+  });
+
+  mainWindow.on('close', (event) => {
+    if (!isQuitting) {
+      event.preventDefault();
+      mainWindow?.hide();
+    }
   });
 
   mainWindow.on('closed', () => {
@@ -83,6 +122,7 @@ void app.whenReady().then(() => {
   folders = new FolderStore(userDataPath);
   roots = new RootStore(userDataPath);
   updater = new UpdaterService();
+  createTray();
 
   // 本地文件协议处理：ptm-file://local/<encodeURIComponent(absPath)>
   protocol.handle('ptm-file', async (request) => {
@@ -117,9 +157,7 @@ void app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  // 窗口关闭时保留托盘驻留；仅托盘菜单的“退出”设置 isQuitting 后才退出。
 });
 
 // 退出前释放资源：终止扫描 Worker、退出 exiftool 子进程，避免孤儿进程（§7）

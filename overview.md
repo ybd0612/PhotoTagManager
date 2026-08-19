@@ -22,3 +22,5 @@
 - 已通过本地 `127.0.0.1:7897` mixed 代理推送 `master` 和 `v0.1.0` 标签；远程确认指向 `d487446`。
 - `v0.1.0` 已触发 GitHub Actions Release 工作流；最初生成 Draft，现已通过 GitHub CLI 转为正式 Release，标题为 `PhotoTagManager v0.1.0`，Assets 已全部可下载。
 - 后续发布配置已更新：Actions 构建使用 Node.js 24，electron-builder GitHub publish 设置 `releaseType: "release"`，并改由 `gh release create --title "PhotoTagManager <tag>" --generate-notes` 自动创建正式 Release、填写标题和提交记录说明。
+- 新增 Windows 系统托盘：关闭窗口仅隐藏到托盘，单击托盘图标恢复，右键菜单的“退出 PhotoTagManager”才真正退出。
+- 修复预览缩小后的拖动边界：缩放值不等于 1 时都允许抓取拖动，避免图片偏移到可视区外后无法找回。类型检查与 24 个测试用例均通过。

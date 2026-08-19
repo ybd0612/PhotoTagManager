@@ -95,7 +95,7 @@ export function PreviewOverlay(): JSX.Element | null {
     });
   };
 
-  // 拖动平移（仅在缩放 >1 时生效）
+  // 拖动平移：缩放不为 1 时生效，避免缩小后偏移超出视口时无法找回图片
   useEffect(() => {
     const onMove = (e: MouseEvent): void => {
       const d = dragRef.current;
@@ -224,11 +224,11 @@ export function PreviewOverlay(): JSX.Element | null {
       {/* 大图区：滚轮缩放（光标为中心）+ 拖动平移（长图），双击重置 */}
       <Box
         className={`relative flex min-h-0 flex-1 select-none items-center justify-center overflow-hidden p-4 ${
-          zoom > 1 ? 'cursor-grab active:cursor-grabbing' : ''
+          zoom !== 1 ? 'cursor-grab active:cursor-grabbing' : ''
         }`}
         sx={{ touchAction: 'none' }}
         onMouseDown={(e) => {
-          if (zoomRef.current <= 1) return;
+          if (zoomRef.current === 1) return;
           dragRef.current = {
             startX: e.clientX,
             startY: e.clientY,
