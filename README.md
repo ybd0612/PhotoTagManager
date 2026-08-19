@@ -45,7 +45,7 @@ npm run dev        # 启动应用（dev server 端口 51783）
   git tag v0.2.0 && git push origin v0.2.0
   ```
 
-  Actions（`.github/workflows/release.yml`）在 `windows-latest` 上执行 `npm ci` → `npm run build` → `npx electron-builder --publish always`，产出 NSIS 安装包（`dist/PhotoTagManager-<version>-x64.exe`）与 `latest.yml` 更新清单。
+  Actions（`.github/workflows/release.yml`）在 `windows-latest`、Node.js 24 上执行 `npm ci` → `npm run build` → `electron-builder` 打包 → `gh release create` 发布，自动生成标题 `PhotoTagManager v<版本>` 与基于提交记录的 Release notes，并上传 NSIS 安装包（`dist/PhotoTagManager-<version>-x64.exe`）、`.blockmap` 和 `latest.yml`。
 
 - **更新渠道**：`electron-updater` 读取 GitHub Releases（`publish` 配置为 github 源），应用**启动时静默检查** + 顶栏「检查更新」**手动检查**；发现新版本后下载进度条展示，下载完成可一键重启安装。
 

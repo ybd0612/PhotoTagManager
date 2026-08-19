@@ -18,6 +18,17 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - run: npx electron-builder --publish always
+      - run: npx electron-builder --publish never
+      - name: Create GitHub Release
+        shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $assets = @(
+            Get-ChildItem -Path dist -Filter 'PhotoTagManager-*.exe'
+            Get-ChildItem -Path dist -Filter '*.blockmap'
+            Get-Item -Path dist/latest.yml
+          ) | ForEach-Object { $_.FullName }
+          gh release create "$env:GITHUB_REF_NAME" @assets `
+            --title "PhotoTagManager $env:GITHUB_REF_NAME" `
+            --generate-notes
