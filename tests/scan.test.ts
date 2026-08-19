@@ -130,15 +130,17 @@ describe('scanWorker walkDirectory', () => {
       onBatch: (batch) => batches.push(batch)
     });
 
-    // 100 + 100 + 50（最后一批 done）
-    expect(batches.length).toBe(3);
-    expect(batches[0].images).toHaveLength(100);
-    expect(batches[1].images).toHaveLength(100);
-    expect(batches[2].images).toHaveLength(50);
-    expect(batches[2].stats.done).toBe(true);
-    expect(batches[0].stats.done).toBe(false);
+    // 进度统计消息可能穿插在图片批次之间，图片批次仍为 100 + 100 + 50。
+    const imageBatches = batches.filter((batch) => batch.images.length > 0);
+    expect(imageBatches).toHaveLength(3);
+    expect(imageBatches[0].images).toHaveLength(100);
+    expect(imageBatches[1].images).toHaveLength(100);
+    expect(imageBatches[2].images).toHaveLength(50);
+    expect(imageBatches[2].stats.done).toBe(true);
+    expect(imageBatches[0].stats.done).toBe(false);
+    expect(batches.at(-1)?.stats.done).toBe(true);
     // batchIndex 自增
-    expect(batches.map((b) => b.batchIndex)).toEqual([0, 1, 2]);
+    expect(batches.map((b) => b.batchIndex)).toEqual(batches.map((_, index) => index));
   });
 
   it('支持取消：shouldCancel 为 true 时停止遍历，返回 done=false', async () => {

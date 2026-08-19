@@ -26,7 +26,7 @@ const DEFAULT_BATCH_SIZE = 200;
 /** 目录节点积压阈值（避免大量小目录迟迟不推送给 UI） */
 const FOLDER_BATCH_FLUSH = 100;
 /** 扫描文件进度推送间隔（即使没有新图片也推送统计，保证进度条连续变化） */
-const PROGRESS_BATCH_FLUSH = 50;
+const PROGRESS_BATCH_FLUSH = 10;
 
 /**
  * 递归遍历 rootPath，增量推送目录树节点与图片批次。
@@ -48,9 +48,9 @@ export async function walkDirectory(options: ScanOptions): Promise<ScanStats> {
   let batchIndex = 0;
   let cancelled = false;
 
-  const flush = (done: boolean): void => {
-    if (done || pendingImages.length >= batchSize || pendingFolders.length >= FOLDER_BATCH_FLUSH) {
-      if (pendingImages.length === 0 && pendingFolders.length === 0 && !done) return;
+  const flush = (done: boolean, force = false): void => {
+    if (done || force || pendingImages.length >= batchSize || pendingFolders.length >= FOLDER_BATCH_FLUSH) {
+      if (pendingImages.length === 0 && pendingFolders.length === 0 && !done && !force) return;
       options.onBatch({
         rootId: '', // 由主进程 scanService 转发时填充真实 rootId
         batchIndex: batchIndex++,
@@ -64,7 +64,8 @@ export async function walkDirectory(options: ScanOptions): Promise<ScanStats> {
   };
 
   const emitProgress = (): void => {
-    if (pendingImages.length > 0 || pendingFolders.length > 0) return;
+    // 单独发送统计消息，不打断图片/目录批次；这样进度可以频繁刷新，
+    // 同时保持图片批量推送的大小和性能特征不变。
     options.onBatch({
       rootId: '',
       batchIndex: batchIndex++,
