@@ -12,8 +12,10 @@
 - `npm run typecheck`：通过，无 TypeScript 错误。
 - `npm run test`：通过，4 个测试文件、24 个用例全部通过；存在既有 React `act(...)` 警告和 Vite CJS API 弃用提示，不影响退出码。
 - `npm run build`：通过，main/preload/renderer 与 scanWorker 均成功生成到 `out/`。
-- 尚未执行 `npm run dist`，避免在本轮下载打包工具链并生成安装包；GitHub Actions 的真实发布仍需在仓库配置完成后通过版本 tag 验证。
+- `npm run dist`：在配置 `CSC_IDENTITY_AUTO_DISCOVERY=false` 并通过本地 `127.0.0.1:7897` mixed 代理下载 GitHub 工具后成功。
+- 已生成 `dist/PhotoTagManager-0.1.0-x64.exe`（约 89.8 MB）、`dist/latest.yml` 和 `.blockmap`；`latest.yml` 版本为 `0.1.0`。
+- GitHub Actions 的真实发布仍需仓库配置完成后通过版本 tag 验证；本地打包产物未纳入 Git 提交。
 
 ## 提交
 
-- 已完成代码修改，待提交本轮修复；不推送远程。
+- 本轮仅生成本地 `dist/` 产物并更新验证记录；不推送远程。
