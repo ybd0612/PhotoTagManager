@@ -49,7 +49,7 @@ npm run dev        # 启动应用（dev server 端口 51783）
   Actions（`.github/workflows/release.yml`）在 `windows-latest`、Node.js 24 上执行 `npm ci` → `npm run build` → `electron-builder` 打包 → `gh release create` 发布，自动生成标题 `PhotoTagManager v<版本>` 与基于提交记录的 Release notes，并上传 NSIS 安装包（`dist/PhotoTagManager-<version>-x64.exe`）、`.blockmap` 和 `latest.yml`。
 
 - **更新渠道**：`electron-updater` 读取 GitHub Releases（`publish` 配置为 github 源），应用**启动时静默检查** + 顶栏「检查更新」**手动检查**；发现新版本后下载进度条展示，下载完成可一键重启安装。
-- **当前版本**：`0.1.2`，关于页显示中文产品名、GitHub 仓库和作者网站 `https://yangbang.de`。
+- **当前版本**：`0.1.3`，关于页显示中文产品名、GitHub 仓库和作者网站 `https://yangbang.de`，版本号从 `package.json` 自动同步。
 
 - **本地打包**：也可在本机执行 `npm run dist` 生成安装包（首次打包会自动下载 electron 发行版与 NSIS 工具链，需联网）。
 

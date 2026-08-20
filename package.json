@@ -1,6 +1,6 @@
 {
   "name": "photo-tag-manager",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "PhotoTagManager - Windows 桌面图片 XMP 标签管理器（Electron + React + Vite + MUI + Tailwind）",
   "main": "./out/main/index.js",
   "author": "PhotoTagManager Team",
