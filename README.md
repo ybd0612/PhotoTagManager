@@ -13,6 +13,7 @@
 - **标签筛选**：热门标签（按当前目录上下文统计）+ 高级筛选 + AND/OR 组合
 - **缩略图网格**：虚拟滚动、列宽自适应、GIF/WebP 直接原图预览
 - **大图预览**：滚轮缩放（光标为中心）、拖动平移、双击还原、Ctrl+C 复制文件、双色绝对路径显示
+- **关于与外部链接**：关于页提供 GitHub 仓库和作者网站，点击后通过系统默认浏览器打开
 - **性能**：Worker 线程扫描、exiftool 串行队列、缩略图磁盘缓存、按需读取标签
 
 ## 技术栈
@@ -42,12 +43,13 @@ npm run dev        # 启动应用（dev server 端口 51783）
 - **发版流程**：打 tag 并推送，GitHub Actions 自动打包并发布到 GitHub Releases：
 
   ```bash
-  git tag v0.2.0 && git push origin v0.2.0
+  git tag v0.1.2 && git push origin v0.1.2
   ```
 
   Actions（`.github/workflows/release.yml`）在 `windows-latest`、Node.js 24 上执行 `npm ci` → `npm run build` → `electron-builder` 打包 → `gh release create` 发布，自动生成标题 `PhotoTagManager v<版本>` 与基于提交记录的 Release notes，并上传 NSIS 安装包（`dist/PhotoTagManager-<version>-x64.exe`）、`.blockmap` 和 `latest.yml`。
 
 - **更新渠道**：`electron-updater` 读取 GitHub Releases（`publish` 配置为 github 源），应用**启动时静默检查** + 顶栏「检查更新」**手动检查**；发现新版本后下载进度条展示，下载完成可一键重启安装。
+- **当前版本**：`0.1.2`，关于页显示中文产品名、GitHub 仓库和作者网站 `https://yangbang.de`。
 
 - **本地打包**：也可在本机执行 `npm run dist` 生成安装包（首次打包会自动下载 electron 发行版与 NSIS 工具链，需联网）。
 
