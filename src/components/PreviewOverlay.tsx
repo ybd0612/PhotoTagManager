@@ -16,6 +16,8 @@ import CloseIcon from '@mui/icons-material/Close';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import AddIcon from '@mui/icons-material/Add';
+import FolderOpenIcon from '@mui/icons-material/FolderOpen';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import { call, formatBytes, getApi, toFileUrl } from '../api';
 import { useAppStore } from '../store/useAppStore';
 import type { ImageInfo } from '../../shared/types';
@@ -42,6 +44,7 @@ export function PreviewOverlay(): JSX.Element | null {
   const zoomRef = useRef(1);
   const offsetRef = useRef({ x: 0, y: 0 });
   const dragRef = useRef<{ startX: number; startY: number; ox: number; oy: number } | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   const setZoom = (z: number): void => {
     zoomRef.current = z;
@@ -130,6 +133,19 @@ export function PreviewOverlay(): JSX.Element | null {
     }
   };
 
+  const revealInExplorer = async (absPath: string): Promise<void> => {
+    try {
+      await call(getApi().revealFileInExplorer(absPath));
+    } catch {
+      setSnackbar('在资源管理器中定位失败');
+    }
+  };
+
+  // 打开预览时将焦点移入对话框，切换图片时保持焦点上下文
+  useEffect(() => {
+    if (preview) dialogRef.current?.focus();
+  }, [preview?.image.absPath]);
+
   // 键盘：←/→ 翻页、Esc 关闭、Ctrl+C 复制当前文件
   useEffect(() => {
     if (!preview) return;
@@ -187,6 +203,11 @@ export function PreviewOverlay(): JSX.Element | null {
 
   return (
     <Box
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="preview-overlay-title"
+      tabIndex={-1}
       className="fixed inset-0 z-50 flex flex-col"
       sx={{ bgcolor: 'rgba(2,6,23,0.94)', color: 'white' }}
     >
@@ -207,6 +228,7 @@ export function PreviewOverlay(): JSX.Element | null {
         <Typography
           noWrap
           variant="subtitle1"
+          id="preview-overlay-title"
           className="min-w-0 flex-1 text-center ptm-selectable"
           title={image.absPath}
         >
@@ -221,11 +243,23 @@ export function PreviewOverlay(): JSX.Element | null {
             <ChevronRightIcon />
           </IconButton>
         </Tooltip>
-        <Tooltip title="关闭 (Esc)">
-          <IconButton sx={{ color: 'white' }} onClick={closePreview}>
-            <CloseIcon />
-          </IconButton>
-        </Tooltip>
+        <Stack direction="row" spacing={0.5} sx={{ minWidth: 0 }}>
+          <Tooltip title="在资源管理器中定位">
+            <IconButton aria-label="在资源管理器中定位" sx={{ color: 'white' }} onClick={() => void revealInExplorer(image.absPath)}>
+              <FolderOpenIcon />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="复制路径">
+            <IconButton aria-label="复制路径" sx={{ color: 'white' }} onClick={() => void copyFileToClipboard(image.absPath)}>
+              <ContentCopyIcon />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="关闭 (Esc)">
+            <IconButton aria-label="关闭预览" sx={{ color: 'white' }} onClick={closePreview}>
+              <CloseIcon />
+            </IconButton>
+          </Tooltip>
+        </Stack>
       </Stack>
 
       {/* 大图区：滚轮缩放（光标为中心）+ 拖动平移（长图），双击重置 */}

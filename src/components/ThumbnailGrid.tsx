@@ -247,22 +247,36 @@ export function ThumbnailGrid(): JSX.Element {
               }}
             />
           )}
-          {/* 标签角标（最多 3 个） */}
-          {tags.length > 0 && (
-            <Box
-              className="absolute bottom-1 left-1 right-1 flex flex-wrap justify-end gap-0.5"
-              sx={{ pointerEvents: 'none' }}
-            >
-              {tags.slice(0, 3).map((tag) => (
-                <Chip
-                  key={tag}
-                  label={tag}
-                  size="small"
-                  sx={{ height: 16, fontSize: 10, bgcolor: 'rgba(15,23,42,0.72)', color: 'white' }}
-                />
-              ))}
-            </Box>
-          )}
+          <Box
+            className="absolute bottom-0 left-0 right-0 flex items-end justify-between gap-1 px-1.5 py-1"
+            sx={{
+              pointerEvents: 'none',
+              background: 'linear-gradient(transparent, rgba(15,23,42,0.82))'
+            }}
+          >
+            <Typography noWrap variant="caption" sx={{ minWidth: 0, flex: 1, color: 'white', textShadow: '0 1px 2px rgba(0,0,0,.7)' }} title={image.name}>
+              {image.name}
+            </Typography>
+            {tags.length > 0 && (
+              <Box className="flex shrink-0 flex-wrap justify-end gap-0.5">
+                {tags.slice(0, 3).map((tag) => (
+                  <Chip
+                    key={tag}
+                    label={tag}
+                    size="small"
+                    sx={{ height: 16, fontSize: 10, bgcolor: 'rgba(15,23,42,0.72)', color: 'white' }}
+                  />
+                ))}
+                {tags.length > 3 && (
+                  <Chip
+                    label={`+${tags.length - 3}`}
+                    size="small"
+                    sx={{ height: 16, fontSize: 10, bgcolor: 'rgba(15,23,42,0.72)', color: 'white' }}
+                  />
+                )}
+              </Box>
+            )}
+          </Box>
         </Card>
       </div>
     );
