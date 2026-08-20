@@ -67,6 +67,12 @@ export function AppLayout(): JSX.Element {
     return `${selectedRoot.path.replace(/[\\/]+$/, '')}\\${selectedDir.replace(/\//g, '\\')}`;
   }, [selectedRoot, selectedDir]);
 
+  const selectedDirLabel = useMemo(() => {
+    if (!selectedRoot || selectedDir === null || selectedDir === '') return '根目录';
+    const normalized = selectedDir.replace(/[\\/]+$/, '').replace(/\\/g, '/');
+    return normalized.split('/').filter(Boolean).pop() ?? '根目录';
+  }, [selectedRoot, selectedDir]);
+
   // 当前选中根的图片总数（按 imagesByDir 复合 key 前缀统计）
   const currentRootImageCount = useMemo(() => {
     if (!selectedRootId) return 0;
@@ -199,9 +205,9 @@ export function AppLayout(): JSX.Element {
           {selectedRoot && (
             <Chip
               size="small"
-              label={selectedDirAbs ? `${selectedRoot.alias} · ${selectedDirAbs}` : `${selectedRoot.alias} · ${selectedRoot.path}`}
+              label={`${selectedRoot.alias} · ${selectedDirLabel}`}
               variant="outlined"
-              sx={{ maxWidth: 420 }}
+              sx={{ maxWidth: 300, minWidth: 0, '& .MuiChip-label': { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }}
               title={selectedDirAbs ?? selectedRoot.path}
             />
           )}
@@ -292,6 +298,11 @@ export function AppLayout(): JSX.Element {
 
           {/* 右：标签筛选条 + 缩略图网格 */}
           <Box className="flex min-w-0 flex-1 flex-col">
+            <Paper className="flex shrink-0 items-center gap-2 rounded-none border-b border-slate-100 px-3 py-1" elevation={0}>
+              <Typography variant="caption" color="text.secondary" noWrap title={selectedDirAbs ?? undefined}>
+                当前目录：{selectedDirLabel} · {currentRootImageCount.toLocaleString()} 张图片
+              </Typography>
+            </Paper>
             <TagFilterBar />
             <Box className="min-h-0 flex-1">
               <ThumbnailGrid />

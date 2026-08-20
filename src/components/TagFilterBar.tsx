@@ -83,7 +83,7 @@ export function TagFilterBar(): JSX.Element {
 
         {tagFilter.tags.length === 0 ? (
           <Typography variant="body2" color="text.disabled" className="shrink-0">
-            未筛选（浏览图片后自动加载标签）
+            未选择标签（标签会在读取图片后显示）
           </Typography>
         ) : (
           <Stack direction="row" spacing={0.5} className="min-w-0 flex-1 flex-wrap items-center">
@@ -110,10 +110,10 @@ export function TagFilterBar(): JSX.Element {
           className="shrink-0"
         >
           <ToggleButton value="AND" sx={{ px: 1.5, py: 0.25 }}>
-            AND
+            同时包含
           </ToggleButton>
           <ToggleButton value="OR" sx={{ px: 1.5, py: 0.25 }}>
-            OR
+            任一包含
           </ToggleButton>
         </ToggleButtonGroup>
 
@@ -127,7 +127,7 @@ export function TagFilterBar(): JSX.Element {
       {/* 第二行：热门标签（当前上下文范围）+ 更多（全量标签列表） */}
       <Stack direction="row" alignItems="center" spacing={0.5} className="mt-1.5 flex-wrap">
         <Typography variant="caption" color="text.secondary" className="shrink-0">
-          热门
+          常用标签
         </Typography>
         {!hasContext || hotTags.length === 0 ? (
           <Typography variant="caption" color="text.disabled">

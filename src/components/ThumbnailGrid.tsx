@@ -198,7 +198,7 @@ export function ThumbnailGrid(): JSX.Element {
     return (
       <div style={{ ...style, padding: GAP / 2 }}>
         <Card
-          className="relative h-full w-full cursor-pointer overflow-hidden transition-shadow hover:shadow-md"
+          className="relative h-full w-full cursor-pointer select-none overflow-hidden transition-shadow hover:shadow-md"
           role="button"
           tabIndex={0}
           aria-label={`打开图片预览：${image.name}`}
