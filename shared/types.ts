@@ -152,7 +152,7 @@ export interface PhotoTagApi {
   getImageInfo(absPath: string): Promise<IpcResult<ImageInfo>>;
   // 自动更新（electron-updater + GitHub Releases）
   checkUpdate(): Promise<IpcResult<UpdateStatus>>;
-  downloadUpdate(): Promise<IpcResult<void>>;
-  installUpdate(): Promise<IpcResult<void>>;
+  downloadUpdate(): Promise<IpcResult<UpdateStatus>>;
+  installUpdate(): Promise<IpcResult<UpdateStatus>>;
   onUpdateStatus(cb: (status: UpdateStatus) => void): () => void;
 }

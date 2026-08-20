@@ -36,7 +36,8 @@ export function UpdateDialog({ open, onClose }: UpdateDialogProps): JSX.Element 
   /** 立即下载（available 状态） */
   const handleDownload = useCallback(async () => {
     try {
-      await call(getApi().downloadUpdate());
+      const next = await call(getApi().downloadUpdate());
+      setStatus(next);
     } catch (error) {
       setStatus({ state: 'error', message: error instanceof Error ? error.message : String(error) });
     }
@@ -47,6 +48,7 @@ export function UpdateDialog({ open, onClose }: UpdateDialogProps): JSX.Element 
     void getApi().installUpdate();
   }, []);
 
+  const busy = status.state === 'checking' || status.state === 'downloading';
   const showPrimaryAction = status.state === 'available' || status.state === 'downloaded';
   const showDismiss = status.state === 'not-available' || status.state === 'dev-mode' || status.state === 'error';
 
@@ -60,7 +62,7 @@ export function UpdateDialog({ open, onClose }: UpdateDialogProps): JSX.Element 
       </DialogContent>
       <DialogActions>
         {status.state === 'available' && (
-          <Button variant="contained" onClick={() => void handleDownload()}>
+          <Button variant="contained" disabled={busy} onClick={() => void handleDownload()}>
             立即下载
           </Button>
         )}

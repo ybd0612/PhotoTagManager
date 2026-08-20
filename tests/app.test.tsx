@@ -56,8 +56,8 @@ function createMockApi(): PhotoTagApi {
     })),
     // 自动更新
     checkUpdate: vi.fn(async () => ({ ok: true as const, data: { state: 'not-available' as const } })),
-    downloadUpdate: vi.fn(async () => ({ ok: true as const, data: undefined })),
-    installUpdate: vi.fn(async () => ({ ok: true as const, data: undefined })),
+    downloadUpdate: vi.fn(async () => ({ ok: true as const, data: { state: 'downloading' as const, percent: 0 } })),
+    installUpdate: vi.fn(async () => ({ ok: true as const, data: { state: 'downloaded' as const, percent: 100 } })),
     onUpdateStatus: vi.fn(() => () => undefined)
   };
 }

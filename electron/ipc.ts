@@ -145,6 +145,6 @@ export function registerIpc(deps: IpcDeps): void {
 
   // 自动更新（electron-updater + GitHub Releases；开发模式返回 dev-mode）
   handle('update:check', (): Promise<UpdateStatus> => deps.updater.check());
-  handle('update:download', (): Promise<void> => deps.updater.download());
-  handle('update:install', (): void => deps.updater.install());
+  handle('update:download', (): Promise<UpdateStatus> => deps.updater.download());
+  handle('update:install', (): UpdateStatus => deps.updater.install());
 }

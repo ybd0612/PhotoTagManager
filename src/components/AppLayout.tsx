@@ -33,7 +33,7 @@ import { TagFilterBar } from './TagFilterBar';
 import { ThumbnailGrid } from './ThumbnailGrid';
 import { PreviewOverlay } from './PreviewOverlay';
 import { UpdateDialog } from './UpdateDialog';
-import type { RootEntry } from '../../shared/types';
+import type { RootEntry, UpdateStatus } from '../../shared/types';
 
 /**
  * 三栏布局容器 + 顶部工具栏 + 底部状态栏（PRD §3.3 线框图，多根 R10）。
@@ -56,6 +56,7 @@ export function AppLayout(): JSX.Element {
   const [renameValue, setRenameValue] = useState('');
   const [removeTarget, setRemoveTarget] = useState<RootEntry | null>(null);
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ state: 'idle' });
 
   const selectedRoot = roots.find((r) => r.id === selectedRootId) ?? null;
 
@@ -152,12 +153,15 @@ export function AppLayout(): JSX.Element {
   useEffect(() => {
     let cancelled = false;
     const unsubscribe = getApi().onUpdateStatus((s) => {
-      if (s.state === 'available' && !cancelled) setUpdateDialogOpen(true);
+      if (cancelled) return;
+      setUpdateStatus(s);
+      if (s.state === 'available') setUpdateDialogOpen(true);
     });
     void getApi()
       .checkUpdate()
       .then((result) => {
         if (cancelled || !result.ok) return;
+        setUpdateStatus(result.data);
         if (result.data.state === 'available') setUpdateDialogOpen(true);
       })
       .catch(() => undefined);
@@ -331,6 +335,19 @@ export function AppLayout(): JSX.Element {
 
       {/* 预览覆盖层 */}
       <PreviewOverlay />
+
+      {/* 固定位置的非阻塞更新进度提示；关闭对话框不影响后台下载 */}
+      {(updateStatus.state === 'downloading' || updateStatus.state === 'downloaded') && (
+        <Paper
+          elevation={3}
+          sx={{ position: 'fixed', right: 20, bottom: 44, zIndex: (theme) => theme.zIndex.snackbar, minWidth: 240, px: 2, py: 1 }}
+        >
+          <Typography variant="caption" display="block">
+            {updateStatus.state === 'downloading' ? `正在下载更新 ${updateStatus.percent ?? 0}%` : '更新下载完成，可安装'}
+          </Typography>
+          {updateStatus.state === 'downloading' && <LinearProgress variant="determinate" value={updateStatus.percent ?? 0} sx={{ mt: 0.5 }} />}
+        </Paper>
+      )}
 
       {/* 更新状态对话框 */}
       <UpdateDialog open={updateDialogOpen} onClose={() => setUpdateDialogOpen(false)} />
