@@ -25,6 +25,7 @@ import AddIcon from '@mui/icons-material/Add';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import DriveFileRenameOutlineIcon from '@mui/icons-material/DriveFileRenameOutline';
 import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { call, getApi } from '../api';
 import { useAppStore } from '../store/useAppStore';
 import { cancelScan, rescan, startScan } from '../hooks/useScan';
@@ -33,6 +34,7 @@ import { TagFilterBar } from './TagFilterBar';
 import { ThumbnailGrid } from './ThumbnailGrid';
 import { PreviewOverlay } from './PreviewOverlay';
 import { UpdateDialog } from './UpdateDialog';
+import { AboutDialog } from './AboutDialog';
 import type { RootEntry, UpdateStatus } from '../../shared/types';
 
 /**
@@ -56,6 +58,7 @@ export function AppLayout(): JSX.Element {
   const [renameValue, setRenameValue] = useState('');
   const [removeTarget, setRemoveTarget] = useState<RootEntry | null>(null);
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
+  const [aboutDialogOpen, setAboutDialogOpen] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ state: 'idle' });
 
   const selectedRoot = roots.find((r) => r.id === selectedRootId) ?? null;
@@ -200,16 +203,27 @@ export function AppLayout(): JSX.Element {
         <Stack direction="row" spacing={1.5} alignItems="center">
           <PhotoLibraryIcon color="primary" />
           <Typography variant="h6" sx={{ fontWeight: 700 }}>
-            PhotoTagManager
+            <Box component="span">
+              照片标签管家
+              <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.75 }}>
+                PhotoTagManager
+              </Typography>
+            </Box>
           </Typography>
           {selectedRoot && (
-            <Chip
-              size="small"
-              label={`${selectedRoot.alias} · ${selectedDirLabel}`}
-              variant="outlined"
-              sx={{ maxWidth: 300, minWidth: 0, '& .MuiChip-label': { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }}
-              title={selectedDirAbs ?? selectedRoot.path}
-            />
+            <Tooltip title={selectedDirAbs ?? selectedRoot.path} placement="bottom-start">
+              <Box
+                className="min-w-0 shrink"
+                sx={{ maxWidth: 360, minWidth: 0, border: '1px solid', borderColor: 'divider', borderRadius: 1, px: 1, py: 0.25 }}
+              >
+                <Typography variant="caption" display="block" noWrap sx={{ fontWeight: 600 }}>
+                  {selectedDirLabel}
+                </Typography>
+                <Typography variant="caption" display="block" noWrap color="text.secondary" title={selectedDirAbs ?? selectedRoot.path}>
+                  {selectedDirAbs ?? selectedRoot.path}
+                </Typography>
+              </Box>
+            </Tooltip>
           )}
         </Stack>
 
@@ -242,6 +256,11 @@ export function AppLayout(): JSX.Element {
           <Tooltip title="检查更新">
             <IconButton onClick={() => void handleCheckUpdate()} aria-label="检查更新">
               <SystemUpdateAltIcon />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="关于照片标签管家">
+            <IconButton onClick={() => setAboutDialogOpen(true)} aria-label="关于照片标签管家">
+              <InfoOutlinedIcon />
             </IconButton>
           </Tooltip>
         </Stack>
@@ -363,6 +382,9 @@ export function AppLayout(): JSX.Element {
 
       {/* 更新状态对话框 */}
       <UpdateDialog open={updateDialogOpen} onClose={() => setUpdateDialogOpen(false)} />
+
+      {/* 关于对话框 */}
+      <AboutDialog open={aboutDialogOpen} onClose={() => setAboutDialogOpen(false)} />
 
       {/* 改别名对话框 */}
       <Dialog open={renameTarget !== null} onClose={() => setRenameTarget(null)} fullWidth maxWidth="xs">
