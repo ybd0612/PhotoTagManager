@@ -200,6 +200,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   addRootLocal: (entry) => {
+    if (get().roots.some((root) => root.id === entry.id)) return;
     const roots = [...get().roots, entry];
     const treesByRoot = new Map(get().treesByRoot);
     treesByRoot.set(entry.id, rebuildRootChildren(entry.id));
@@ -224,7 +225,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     for (const key of [...hiddenSet]) {
       if (key.startsWith(prefix)) hiddenSet.delete(key);
     }
-    const selectedRootId = get().selectedRootId === rootId ? (roots[0]?.id ?? null) : get().selectedRootId;
+    const wasSelected = get().selectedRootId === rootId;
+    const selectedRootId = wasSelected ? (roots[0]?.id ?? null) : get().selectedRootId;
     const scanStatsByRoot = new Map(get().scanStatsByRoot);
     scanStatsByRoot.delete(rootId);
     const scanStateByRoot = new Map(get().scanStateByRoot);
@@ -241,7 +243,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       scanStateByRoot,
       activeScanIds,
       selectedRootId,
-      selectedDir: selectedRootId ? get().selectedDir : null,
+      selectedDir: wasSelected ? '' : get().selectedDir,
       tree: selectedRootId ? (treesByRoot.get(selectedRootId) ?? []) : []
     });
   },
@@ -323,7 +325,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     const scannedRoots = new Set(get().scannedRoots);
-    scannedRoots.add(rootId);
 
     const scanStatsByRoot = new Map(get().scanStatsByRoot);
     scanStatsByRoot.set(rootId, batch.stats);
@@ -338,10 +339,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     const scanStateByRoot = new Map(get().scanStateByRoot);
     scanStateByRoot.set(rootId, state);
     const activeScanIds = new Map(get().activeScanIds);
+    const scannedRoots = new Set(get().scannedRoots);
+    if (state === 'done') scannedRoots.add(rootId);
+    else scannedRoots.delete(rootId);
     const isSelected = get().selectedRootId === rootId;
     set({
       scanStateByRoot,
       activeScanIds,
+      scannedRoots,
       ...(isSelected ? { scanState: state, scanStats: stats ?? get().scanStats } : {})
     });
     return true;
@@ -352,8 +357,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     scanStateByRoot.set(rootId, 'idle');
     const activeScanIds = new Map(get().activeScanIds);
     activeScanIds.delete(rootId);
+    const scannedRoots = new Set(get().scannedRoots);
+    scannedRoots.delete(rootId);
     const isSelected = get().selectedRootId === rootId;
-    set({ scanStateByRoot, activeScanIds, ...(isSelected ? { scanState: 'idle' } : {}) });
+    set({ scanStateByRoot, activeScanIds, scannedRoots, ...(isSelected ? { scanState: 'idle' } : {}) });
   },
 
   // ---- 隐藏（按根） ----

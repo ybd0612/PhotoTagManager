@@ -9,11 +9,12 @@ import type { ThumbnailResult } from '../../shared/types';
  * - 命中内存缓存跳过；订阅 thumb:ready 增量更新
  * - 同时按需批量读取可视区图片的 XMP 标签（Q7：点击目录/预览时才读取）
  */
-export function useThumbnails(absPaths: string[]): {
+export function useThumbnails(absPaths: string[], versions?: Map<string, string>): {
   thumbnails: Map<string, ThumbnailResult>;
 } {
   const [thumbnails, setThumbnails] = useState<Map<string, ThumbnailResult>>(new Map());
   const requestedThumbs = useRef<Set<string>>(new Set());
+  const requestedThumbVersions = useRef<Map<string, string>>(new Map());
   const requestedTags = useRef<Set<string>>(new Set());
 
   // 订阅主进程缩略图生成完成推送（幂等：同一 absPath 覆盖更新）
@@ -29,9 +30,15 @@ export function useThumbnails(absPaths: string[]): {
 
   // 请求缺失缩略图（仅一次）
   useEffect(() => {
-    const missing = absPaths.filter((p) => !requestedThumbs.current.has(p));
+    const missing = absPaths.filter((p) => {
+      const version = versions?.get(p) ?? p;
+      return !requestedThumbs.current.has(p) || requestedThumbVersions.current.get(p) !== version;
+    });
     if (missing.length === 0) return;
-    missing.forEach((p) => requestedThumbs.current.add(p));
+    missing.forEach((p) => {
+      requestedThumbs.current.add(p);
+      requestedThumbVersions.current.set(p, versions?.get(p) ?? p);
+    });
     void (async () => {
       for (const absPath of missing) {
         try {
@@ -48,7 +55,7 @@ export function useThumbnails(absPaths: string[]): {
         }
       }
     })();
-  }, [absPaths]);
+  }, [absPaths, versions]);
 
   // 按需批量读取可视区标签（写入 tagCache / tagCounts）
   const tagCache = useAppStore((s) => s.tagCache);

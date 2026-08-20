@@ -104,7 +104,11 @@ export function ThumbnailGrid(): JSX.Element {
     return filtered.slice(Math.max(0, start), Math.min(filtered.length, end)).map((img) => img.absPath);
   }, [range, filtered, cols]);
 
-  const { thumbnails } = useThumbnails(visibleAbsPaths);
+  const thumbnailVersions = useMemo(
+    () => new Map(filtered.map((image) => [image.absPath, `${image.mtimeMs}:${image.size}`])),
+    [filtered]
+  );
+  const { thumbnails } = useThumbnails(visibleAbsPaths, thumbnailVersions);
 
   const handleCellClick = (image: ImageFile, index: number, ctrl: boolean): void => {
     if (ctrl) {

@@ -95,9 +95,10 @@ export function AppLayout(): JSX.Element {
       if (!path) return;
       const entry = await call(getApi().addRoot(path));
       const store = useAppStore.getState();
+      const existed = store.roots.some((root) => root.id === entry.id);
       store.addRootLocal(entry);
       store.selectRoot(entry.id);
-      await startScan(entry);
+      if (!existed || !store.scannedRoots.has(entry.id)) await startScan(entry);
     } catch (error) {
       setSnackbar(`添加根目录失败：${error instanceof Error ? error.message : String(error)}`);
     }

@@ -237,7 +237,9 @@ function TreeNode(props: TreeNodeProps): JSX.Element | null {
   if (hiddenByAncestor || (isHidden && !props.showHidden)) return null;
 
   const isExpanded = props.expanded[node.relPath] === true;
-  const visibleChildren = node.children.filter((c) => !props.hiddenSet.has(`${rootId}\u0000${c.relPath}`));
+  const visibleChildren = node.children.filter(
+    (c) => props.showHidden || !props.hiddenSet.has(`${rootId}\u0000${c.relPath}`)
+  );
   const hasChildren = visibleChildren.length > 0;
 
   return (

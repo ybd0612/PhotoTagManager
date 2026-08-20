@@ -19,6 +19,7 @@ const TAG_LOAD_BATCH = 200;
 
 /** 防重入标记：rootId → 该根标签已开始/已完成加载（重新扫描时清掉，允许重载） */
 const tagLoadRoots = new Set<string>();
+let autoScanGeneration = 0;
 
 /** 扫描完成后异步分批读取该根全部图片标签，增量更新 tagCache/tagCounts（不阻塞 UI） */
 async function loadRootTags(rootId: string, scanId: string): Promise<void> {
@@ -86,7 +87,8 @@ export function useScanSubscriptions(): void {
 }
 
 /** 启动扫描指定根（懒扫描：切换未扫过的根时调用） */
-export async function startScan(root: RootEntry): Promise<void> {
+export async function startScan(root: RootEntry, fromAuto = false): Promise<void> {
+  if (!fromAuto) autoScanGeneration += 1;
   // 重新扫描前清掉标签加载标记，允许该根标签重新加载
   tagLoadRoots.delete(root.id);
   const store = useAppStore.getState();
@@ -111,13 +113,16 @@ export async function rescan(): Promise<void> {
 
 /** 取消当前扫描（R02） */
 export async function cancelScan(): Promise<void> {
+  autoScanGeneration += 1;
   try {
     await call(getApi().scanCancel());
   } catch {
     // 忽略取消失败
   }
   const store = useAppStore.getState();
-  if (store.selectedRootId) store.cancelRootScan(store.selectedRootId);
+  for (const [rootId, state] of store.scanStateByRoot) {
+    if (state === 'scanning') store.cancelRootScan(rootId);
+  }
   store.setScanStats(null);
 }
 
@@ -149,10 +154,13 @@ function waitForScanDone(rootId: string, scanId: string): Promise<void> {
 
 /** 启动后自动扫描全部根：优先第一个（当前选中）根，其余串行后台扫描（不切换选中根） */
 export async function autoScanAllRoots(roots: RootEntry[]): Promise<void> {
+  const generation = autoScanGeneration;
   for (const root of roots) {
+    if (generation !== autoScanGeneration) return;
     const store = useAppStore.getState();
     if (store.scannedRoots.has(root.id)) continue; // 已扫过跳过
-    await startScan(root);
+    await startScan(root, true);
+    if (generation !== autoScanGeneration) return;
     const scanId = useAppStore.getState().activeScanIds.get(root.id);
     if (scanId) await waitForScanDone(root.id, scanId);
   }
