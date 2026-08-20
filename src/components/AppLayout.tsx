@@ -214,13 +214,15 @@ export function AppLayout(): JSX.Element {
             <Tooltip title={selectedDirAbs ?? selectedRoot.path} placement="bottom-start">
               <Box
                 className="min-w-0 shrink"
-                sx={{ maxWidth: 360, minWidth: 0, border: '1px solid', borderColor: 'divider', borderRadius: 1, px: 1, py: 0.25 }}
+                sx={{ maxWidth: 520, minWidth: 0, border: '1px solid', borderColor: 'divider', borderRadius: 1, px: 1, py: 0.25 }}
               >
-                <Typography variant="caption" display="block" noWrap sx={{ fontWeight: 600 }}>
-                  {selectedDirLabel}
-                </Typography>
-                <Typography variant="caption" display="block" noWrap color="text.secondary" title={selectedDirAbs ?? selectedRoot.path}>
-                  {selectedDirAbs ?? selectedRoot.path}
+                <Typography
+                  variant="caption"
+                  noWrap
+                  component="div"
+                  sx={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis' }}
+                >
+                  {selectedDirLabel} · <Box component="span" sx={{ fontWeight: 400, color: 'text.secondary' }}>{selectedDirAbs ?? selectedRoot.path}</Box>
                 </Typography>
               </Box>
             </Tooltip>

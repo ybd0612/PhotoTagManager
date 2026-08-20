@@ -36,6 +36,14 @@
 - 已将托盘图标从内联 SVG 替换为内嵌 RGBA PNG，避免 Windows 托盘 SVG 透明色解析异常导致黑色不可见。
 - 验证：`npm run typecheck` 通过；`npm run test` 通过（4 个测试文件、24 个用例）。`npm run build` 因 `out/main/index.js` 被占用，安全清理旧构建目录失败，未发现代码编译错误。
 
+## 2026-08-20 目录提示单行布局
+
+- 顶部当前目录提示改为单行横向显示：`目录名 · 绝对路径`。
+- 路径过长时使用省略号，悬停 Tooltip 仍可查看完整绝对路径。
+- 中文产品名“照片标签管家”和关于页面保持不变。
+- 验证：`npm run typecheck` 通过；清理 `node_modules/.vite` 后全量测试 4 个文件、24 个用例通过。
+- 备注：首次直接重跑测试出现一次 Vitest/Vite 缓存导致的 React invalid hook call，清理缓存后恢复；仍有既有 `act(...)` 与 Vite CJS API 警告，不影响退出码。
+
 ## 当前状态
 
 - 最新提交：`b9d0b74 修复扫描进度跳到99%`。
