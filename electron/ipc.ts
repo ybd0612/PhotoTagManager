@@ -94,6 +94,19 @@ export function registerIpc(deps: IpcDeps): void {
     if (errorMessage) throw new Error(errorMessage);
   });
 
+  // 通过系统默认浏览器打开受信任的外部链接
+  handle('shell:open-external', async (url: string): Promise<void> => {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:') {
+      throw new Error('仅允许打开 HTTPS 链接');
+    }
+    const allowedHosts = new Set(['github.com', 'yangbang.de']);
+    if (!allowedHosts.has(parsed.hostname.toLowerCase())) {
+      throw new Error('链接域名不在白名单中');
+    }
+    await shell.openExternal(parsed.toString());
+  });
+
   // 在资源管理器中定位文件
   handle('file:reveal-in-explorer', async (absPath: string): Promise<void> => {
     if (!absPath) throw new Error('absPath 不能为空');

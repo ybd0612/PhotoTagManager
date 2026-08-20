@@ -134,6 +134,8 @@ export interface PhotoTagApi {
   listHiddenFolders(rootId: string): Promise<IpcResult<HiddenFolderRecord[]>>;
   // 在资源管理器中打开目录
   openFolderInExplorer(absPath: string): Promise<IpcResult<void>>;
+  // 通过系统默认浏览器打开白名单外部链接
+  openExternal(url: string): Promise<IpcResult<void>>;
   // 在资源管理器中定位文件
   revealFileInExplorer(absPath: string): Promise<IpcResult<void>>;
   // 复制文件到剪贴板（FileNameW 格式，可在资源管理器粘贴；text 同时写入路径）

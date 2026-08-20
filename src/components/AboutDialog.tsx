@@ -1,3 +1,4 @@
+import type { MouseEvent } from 'react';
 import {
   Box,
   Dialog,
@@ -12,6 +13,7 @@ import {
   Stack,
   Typography,
 } from '@mui/material';
+import { call, getApi } from '../api';
 
 interface AboutDialogProps {
   open: boolean;
@@ -20,6 +22,13 @@ interface AboutDialogProps {
 
 /** 产品关于信息对话框，集中展示版本、开源许可及使用说明。 */
 export function AboutDialog({ open, onClose }: AboutDialogProps): JSX.Element {
+  const handleExternalLink = (url: string) => (event: MouseEvent<HTMLAnchorElement>): void => {
+    event.preventDefault();
+    void call(getApi().openExternal(url)).catch(() => {
+      // Keep the dialog usable if the main process cannot open the URL.
+    });
+  };
+
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm" aria-labelledby="about-dialog-title">
       <DialogTitle id="about-dialog-title">关于照片标签管家</DialogTitle>
@@ -45,9 +54,22 @@ export function AboutDialog({ open, onClose }: AboutDialogProps): JSX.Element {
                 href="https://github.com/ybd0612/PhotoTagManager"
                 target="_blank"
                 rel="noopener noreferrer"
+                onClick={handleExternalLink('https://github.com/ybd0612/PhotoTagManager')}
                 underline="hover"
               >
                 github.com/ybd0612/PhotoTagManager
+              </Link>
+            </Typography>
+            <Typography variant="body2">
+              作者网站：{' '}
+              <Link
+                href="https://yangbang.de"
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={handleExternalLink('https://yangbang.de')}
+                underline="hover"
+              >
+                yangbang.de
               </Link>
             </Typography>
             <Typography variant="body2">许可证：MIT License</Typography>

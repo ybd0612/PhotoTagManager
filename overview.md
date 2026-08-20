@@ -44,6 +44,14 @@
 - 验证：`npm run typecheck` 通过；清理 `node_modules/.vite` 后全量测试 4 个文件、24 个用例通过。
 - 备注：首次直接重跑测试出现一次 Vitest/Vite 缓存导致的 React invalid hook call，清理缓存后恢复；仍有既有 `act(...)` 与 Vite CJS API 警告，不影响退出码。
 
+## 2026-08-20 作者网站与外部链接
+
+- 关于页面新增作者网站 `https://yangbang.de`。
+- GitHub 与作者网站链接统一通过 Electron 主进程 `shell.openExternal` 调用系统默认浏览器打开，渲染层阻止默认导航。
+- 主进程仅允许 HTTPS 且限制 `github.com`、`yangbang.de` 域名白名单；preload 与共享 API 类型同步更新。
+- 验证：`npm run typecheck` 通过；清理 `node_modules/.vite` 后全量测试 4 个文件、24 个用例通过。
+- 既有非阻断警告：React `act(...)`、Vite CJS Node API 弃用提示。
+
 ## 当前状态
 
 - 最新提交：`b9d0b74 修复扫描进度跳到99%`。
