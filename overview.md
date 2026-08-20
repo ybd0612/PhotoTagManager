@@ -33,9 +33,11 @@
 
 - 首要待办：修复 Windows 系统托盘图标显示为黑色、看不见的问题。
 - 当前托盘图标在 `electron/main.ts` 中通过 `nativeImage.createFromDataURL()` 加载内联 SVG；明天优先改为可见的 PNG/ICO 或正确处理 SVG 图标，验证浅色和深色 Windows 主题下均能正常显示。
-- 本轮只保存进度，没有修改托盘图标实现。
+- 已将托盘图标从内联 SVG 替换为内嵌 RGBA PNG，避免 Windows 托盘 SVG 透明色解析异常导致黑色不可见。
+- 验证：`npm run typecheck` 通过；`npm run test` 通过（4 个测试文件、24 个用例）。`npm run build` 因 `out/main/index.js` 被占用，安全清理旧构建目录失败，未发现代码编译错误。
 
 ## 当前状态
 
 - 最新提交：`b9d0b74 修复扫描进度跳到99%`。
-- 工作区在记录前干净；本轮只会新增进度记录，不推送远程。
+- 本轮修改待提交；未推送远程。
+- 如果重新打包前仍提示 `out` 文件占用，请先关闭正在运行的 PhotoTagManager/构建相关进程，再重试 `npm run build` 或 `npm run dist`。

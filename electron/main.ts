@@ -61,10 +61,10 @@ function showMainWindow(): void {
 
 function createTray(): void {
   if (tray) return;
+  // Windows 托盘对内联 SVG 的透明色/颜色解析不稳定，可能显示为黑色；
+  // 使用内嵌 RGBA PNG，避免依赖外部文件且在浅色/深色主题下都保持可见。
   const trayIcon = nativeImage.createFromDataURL(
-    `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
-      '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><rect x="1" y="1" width="14" height="14" rx="3" fill="#4f46e5"/><circle cx="5" cy="6" r="1.2" fill="#fff"/><circle cx="11" cy="6" r="1.2" fill="#fff"/><path d="M4 10c2 2 6 2 8 0" fill="none" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/></svg>'
-    )}`
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAQ0lEQVR42mNgGAWDCfi7Pf1PDzzqgFEHEO0AaoFRB1DNAcTG8agDRh0w6oBRBwxfB4zWBXR3wGiLaNQBdHfAKBgIAAAYy6QiwpOj4wAAAABJRU5ErkJggg=='
   );
   tray = new Tray(trayIcon);
   tray.setToolTip('PhotoTagManager');
