@@ -39,6 +39,8 @@ const api: PhotoTagApi = {
   listHiddenFolders: (rootId: string) => ipcRenderer.invoke('folder:list-hidden', rootId),
   // 在资源管理器中打开目录
   openFolderInExplorer: (absPath: string) => ipcRenderer.invoke('folder:open-in-explorer', absPath),
+  // 在资源管理器中定位文件
+  revealFileInExplorer: (absPath: string) => ipcRenderer.invoke('file:reveal-in-explorer', absPath),
   // 复制文件到剪贴板
   copyFileToClipboard: (absPath: string) => ipcRenderer.invoke('clipboard:copy-file', absPath),
   // 标签

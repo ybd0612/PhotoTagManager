@@ -94,6 +94,12 @@ export function registerIpc(deps: IpcDeps): void {
     if (errorMessage) throw new Error(errorMessage);
   });
 
+  // 在资源管理器中定位文件
+  handle('file:reveal-in-explorer', async (absPath: string): Promise<void> => {
+    if (!absPath) throw new Error('absPath 不能为空');
+    shell.showItemInFolder(absPath);
+  });
+
   // 复制文件到剪贴板（FileNameW 格式，Windows 资源管理器可直接粘贴）
   handle('clipboard:copy-file', (absPath: string): void => {
     if (!absPath) throw new Error('absPath 不能为空');

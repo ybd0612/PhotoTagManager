@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { Box, Button, Card, Chip, Paper, Stack, TextField, Typography } from '@mui/material';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from 'react';
+import { Box, Button, Card, Chip, Menu, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { FixedSizeGrid } from 'react-window';
 import { rootKey, useAppStore } from '../store/useAppStore';
@@ -75,6 +75,7 @@ export function ThumbnailGrid(): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [range, setRange] = useState<GridRange | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ mouseX: number; mouseY: number; image: ImageFile } | null>(null);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -115,6 +116,22 @@ export function ThumbnailGrid(): JSX.Element {
     setPreview(image, filtered);
   };
 
+  const handleContextMenu = (event: MouseEvent, image: ImageFile): void => {
+    event.preventDefault();
+    setContextMenu({ mouseX: event.clientX, mouseY: event.clientY, image });
+  };
+
+  const handleRevealInExplorer = async (): Promise<void> => {
+    const image = contextMenu?.image;
+    setContextMenu(null);
+    if (!image) return;
+    try {
+      await call(getApi().revealFileInExplorer(image.absPath));
+    } catch (error) {
+      useAppStore.getState().setSnackbar(`在资源管理器中打开失败：${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+
   if (size.width <= 0) {
     return <div ref={containerRef} className="h-full w-full" />;
   }
@@ -149,6 +166,7 @@ export function ThumbnailGrid(): JSX.Element {
         <Card
           className="relative h-full w-full cursor-pointer overflow-hidden transition-shadow hover:shadow-md"
           onClick={(e) => handleCellClick(image, index, e.ctrlKey || e.metaKey)}
+          onContextMenu={(e) => handleContextMenu(e, image)}
           sx={selected ? { outline: '2px solid', outlineColor: 'primary.main' } : {}}
         >
           <img
@@ -218,6 +236,14 @@ export function ThumbnailGrid(): JSX.Element {
           {Cell}
         </FixedSizeGrid>
       </div>
+      <Menu
+        open={contextMenu !== null}
+        onClose={() => setContextMenu(null)}
+        anchorReference="anchorPosition"
+        anchorPosition={contextMenu ? { top: contextMenu.mouseY, left: contextMenu.mouseX } : undefined}
+      >
+        <MenuItem onClick={() => void handleRevealInExplorer()}>在资源管理器中打开</MenuItem>
+      </Menu>
     </div>
   );
 }
