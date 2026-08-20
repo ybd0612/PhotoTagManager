@@ -25,8 +25,8 @@ export interface ScanOptions {
 const DEFAULT_BATCH_SIZE = 200;
 /** 目录节点积压阈值（避免大量小目录迟迟不推送给 UI） */
 const FOLDER_BATCH_FLUSH = 100;
-/** 扫描文件进度推送间隔（即使没有新图片也推送统计，保证进度条连续变化） */
-const PROGRESS_BATCH_FLUSH = 10;
+/** 扫描文件进度推送间隔，避免高频 IPC 阻塞渲染进程 */
+const PROGRESS_BATCH_FLUSH = 100;
 
 /**
  * 递归遍历 rootPath，增量推送目录树节点与图片批次。

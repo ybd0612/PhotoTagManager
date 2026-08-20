@@ -32,13 +32,11 @@ export function useThumbnails(absPaths: string[]): {
     const missing = absPaths.filter((p) => !requestedThumbs.current.has(p));
     if (missing.length === 0) return;
     missing.forEach((p) => requestedThumbs.current.add(p));
-    let cancelled = false;
-
     void (async () => {
       for (const absPath of missing) {
         try {
           const result = await call(getApi().getThumbnail(absPath));
-          if (!cancelled && result) {
+          if (result) {
             setThumbnails((prev) => {
               const next = new Map(prev);
               next.set(absPath, result);
@@ -50,10 +48,6 @@ export function useThumbnails(absPaths: string[]): {
         }
       }
     })();
-
-    return () => {
-      cancelled = true;
-    };
   }, [absPaths]);
 
   // 按需批量读取可视区标签（写入 tagCache / tagCounts）
