@@ -39,6 +39,8 @@ export interface RootEntry {
 /** 扫描增量批（Worker → 主 → 渲染，每 ~200 文件一批；rootId 由主进程补全） */
 export interface ScanBatch {
   rootId: string; // 所属根目录 id（worker 侧为空串，主进程转发时填充）
+  scanId: string; // 本次扫描唯一标识，阻断旧 Worker 消息串线
+  kind: 'data' | 'progress'; // 数据批次或纯进度消息
   batchIndex: number;
   folders: FolderNode[]; // 本批新增/更新的目录节点（覆盖合并到 store 树）
   images: ImageFile[]; // 本批图片
@@ -120,12 +122,12 @@ export interface PhotoTagApi {
   addRoot(path: string, alias?: string): Promise<IpcResult<RootEntry>>;
   removeRoot(rootId: string): Promise<IpcResult<void>>;
   renameRoot(rootId: string, alias: string): Promise<IpcResult<RootEntry | null>>;
-  // 扫描（懒扫描：选中未扫过的根才触发；rootId 标识所属根）
-  scanStart(rootId: string, rootPath: string): Promise<IpcResult<{ rootId: string; rootPath: string }>>;
+  // 扫描（懒扫描：选中未扫过的根才触发；rootId + scanId 标识扫描代际）
+  scanStart(rootId: string, rootPath: string, scanId: string): Promise<IpcResult<{ rootId: string; rootPath: string; scanId: string }>>;
   scanCancel(): Promise<IpcResult<void>>;
   onScanProgress(cb: (batch: ScanBatch) => void): () => void;
-  onScanDone(cb: (payload: { rootId: string; rootPath: string; stats: ScanStats }) => void): () => void;
-  onScanError(cb: (error: { code: string; message: string }) => void): () => void;
+  onScanDone(cb: (payload: { rootId: string; rootPath: string; scanId: string; stats: ScanStats }) => void): () => void;
+  onScanError(cb: (error: { code: string; message: string; rootId: string; scanId: string }) => void): () => void;
   // 文件夹隐藏（按根隔离）
   hideFolder(rootId: string, relPath: string): Promise<IpcResult<void>>;
   unhideFolder(rootId: string, relPath: string): Promise<IpcResult<void>>;

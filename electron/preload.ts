@@ -26,13 +26,13 @@ const api: PhotoTagApi = {
   removeRoot: (rootId: string) => ipcRenderer.invoke('roots:remove', rootId),
   renameRoot: (rootId: string, alias: string) => ipcRenderer.invoke('roots:rename', rootId, alias),
   // 扫描（带 rootId）
-  scanStart: (rootId: string, rootPath: string) => ipcRenderer.invoke('scan:start', rootId, rootPath),
+  scanStart: (rootId: string, rootPath: string, scanId: string) => ipcRenderer.invoke('scan:start', rootId, rootPath, scanId),
   scanCancel: () => ipcRenderer.invoke('scan:cancel'),
   onScanProgress: (cb: (batch: ScanBatch) => void) => subscribe<ScanBatch>('scan:progress', cb),
-  onScanDone: (cb: (payload: { rootId: string; rootPath: string; stats: ScanStats }) => void) =>
-    subscribe<{ rootId: string; rootPath: string; stats: ScanStats }>('scan:done', cb),
-  onScanError: (cb: (error: { code: string; message: string }) => void) =>
-    subscribe<{ code: string; message: string }>('scan:error', cb),
+  onScanDone: (cb: (payload: { rootId: string; rootPath: string; scanId: string; stats: ScanStats }) => void) =>
+    subscribe<{ rootId: string; rootPath: string; scanId: string; stats: ScanStats }>('scan:done', cb),
+  onScanError: (cb: (error: { code: string; message: string; rootId: string; scanId: string }) => void) =>
+    subscribe<{ code: string; message: string; rootId: string; scanId: string }>('scan:error', cb),
   // 文件夹隐藏（按根）
   hideFolder: (rootId: string, relPath: string) => ipcRenderer.invoke('folder:hide', rootId, relPath),
   unhideFolder: (rootId: string, relPath: string) => ipcRenderer.invoke('folder:unhide', rootId, relPath),

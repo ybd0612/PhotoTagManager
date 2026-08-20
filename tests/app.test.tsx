@@ -24,7 +24,7 @@ function createMockApi(): PhotoTagApi {
       data: { id: 'r1', path: 'C:/Photos', alias: '新名', addedAt: 1 }
     })),
     // 扫描（带 rootId）
-    scanStart: vi.fn(async () => ({ ok: true as const, data: { rootId: 'r1', rootPath: 'C:/Photos' } })),
+    scanStart: vi.fn(async (_rootId: string, _rootPath: string, scanId: string) => ({ ok: true as const, data: { rootId: 'r1', rootPath: 'C:/Photos', scanId } })),
     scanCancel: vi.fn(async () => ({ ok: true as const, data: undefined })),
     onScanProgress: vi.fn(() => () => undefined),
     onScanDone: vi.fn(() => () => undefined),

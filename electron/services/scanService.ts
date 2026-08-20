@@ -1,4 +1,5 @@
 import { Worker } from 'worker_threads';
+import { randomUUID } from 'crypto';
 import { join } from 'path';
 import type { WebContents } from 'electron';
 import type { ImageFile, ScanBatch, ScanStats } from '../../shared/types';
@@ -11,51 +12,70 @@ import type { ImageFile, ScanBatch, ScanStats } from '../../shared/types';
 export class ScanService {
   private worker: Worker | null = null;
   private currentRootId: string | null = null;
+  private currentScanId: string | null = null;
   private readonly imagesByRoot = new Map<string, Map<string, ImageFile>>();
 
   /** 启动扫描：终止旧 Worker → 新建 → 转发批/完成/错误事件到渲染进程 */
-  startScan(rootId: string, rootPath: string, wc: WebContents): void {
+  startScan(rootId: string, rootPath: string, wc: WebContents, requestedScanId?: string): string {
     this.cancel();
+    const scanId = requestedScanId ?? randomUUID();
     this.imagesByRoot.set(rootId, new Map());
     this.currentRootId = rootId;
+    this.currentScanId = scanId;
 
     const worker = new Worker(join(__dirname, 'scanWorker.js'));
     this.worker = worker;
+    const isCurrent = (): boolean => this.worker === worker && this.currentScanId === scanId;
+    const finish = (): void => {
+      if (!isCurrent()) return;
+      this.worker = null;
+      this.currentRootId = null;
+      this.currentScanId = null;
+    };
 
-    worker.on('message', (msg: { type?: string; batch?: ScanBatch; stats?: ScanStats; error?: { code: string; message: string }; rootPath?: string }) => {
-      if (wc.isDestroyed()) return;
+    worker.on('message', (msg: { type?: string; batch?: ScanBatch; stats?: ScanStats; error?: { code: string; message: string } }) => {
+      if (!isCurrent() || wc.isDestroyed()) return;
       if (msg?.type === 'batch' && msg.batch) {
-        const batch: ScanBatch = { ...msg.batch, rootId };
+        const batch: ScanBatch = { ...msg.batch, rootId, scanId };
         const rootImages = this.imagesByRoot.get(rootId) ?? new Map();
-        for (const image of batch.images ?? []) {
-          rootImages.set(image.id, image);
-        }
+        for (const image of batch.images ?? []) rootImages.set(image.id, image);
         this.imagesByRoot.set(rootId, rootImages);
         wc.send('scan:progress', batch);
       } else if (msg?.type === 'done') {
         const stats = msg.stats as ScanStats;
-        wc.send('scan:done', { rootId, rootPath, stats });
+        wc.send('scan:done', { rootId, rootPath, scanId, stats });
+        finish();
       } else if (msg?.type === 'error' && msg.error) {
-        wc.send('scan:error', { ...msg.error, rootId });
+        wc.send('scan:error', { ...msg.error, rootId, scanId });
+        finish();
       }
     });
 
     worker.on('error', (err: Error) => {
-      if (!wc.isDestroyed()) {
-        wc.send('scan:error', { code: 'SCAN_WORKER_ERROR', message: err.message, rootId });
-      }
+      if (!isCurrent()) return;
+      if (!wc.isDestroyed()) wc.send('scan:error', { code: 'SCAN_WORKER_ERROR', message: err.message, rootId, scanId });
+      finish();
     });
 
-    worker.postMessage({ type: 'start', rootPath });
+    worker.on('exit', (code) => {
+      if (!isCurrent()) return;
+      if (code !== 0 && !wc.isDestroyed()) {
+        wc.send('scan:error', { code: 'SCAN_WORKER_EXIT', message: `扫描线程异常退出（${code}）`, rootId, scanId });
+      }
+      finish();
+    });
+
+    worker.postMessage({ type: 'start', rootPath, scanId });
+    return scanId;
   }
 
   /** 取消当前扫描（终止 Worker） */
   cancel(): void {
-    if (this.worker) {
-      this.worker.terminate().catch(() => undefined);
-      this.worker = null;
-    }
+    const worker = this.worker;
+    this.worker = null;
     this.currentRootId = null;
+    this.currentScanId = null;
+    if (worker) worker.terminate().catch(() => undefined);
   }
 
   /** 当前扫描所属根（渲染层判断进度归属用） */

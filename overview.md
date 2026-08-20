@@ -43,3 +43,5 @@
 - 如果重新打包前仍提示 `out` 文件占用，请先关闭正在运行的 PhotoTagManager/构建相关进程，再重试 `npm run build` 或 `npm run dist`。
 - 修复扫描期间浏览卡顿：进度消息从每 10 个文件调整为每 100 个文件，降低 IPC 和渲染重绘压力；缩略图请求不再因扫描批次更新触发 effect 清理而被取消，已加载图片可继续显示和点击预览。
 - 本轮验证：`npm run typecheck` 与 `npm run test` 通过，4 个测试文件、24 个用例全部通过。
+- 全面修复扫描链路：增加 scanId 代际隔离、按根扫描状态、Worker 生命周期清理、明确 batch kind、进度时间节流、图片去重、标签/隐藏回写代际校验，以及自动扫描等待绑定具体扫描。
+- 扫描修复验证：`npm run typecheck` 通过；`npm run test` 通过（4 个测试文件、24 个用例）。存在既有 React act 警告和 Vite CJS API 弃用提示。

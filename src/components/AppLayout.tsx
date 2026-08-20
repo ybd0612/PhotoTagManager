@@ -44,7 +44,7 @@ export function AppLayout(): JSX.Element {
   const selectedRootId = useAppStore((s) => s.selectedRootId);
   const selectedDir = useAppStore((s) => s.selectedDir);
   const scannedRoots = useAppStore((s) => s.scannedRoots);
-  const scanState = useAppStore((s) => s.scanState);
+  const scanStateByRoot = useAppStore((s) => s.scanStateByRoot);
   const scanStats = useAppStore((s) => s.scanStats);
   const scanStatsByRoot = useAppStore((s) => s.scanStatsByRoot);
   const imagesByDir = useAppStore((s) => s.imagesByDir);
@@ -78,6 +78,7 @@ export function AppLayout(): JSX.Element {
   }, [selectedRootId, imagesByDir]);
 
   // 当前选中根的扫描统计
+  const currentRootScanState = selectedRootId ? (scanStateByRoot.get(selectedRootId) ?? 'idle') : 'idle';
   const currentRootScanStats = selectedRootId ? (scanStatsByRoot.get(selectedRootId) ?? null) : null;
   const scanProgress = currentRootScanStats
     ? currentRootScanStats.done
@@ -175,7 +176,7 @@ export function AppLayout(): JSX.Element {
     }
   }, [setSnackbar]);
 
-  const scanning = scanState === 'scanning';
+  const scanning = currentRootScanState === 'scanning';
   const hasRoot = roots.length > 0 && selectedRootId !== null;
 
   return (
@@ -314,12 +315,12 @@ export function AppLayout(): JSX.Element {
               </Box>
             </>
           )}
-          {scanState === 'done' && (
+          {currentRootScanState === 'done' && (
             <Typography variant="caption" sx={{ color: 'success.main' }}>
               扫描完成 100%
             </Typography>
           )}
-          {scanState === 'error' && (
+          {currentRootScanState === 'error' && (
             <Typography variant="caption" color="error">
               扫描出错
             </Typography>

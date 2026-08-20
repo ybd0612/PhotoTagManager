@@ -66,14 +66,16 @@ export function registerIpc(deps: IpcDeps): void {
   handle('roots:rename', (rootId: string, alias: string): Promise<unknown> => deps.roots.rename(rootId, alias));
 
   // 扫描（R01/R02，带 rootId）
-  handle('scan:start', (rootId: string, rootPath: string): { rootId: string; rootPath: string } => {
+  handle('scan:start', (rootId: string, rootPath: string, scanId: string): { rootId: string; rootPath: string; scanId: string } => {
     if (!rootId) throw new Error('rootId 不能为空');
     if (!rootPath) throw new Error('rootPath 不能为空');
+    if (!scanId) throw new Error('scanId 不能为空');
     const win = deps.getWindow();
     if (win && !win.isDestroyed()) {
-      deps.scan.startScan(rootId, rootPath, win.webContents);
+      deps.scan.startScan(rootId, rootPath, win.webContents, scanId);
+      return { rootId, rootPath, scanId };
     }
-    return { rootId, rootPath };
+    throw new Error('主窗口不可用');
   });
 
   handle('scan:cancel', (): void => {

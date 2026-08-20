@@ -35,8 +35,10 @@ interface AppState {
   roots: RootEntry[];
   selectedRootId: string | null;
   scanState: ScanState;
+  scanStateByRoot: Map<string, ScanState>;
   scanStats: ScanStats | null; // 最后一次扫描（全局，兼容旧引用）
   scanStatsByRoot: Map<string, ScanStats>; // 按根统计（底部状态栏按选中根显示）
+  activeScanIds: Map<string, string>;
   tree: FolderNode[]; // 当前选中根的顶层目录（由 treesByRoot 派生，切换根时重建）
   treesByRoot: Map<string, FolderNode[]>;
   imagesByDir: Map<string, ImageFile[]>; // key = rootKey(rootId, dirRelPath)
@@ -59,9 +61,12 @@ interface AppState {
   selectRoot(rootId: string): void;
   // 扫描
   setScanState(state: ScanState): void;
+  setRootScanState(rootId: string, state: ScanState): void;
   setScanStats(stats: ScanStats | null): void;
-  resetScan(rootId: string): void;
+  resetScan(rootId: string, scanId?: string): void;
   mergeScanBatch(batch: ScanBatch): void;
+  finishScan(rootId: string, scanId: string, state: Exclude<ScanState, 'scanning'>, stats?: ScanStats): boolean;
+  cancelRootScan(rootId: string): void;
   // 隐藏
   setHiddenSet(rootId: string, relPaths: string[]): void;
   hideFolderLocal(rootId: string, relPath: string): void;
@@ -162,8 +167,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   roots: [],
   selectedRootId: null,
   scanState: 'idle',
+  scanStateByRoot: new Map(),
   scanStats: null,
   scanStatsByRoot: new Map(),
+  activeScanIds: new Map(),
   tree: [],
   treesByRoot: new Map(),
   imagesByDir: new Map(),
@@ -220,6 +227,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     const selectedRootId = get().selectedRootId === rootId ? (roots[0]?.id ?? null) : get().selectedRootId;
     const scanStatsByRoot = new Map(get().scanStatsByRoot);
     scanStatsByRoot.delete(rootId);
+    const scanStateByRoot = new Map(get().scanStateByRoot);
+    scanStateByRoot.delete(rootId);
+    const activeScanIds = new Map(get().activeScanIds);
+    activeScanIds.delete(rootId);
     set({
       roots,
       treesByRoot,
@@ -227,6 +238,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       scannedRoots,
       hiddenSet,
       scanStatsByRoot,
+      scanStateByRoot,
+      activeScanIds,
       selectedRootId,
       selectedDir: selectedRootId ? get().selectedDir : null,
       tree: selectedRootId ? (treesByRoot.get(selectedRootId) ?? []) : []
@@ -244,15 +257,21 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedRootId: rootId,
       selectedDir: '',
       selectedImages: new Set(),
+      scanState: get().scanStateByRoot.get(rootId) ?? 'idle',
       tree: treesByRoot.get(rootId) ?? []
     });
   },
 
   // ---- 扫描 ----
   setScanState: (scanState) => set({ scanState }),
+  setRootScanState: (rootId, scanState) => {
+    const scanStateByRoot = new Map(get().scanStateByRoot);
+    scanStateByRoot.set(rootId, scanState);
+    set({ scanStateByRoot, ...(get().selectedRootId === rootId ? { scanState } : {}) });
+  },
   setScanStats: (scanStats) => set({ scanStats }),
 
-  resetScan: (rootId) => {
+  resetScan: (rootId, scanId) => {
     const prefix = `${rootId}\u0000`;
     for (const key of [...nodeMap.keys()]) {
       if (key.startsWith(prefix)) nodeMap.delete(key);
@@ -266,10 +285,17 @@ export const useAppStore = create<AppState>((set, get) => ({
     const isSelected = get().selectedRootId === rootId;
     const scanStatsByRoot = new Map(get().scanStatsByRoot);
     scanStatsByRoot.delete(rootId);
+    const scanStateByRoot = new Map(get().scanStateByRoot);
+    scanStateByRoot.set(rootId, 'scanning');
+    const activeScanIds = new Map(get().activeScanIds);
+    if (scanId) activeScanIds.set(rootId, scanId);
+    else activeScanIds.delete(rootId);
     set({
-      scanState: 'scanning',
-      scanStats: null,
+      scanState: isSelected ? 'scanning' : get().scanState,
+      scanStats: isSelected ? null : get().scanStats,
       scanStatsByRoot,
+      scanStateByRoot,
+      activeScanIds,
       treesByRoot,
       imagesByDir,
       // 后台扫描非选中根时不重置当前选中根的浏览状态（启动自动扫描所有根场景）
@@ -279,6 +305,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   mergeScanBatch: (batch) => {
     const rootId = batch.rootId;
+    if (get().activeScanIds.get(rootId) !== batch.scanId || batch.kind === 'progress' && batch.images.length > 0) return;
     for (const folder of batch.folders) {
       setNodeSubtree(nodeMap, rootId, folder);
     }
@@ -288,8 +315,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     const imagesByDir = new Map(get().imagesByDir);
     for (const image of batch.images) {
       const key = rootKey(rootId, image.dirRelPath);
-      const arr = imagesByDir.get(key) ?? [];
-      arr.push(image);
+      const arr = [...(imagesByDir.get(key) ?? [])];
+      const index = arr.findIndex((current) => current.id === image.id);
+      if (index >= 0) arr[index] = image;
+      else arr.push(image);
       imagesByDir.set(key, arr);
     }
 
@@ -302,6 +331,29 @@ export const useAppStore = create<AppState>((set, get) => ({
     const tree = get().selectedRootId === rootId ? (treesByRoot.get(rootId) ?? []) : get().tree;
 
     set({ treesByRoot, tree, imagesByDir, scannedRoots, scanStatsByRoot, scanStats: batch.stats });
+  },
+
+  finishScan: (rootId, scanId, state, stats) => {
+    if (get().activeScanIds.get(rootId) !== scanId) return false;
+    const scanStateByRoot = new Map(get().scanStateByRoot);
+    scanStateByRoot.set(rootId, state);
+    const activeScanIds = new Map(get().activeScanIds);
+    const isSelected = get().selectedRootId === rootId;
+    set({
+      scanStateByRoot,
+      activeScanIds,
+      ...(isSelected ? { scanState: state, scanStats: stats ?? get().scanStats } : {})
+    });
+    return true;
+  },
+
+  cancelRootScan: (rootId) => {
+    const scanStateByRoot = new Map(get().scanStateByRoot);
+    scanStateByRoot.set(rootId, 'idle');
+    const activeScanIds = new Map(get().activeScanIds);
+    activeScanIds.delete(rootId);
+    const isSelected = get().selectedRootId === rootId;
+    set({ scanStateByRoot, activeScanIds, ...(isSelected ? { scanState: 'idle' } : {}) });
   },
 
   // ---- 隐藏（按根） ----

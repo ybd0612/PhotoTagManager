@@ -81,6 +81,7 @@ describe('scanWorker walkDirectory', () => {
     const batches: ScanBatch[] = [];
     const stats = await walkDirectory({
       rootPath: 'C:/photos',
+      scanId: 'scan-1',
       onBatch: (batch) => batches.push(batch)
     });
 
@@ -126,6 +127,7 @@ describe('scanWorker walkDirectory', () => {
     const batches: ScanBatch[] = [];
     await walkDirectory({
       rootPath: 'C:/big',
+      scanId: 'scan-big',
       batchSize: 100,
       onBatch: (batch) => batches.push(batch)
     });
@@ -138,6 +140,8 @@ describe('scanWorker walkDirectory', () => {
     expect(imageBatches[2].images).toHaveLength(50);
     expect(imageBatches[2].stats.done).toBe(true);
     expect(imageBatches[0].stats.done).toBe(false);
+    expect(imageBatches.every((batch) => batch.kind === 'data')).toBe(true);
+    expect(batches.filter((batch) => batch.kind === 'progress').every((batch) => batch.images.length === 0)).toBe(true);
     expect(batches.at(-1)?.stats.done).toBe(true);
     // batchIndex 自增
     expect(batches.map((b) => b.batchIndex)).toEqual(batches.map((_, index) => index));
@@ -151,6 +155,7 @@ describe('scanWorker walkDirectory', () => {
 
     const stats = await walkDirectory({
       rootPath: 'C:/cancel',
+      scanId: 'scan-cancel',
       onBatch: () => undefined,
       shouldCancel: () => true
     });
@@ -181,6 +186,7 @@ describe('scanWorker walkDirectory', () => {
     const batches: ScanBatch[] = [];
     const stats = await walkDirectory({
       rootPath: 'C:/root',
+      scanId: 'scan-root',
       onBatch: (batch) => batches.push(batch)
     });
 
@@ -204,6 +210,7 @@ describe('scanWorker walkDirectory', () => {
     const batches: ScanBatch[] = [];
     const stats = await walkDirectory({
       rootPath: 'C:/',
+      scanId: 'scan-drive',
       onBatch: (batch) => batches.push(batch)
     });
 

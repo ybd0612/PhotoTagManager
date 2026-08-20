@@ -16,6 +16,7 @@ import type { FolderNode, ImageFile, ScanBatch, ScanStats } from '../../shared/t
 
 export interface ScanOptions {
   rootPath: string;
+  scanId: string;
   batchSize?: number;
   onBatch: (batch: ScanBatch) => void;
   shouldCancel?: () => boolean;
@@ -27,6 +28,8 @@ const DEFAULT_BATCH_SIZE = 200;
 const FOLDER_BATCH_FLUSH = 100;
 /** 扫描文件进度推送间隔，避免高频 IPC 阻塞渲染进程 */
 const PROGRESS_BATCH_FLUSH = 100;
+/** 进度消息最小时间间隔，避免高速磁盘下仍产生大量 IPC */
+const PROGRESS_MIN_INTERVAL_MS = 150;
 
 /**
  * 递归遍历 rootPath，增量推送目录树节点与图片批次。
@@ -47,12 +50,15 @@ export async function walkDirectory(options: ScanOptions): Promise<ScanStats> {
   let pendingFolders: FolderNode[] = [];
   let batchIndex = 0;
   let cancelled = false;
+  let lastProgressAt = 0;
 
   const flush = (done: boolean, force = false): void => {
     if (done || force || pendingImages.length >= batchSize || pendingFolders.length >= FOLDER_BATCH_FLUSH) {
       if (pendingImages.length === 0 && pendingFolders.length === 0 && !done && !force) return;
       options.onBatch({
         rootId: '', // 由主进程 scanService 转发时填充真实 rootId
+        scanId: options.scanId,
+        kind: 'data',
         batchIndex: batchIndex++,
         folders: pendingFolders,
         images: pendingImages,
@@ -64,10 +70,14 @@ export async function walkDirectory(options: ScanOptions): Promise<ScanStats> {
   };
 
   const emitProgress = (): void => {
-    // 单独发送统计消息，不打断图片/目录批次；这样进度可以频繁刷新，
-    // 同时保持图片批量推送的大小和性能特征不变。
+    const now = Date.now();
+    if (now - lastProgressAt < PROGRESS_MIN_INTERVAL_MS) return;
+    lastProgressAt = now;
+    // 单独发送统计消息，不打断图片/目录批次；同时按时间节流，避免高速磁盘下高频 IPC。
     options.onBatch({
       rootId: '',
+      scanId: options.scanId,
+      kind: 'progress',
       batchIndex: batchIndex++,
       folders: [],
       images: [],
@@ -194,10 +204,11 @@ export async function walkDirectory(options: ScanOptions): Promise<ScanStats> {
 let cancelled = false;
 
 if (parentPort) {
-  parentPort.on('message', (msg: { type?: string; rootPath?: string }) => {
-    if (msg?.type === 'start' && msg.rootPath) {
+  parentPort.on('message', (msg: { type?: string; rootPath?: string; scanId?: string }) => {
+    if (msg?.type === 'start' && msg.rootPath && msg.scanId) {
       void walkDirectory({
         rootPath: msg.rootPath,
+        scanId: msg.scanId,
         onBatch: (batch) => parentPort?.postMessage({ type: 'batch', batch }),
         shouldCancel: () => cancelled
       })

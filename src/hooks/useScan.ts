@@ -21,7 +21,7 @@ const TAG_LOAD_BATCH = 200;
 const tagLoadRoots = new Set<string>();
 
 /** 扫描完成后异步分批读取该根全部图片标签，增量更新 tagCache/tagCounts（不阻塞 UI） */
-async function loadRootTags(rootId: string): Promise<void> {
+async function loadRootTags(rootId: string, scanId: string): Promise<void> {
   if (tagLoadRoots.has(rootId)) return;
   tagLoadRoots.add(rootId);
   const { imagesByDir } = useAppStore.getState();
@@ -35,8 +35,12 @@ async function loadRootTags(rootId: string): Promise<void> {
   for (let i = 0; i < paths.length; i += TAG_LOAD_BATCH) {
     const chunk = paths.slice(i, i + TAG_LOAD_BATCH);
     try {
+      const store = useAppStore.getState();
+      if (store.activeScanIds.get(rootId) !== undefined && store.activeScanIds.get(rootId) !== scanId) return;
       const results = await call(getApi().readBulkTags(chunk));
-      useAppStore.getState().setTagsForImages(results);
+      const latest = useAppStore.getState();
+      if (latest.activeScanIds.get(rootId) !== undefined && latest.activeScanIds.get(rootId) !== scanId) return;
+      latest.setTagsForImages(results);
     } catch {
       // 单批失败不中断后续批次（标签缺失不阻塞浏览）
     }
@@ -52,24 +56,25 @@ export function useScanSubscriptions(): void {
     const offProgress = api.onScanProgress((batch) => {
       useAppStore.getState().mergeScanBatch(batch);
     });
-    const offDone = api.onScanDone(({ rootId }) => {
+    const offDone = api.onScanDone(({ rootId, scanId, stats }) => {
       const store = useAppStore.getState();
-      store.setScanState('done');
+      if (!store.finishScan(rootId, scanId, 'done', stats)) return;
       // 扫描完成后加载该根的持久化隐藏集（R06）
       void api
         .listHiddenFolders(rootId)
         .then((result) => {
-          if (result.ok) {
-            useAppStore.getState().setHiddenSet(rootId, result.data.map((r) => r.relPath));
-          }
+          const latest = useAppStore.getState();
+          if (latest.activeScanIds.get(rootId) !== scanId) return;
+          if (result.ok) latest.setHiddenSet(rootId, result.data.map((r) => r.relPath));
         })
         .catch(() => undefined);
       // 扫描完成后异步分批加载该根全量标签（重启后标签自动恢复）
-      void loadRootTags(rootId);
+      void loadRootTags(rootId, scanId);
     });
     const offError = api.onScanError((error) => {
-      useAppStore.getState().setScanState('error');
-      useAppStore.getState().setSnackbar(`扫描失败：${error.message}`);
+      const store = useAppStore.getState();
+      if (!store.finishScan(error.rootId, error.scanId, 'error')) return;
+      store.setSnackbar(`扫描失败：${error.message}`);
     });
 
     return () => {
@@ -85,12 +90,13 @@ export async function startScan(root: RootEntry): Promise<void> {
   // 重新扫描前清掉标签加载标记，允许该根标签重新加载
   tagLoadRoots.delete(root.id);
   const store = useAppStore.getState();
-  store.resetScan(root.id);
-  store.setScanState('scanning');
+  const scanId = crypto.randomUUID();
+  store.resetScan(root.id, scanId);
+  store.setRootScanState(root.id, 'scanning');
   try {
-    await call(getApi().scanStart(root.id, root.path));
+    await call(getApi().scanStart(root.id, root.path, scanId));
   } catch (error) {
-    useAppStore.getState().setScanState('error');
+    useAppStore.getState().cancelRootScan(root.id);
     useAppStore
       .getState()
       .setSnackbar(`启动扫描失败：${error instanceof Error ? error.message : String(error)}`);
@@ -111,12 +117,12 @@ export async function cancelScan(): Promise<void> {
     // 忽略取消失败
   }
   const store = useAppStore.getState();
-  store.setScanState('idle');
+  if (store.selectedRootId) store.cancelRootScan(store.selectedRootId);
   store.setScanStats(null);
 }
 
 /** 等待指定根扫描结束（done / error / 超时兜底），用于自动扫描队列 */
-function waitForScanDone(rootId: string): Promise<void> {
+function waitForScanDone(rootId: string, scanId: string): Promise<void> {
   return new Promise((resolve) => {
     let settled = false;
     let offDone: () => void = () => undefined;
@@ -131,9 +137,11 @@ function waitForScanDone(rootId: string): Promise<void> {
       resolve();
     };
     offDone = getApi().onScanDone((p) => {
-      if (p.rootId === rootId) finish();
+      if (p.rootId === rootId && p.scanId === scanId) finish();
     });
-    offError = getApi().onScanError(() => finish());
+    offError = getApi().onScanError((p) => {
+      if (p.rootId === rootId && p.scanId === scanId) finish();
+    });
     // 兜底：用户手动打断/切换根导致旧扫描无 done 事件，超时后继续下一个根
     timer = setTimeout(finish, 30_000);
   });
@@ -145,6 +153,7 @@ export async function autoScanAllRoots(roots: RootEntry[]): Promise<void> {
     const store = useAppStore.getState();
     if (store.scannedRoots.has(root.id)) continue; // 已扫过跳过
     await startScan(root);
-    await waitForScanDone(root.id);
+    const scanId = useAppStore.getState().activeScanIds.get(root.id);
+    if (scanId) await waitForScanDone(root.id, scanId);
   }
 }
