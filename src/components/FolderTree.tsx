@@ -116,13 +116,17 @@ export function FolderTree(): JSX.Element {
           />
         </Stack>
         <Tooltip title={showHidden ? '隐藏已隐藏目录' : '显示已隐藏目录'}>
-          <IconButton size="small" onClick={() => setShowHidden((v) => !v)}>
+          <IconButton
+            size="small"
+            aria-label={showHidden ? '隐藏已隐藏目录' : '显示已隐藏目录'}
+            onClick={() => setShowHidden((v) => !v)}
+          >
             {showHidden ? <VisibilityIcon fontSize="small" /> : <VisibilityOffIcon fontSize="small" />}
           </IconButton>
         </Tooltip>
       </Stack>
 
-      <Box className="min-h-0 flex-1 overflow-auto py-1">
+      <Box className="min-h-0 flex-1 overflow-auto py-1" role="tree" aria-label={`${rootName}目录树`}>
         {/* 根节点（当前根，显示别名） */}
         <FolderRow
           name={rootName}
@@ -303,19 +307,43 @@ function FolderRow({
     <Box
       className="group flex cursor-pointer items-center gap-1 rounded-md py-1 pr-2"
       style={{ paddingLeft: 8 + depth * 16 }}
+      role="treeitem"
+      tabIndex={0}
+      aria-label={`${name}，${totalCount} 张图片`}
+      aria-selected={selected}
+      aria-expanded={hasChildren ? expanded : undefined}
       onClick={onSelect}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onSelect();
+        } else if (hasChildren && event.key === 'ArrowRight' && !expanded) {
+          event.preventDefault();
+          onToggle();
+        } else if (hasChildren && event.key === 'ArrowLeft' && expanded) {
+          event.preventDefault();
+          onToggle();
+        }
+      }}
       onContextMenu={onContextMenu}
       sx={
         selected
           ? { bgcolor: 'primary.light', color: 'primary.contrastText' }
           : {
               '&:hover': { bgcolor: 'action.hover' },
+              '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main' },
               ...(hidden ? { opacity: 0.55 } : {})
             }
       }
     >
       {hasChildren ? (
-        <IconButton size="small" className="p-0.5" onClick={(e) => { e.stopPropagation(); onToggle(); }}>
+        <IconButton
+          size="small"
+          className="p-0.5"
+          aria-label={expanded ? `收起${name}` : `展开${name}`}
+          aria-expanded={expanded}
+          onClick={(e) => { e.stopPropagation(); onToggle(); }}
+        >
           {expanded ? <ExpandMoreIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
         </IconButton>
       ) : (

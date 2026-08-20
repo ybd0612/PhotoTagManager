@@ -260,7 +260,7 @@ export function AppLayout(): JSX.Element {
                   根目录（{roots.length}）
                 </Typography>
                 <Tooltip title="添加根目录">
-                  <IconButton size="small" onClick={() => void handleAddRoot()}>
+                  <IconButton size="small" aria-label="添加根目录" onClick={() => void handleAddRoot()}>
                     <AddIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
@@ -420,11 +420,21 @@ function RootRow({ root, selected, scanning, scanned, onSelect, onRename, onRemo
   return (
     <Box
       className="group flex cursor-pointer items-center gap-1 rounded-md px-2 py-1"
+      role="button"
+      tabIndex={0}
+      aria-label={`选择根目录：${root.alias}`}
+      aria-selected={selected}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
       onClick={onSelect}
       sx={
         selected
           ? { bgcolor: 'primary.light', color: 'primary.contrastText' }
-          : { '&:hover': { bgcolor: 'action.hover' } }
+          : { '&:hover': { bgcolor: 'action.hover' }, '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main' } }
       }
     >
       <PhotoLibraryIcon fontSize="small" className="shrink-0" />
@@ -457,6 +467,7 @@ function RootRow({ root, selected, scanning, scanned, onSelect, onRename, onRemo
           onRename();
         }}
         title="改别名"
+        aria-label={`修改根目录别名：${root.alias}`}
       >
         <DriveFileRenameOutlineIcon fontSize="small" />
       </IconButton>
@@ -468,6 +479,7 @@ function RootRow({ root, selected, scanning, scanned, onSelect, onRename, onRemo
           onRemove();
         }}
         title="删除"
+        aria-label={`删除根目录：${root.alias}`}
       >
         <DeleteOutlineIcon fontSize="small" />
       </IconButton>

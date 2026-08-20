@@ -120,9 +120,13 @@ export function ThumbnailGrid(): JSX.Element {
     setPreview(image, filtered);
   };
 
+  const openContextMenu = (image: ImageFile, mouseX: number, mouseY: number): void => {
+    setContextMenu({ mouseX, mouseY, image });
+  };
+
   const handleContextMenu = (event: MouseEvent, image: ImageFile): void => {
     event.preventDefault();
-    setContextMenu({ mouseX: event.clientX, mouseY: event.clientY, image });
+    openContextMenu(image, event.clientX, event.clientY);
   };
 
   const handleRevealInExplorer = async (): Promise<void> => {
@@ -169,9 +173,22 @@ export function ThumbnailGrid(): JSX.Element {
       <div style={{ ...style, padding: GAP / 2 }}>
         <Card
           className="relative h-full w-full cursor-pointer overflow-hidden transition-shadow hover:shadow-md"
+          role="button"
+          tabIndex={0}
+          aria-label={`打开图片预览：${image.name}`}
           onClick={(e) => handleCellClick(image, index, e.ctrlKey || e.metaKey)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              handleCellClick(image, index, false);
+            } else if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) {
+              e.preventDefault();
+              const rect = e.currentTarget.getBoundingClientRect();
+              openContextMenu(image, rect.left + rect.width / 2, rect.top + rect.height / 2);
+            }
+          }}
           onContextMenu={(e) => handleContextMenu(e, image)}
-          sx={selected ? { outline: '2px solid', outlineColor: 'primary.main' } : {}}
+          sx={selected ? { outline: '2px solid', outlineColor: 'primary.main' } : { '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main' } }}
         >
           <img
             src={directPreview ? toFileUrl(image.absPath) : (thumb?.dataUrl ?? PLACEHOLDER)}
@@ -246,7 +263,7 @@ export function ThumbnailGrid(): JSX.Element {
         anchorReference="anchorPosition"
         anchorPosition={contextMenu ? { top: contextMenu.mouseY, left: contextMenu.mouseX } : undefined}
       >
-        <MenuItem onClick={() => void handleRevealInExplorer()}>在资源管理器中打开</MenuItem>
+        <MenuItem autoFocus onClick={() => void handleRevealInExplorer()}>在资源管理器中打开</MenuItem>
       </Menu>
     </div>
   );
