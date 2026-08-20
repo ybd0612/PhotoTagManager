@@ -2,6 +2,8 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import App from '../src/App';
+import { AboutDialog } from '../src/components/AboutDialog';
+import packageJson from '../package.json';
 import type { PhotoTagApi } from '../shared/types';
 
 /**
@@ -71,6 +73,8 @@ describe('App 冒烟', () => {
   it('无根目录时渲染空状态引导与「添加根目录」入口（R10）', () => {
     render(<App />);
     expect(screen.getByText('PhotoTagManager')).toBeTruthy();
+    render(<AboutDialog open onClose={() => undefined} />);
+    expect(screen.getByText(`当前版本：${packageJson.version}`)).toBeTruthy();
     expect(screen.getByText('添加一个或多个图片根目录，起个名字方便管理')).toBeTruthy();
     expect(screen.getAllByText('添加根目录').length).toBeGreaterThanOrEqual(1);
   });

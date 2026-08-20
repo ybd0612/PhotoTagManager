@@ -18,5 +18,5 @@
     "outDir": "out/tsc-web",
     "rootDir": "."
   },
-  "include": ["src", "shared", "tests/app.test.tsx"]
+  "include": ["src", "shared", "tests/app.test.tsx", "package.json"]
 }

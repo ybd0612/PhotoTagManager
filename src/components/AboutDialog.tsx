@@ -14,6 +14,7 @@ import {
   Typography,
 } from '@mui/material';
 import { call, getApi } from '../api';
+import packageJson from '../../package.json';
 
 interface AboutDialogProps {
   open: boolean;
@@ -47,7 +48,7 @@ export function AboutDialog({ open, onClose }: AboutDialogProps): JSX.Element {
             <Typography variant="subtitle2" gutterBottom>
               产品信息
             </Typography>
-            <Typography variant="body2">当前版本：0.1.1</Typography>
+            <Typography variant="body2">当前版本：{packageJson.version}</Typography>
             <Typography variant="body2">
               开源地址：{' '}
               <Link
