@@ -4,6 +4,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { FixedSizeGrid } from 'react-window';
 import { rootKey, useAppStore } from '../store/useAppStore';
 import { useThumbnails } from '../hooks/useThumbnails';
+import { rescan } from '../hooks/useScan';
 import { call, getApi, toFileUrl } from '../api';
 import { collectDirAndDescendants } from '../utils/folders';
 import type { ImageFile } from '../../shared/types';
@@ -76,6 +77,24 @@ export function ThumbnailGrid(): JSX.Element {
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [range, setRange] = useState<GridRange | null>(null);
   const [contextMenu, setContextMenu] = useState<{ mouseX: number; mouseY: number; image: ImageFile } | null>(null);
+  const [imageErrors, setImageErrors] = useState<Set<string>>(new Set());
+  const [retryNonce, setRetryNonce] = useState<Map<string, number>>(new Map());
+
+  const markImageError = (path: string): void => {
+    setImageErrors((previous) => new Set(previous).add(path));
+  };
+  const retryImage = (path: string): void => {
+    setImageErrors((previous) => {
+      const next = new Set(previous);
+      next.delete(path);
+      return next;
+    });
+    setRetryNonce((previous) => {
+      const next = new Map(previous);
+      next.set(path, (next.get(path) ?? 0) + 1);
+      return next;
+    });
+  };
 
   useEffect(() => {
     const el = containerRef.current;
@@ -145,16 +164,20 @@ export function ThumbnailGrid(): JSX.Element {
   }
 
   if (filtered.length === 0) {
+    const scanState = selectedRootId === null ? 'idle' : (useAppStore.getState().scanStateByRoot.get(selectedRootId) ?? 'idle');
+    const scanningNow = scanState === 'scanning';
+    const message = !rootScanned && scanningNow
+      ? '正在扫描目录，图片即将出现…'
+      : !rootScanned
+        ? '该目录尚未扫描'
+        : images.length === 0
+          ? '该目录暂无图片'
+          : '没有符合当前标签筛选的图片';
     return (
       <div ref={containerRef} className="flex h-full w-full items-center justify-center">
-        <Stack alignItems="center" spacing={1}>
-          <Typography variant="body2" color="text.secondary">
-            {!rootScanned
-              ? '该根目录尚未扫描完成，图片会自动出现…'
-              : images.length === 0
-                ? '该目录暂无图片'
-                : '没有符合当前标签筛选的图片'}
-          </Typography>
+        <Stack alignItems="center" spacing={1} role="status" aria-live="polite">
+          <Typography variant="body2" color="text.secondary">{message}</Typography>
+          {!scanningNow && !rootScanned && <Button size="small" onClick={() => void rescan()}>重新扫描</Button>}
         </Stack>
       </div>
     );
@@ -168,6 +191,9 @@ export function ThumbnailGrid(): JSX.Element {
     const directPreview = image.ext === '.gif' || image.ext === '.webp';
     const tags = tagCache.get(image.absPath) ?? image.tags ?? [];
     const selected = selectedImages.has(image.id);
+    const imageError = imageErrors.has(image.absPath);
+    const nonce = retryNonce.get(image.absPath) ?? 0;
+    const imageSrc = directPreview ? toFileUrl(image.absPath) : (thumb?.dataUrl ?? PLACEHOLDER);
 
     return (
       <div style={{ ...style, padding: GAP / 2 }}>
@@ -190,13 +216,23 @@ export function ThumbnailGrid(): JSX.Element {
           onContextMenu={(e) => handleContextMenu(e, image)}
           sx={selected ? { outline: '2px solid', outlineColor: 'primary.main' } : { '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main' } }}
         >
-          <img
-            src={directPreview ? toFileUrl(image.absPath) : (thumb?.dataUrl ?? PLACEHOLDER)}
-            alt={image.name}
-            loading="lazy"
-            className="h-full w-full object-cover"
-            draggable={false}
-          />
+          {imageError ? (
+            <Stack alignItems="center" justifyContent="center" spacing={1} className="h-full w-full bg-slate-100">
+              <Typography variant="caption" color="error" role="status">图片加载失败</Typography>
+              <Button size="small" onClick={(event) => { event.stopPropagation(); retryImage(image.absPath); }}>重试</Button>
+            </Stack>
+          ) : (
+            <img
+              key={`${image.absPath}-${nonce}`}
+              src={imageSrc}
+              alt={`图片：${image.name}`}
+              aria-label={`图片：${image.name}`}
+              onError={() => markImageError(image.absPath)}
+              loading="lazy"
+              className="h-full w-full object-cover"
+              draggable={false}
+            />
+          )}
           {/* 选中标记 */}
           {selected && (
             <CheckCircleIcon
@@ -280,6 +316,7 @@ function BatchTagBar({ selectedIds }: BatchTagBarProps): JSX.Element {
   const clearSelection = useAppStore((s) => s.clearSelection);
   const setTagsForImages = useAppStore((s) => s.setTagsForImages);
   const [tag, setTag] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   // 选中图片的 absPath（跨所有根，selectedIds 全局唯一）
   const absPaths = useMemo(() => {
@@ -295,6 +332,7 @@ function BatchTagBar({ selectedIds }: BatchTagBarProps): JSX.Element {
   const handleAdd = async (): Promise<void> => {
     const t = tag.trim();
     if (!t || absPaths.length === 0) return;
+    setSubmitting(true);
     try {
       const res = await call(
         getApi().writeBatchTags(absPaths.map((absPath) => ({ absPath, add: [t] })))
@@ -309,6 +347,8 @@ function BatchTagBar({ selectedIds }: BatchTagBarProps): JSX.Element {
       setTag('');
     } catch (error) {
       setSnackbar(`批量添加标签失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -322,6 +362,7 @@ function BatchTagBar({ selectedIds }: BatchTagBarProps): JSX.Element {
         placeholder="输入标签，回车批量添加"
         value={tag}
         onChange={(e) => setTag(e.target.value)}
+        disabled={submitting}
         onKeyDown={(e) => {
           if (e.key === 'Enter') void handleAdd();
         }}
@@ -330,10 +371,10 @@ function BatchTagBar({ selectedIds }: BatchTagBarProps): JSX.Element {
       <Button
         size="small"
         variant="contained"
-        disabled={!tag.trim() || absPaths.length === 0}
+        disabled={submitting || !tag.trim() || absPaths.length === 0}
         onClick={() => void handleAdd()}
       >
-        批量添加标签
+        {submitting ? '提交中…' : '批量添加标签'}
       </Button>
       <Button size="small" color="inherit" onClick={clearSelection}>
         清除选择

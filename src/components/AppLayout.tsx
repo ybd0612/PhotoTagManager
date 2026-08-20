@@ -311,24 +311,25 @@ export function AppLayout(): JSX.Element {
         </Typography>
         <Stack direction="row" spacing={1} alignItems="center">
           {scanning && (
-            <>
+            <Stack role="status" aria-live="polite" direction="row" spacing={1} alignItems="center">
               <Typography variant="caption" color="text.secondary">
-                扫描中… {scanProgress}%
+                正在扫描… {scanProgress}%
               </Typography>
               <Box className="w-32">
-                <LinearProgress variant="determinate" value={scanProgress} sx={{ height: 4 }} />
+                <LinearProgress variant="determinate" value={scanProgress} sx={{ height: 4 }} aria-label={`扫描进度 ${scanProgress}%`} />
               </Box>
-            </>
+            </Stack>
           )}
           {currentRootScanState === 'done' && (
-            <Typography variant="caption" sx={{ color: 'success.main' }}>
-              扫描完成 100%
+            <Typography role="status" aria-live="polite" variant="caption" sx={{ color: 'success.main' }}>
+              扫描已完成（100%）
             </Typography>
           )}
           {currentRootScanState === 'error' && (
-            <Typography variant="caption" color="error">
-              扫描出错
-            </Typography>
+            <Stack role="alert" direction="row" spacing={1} alignItems="center">
+              <Typography variant="caption" color="error">扫描失败，请重试</Typography>
+              <Button size="small" color="error" onClick={handleRescan}>重试</Button>
+            </Stack>
           )}
         </Stack>
       </Paper>

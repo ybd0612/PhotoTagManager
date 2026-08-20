@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   Box,
+  Button,
   Chip,
   CircularProgress,
   Divider,
@@ -32,6 +33,8 @@ export function PreviewOverlay(): JSX.Element | null {
 
   const [info, setInfo] = useState<ImageInfo | null>(null);
   const [infoLoading, setInfoLoading] = useState(false);
+  const [infoError, setInfoError] = useState(false);
+  const [imageError, setImageError] = useState(false);
   const [newTag, setNewTag] = useState('');
   // 长图查看：缩放（0.5~5，光标为中心）+ 拖动平移；ref 镜像避免闭包
   const [zoom, setZoomState] = useState(1);
@@ -60,12 +63,16 @@ export function PreviewOverlay(): JSX.Element | null {
     if (!absPath) return;
     let cancelled = false;
     setInfo(null);
+    setInfoError(false);
+    setImageError(false);
     setInfoLoading(true);
     void call(getApi().getImageInfo(absPath))
       .then((result) => {
         if (!cancelled) setInfo(result);
       })
-      .catch(() => undefined)
+      .catch(() => {
+        if (!cancelled) setInfoError(true);
+      })
       .finally(() => {
         if (!cancelled) setInfoLoading(false);
       });
@@ -240,17 +247,29 @@ export function PreviewOverlay(): JSX.Element | null {
         onDoubleClick={resetView}
         onWheel={handleWheel}
       >
-        <img
-          key={image.absPath}
-          src={toFileUrl(image.absPath)}
-          alt={image.name}
-          draggable={false}
-          className="max-h-full max-w-full object-contain"
-          style={{
-            transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`,
-            transition: 'transform 0.06s linear'
-          }}
-        />
+        {imageError ? (
+          <Stack alignItems="center" spacing={1} role="alert">
+            <Typography>图片加载失败</Typography>
+            <Stack direction="row" spacing={1}>
+              <Button color="inherit" variant="outlined" onClick={() => setImageError(false)}>重试</Button>
+              <Button color="inherit" onClick={() => previewStep(1)}>跳过</Button>
+              <Button color="inherit" onClick={closePreview}>关闭</Button>
+            </Stack>
+          </Stack>
+        ) : (
+          <img
+            key={image.absPath}
+            src={toFileUrl(image.absPath)}
+            alt={image.name}
+            onError={() => setImageError(true)}
+            draggable={false}
+            className="max-h-full max-w-full object-contain"
+            style={{
+              transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`,
+              transition: 'transform 0.06s linear'
+            }}
+          />
+        )}
         {zoom !== 1 && (
           <Typography
             className="pointer-events-none absolute bottom-2 right-3"
@@ -306,7 +325,9 @@ export function PreviewOverlay(): JSX.Element | null {
 
         <Stack direction="row" spacing={2} alignItems="center" className="flex-wrap">
           {infoLoading ? (
-            <CircularProgress size={14} sx={{ color: 'rgba(255,255,255,0.6)' }} />
+            <CircularProgress size={14} sx={{ color: 'rgba(255,255,255,0.6)' }} aria-label="正在读取图片信息" />
+          ) : infoError ? (
+            <Typography variant="caption" color="error">图片信息读取失败</Typography>
           ) : (
             <>
               {/* 属性按需展示：内容为空则隐藏该属性 */}
