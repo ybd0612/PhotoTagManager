@@ -73,7 +73,7 @@ export interface TagInfo {
 /** 标签写入请求（D3：add/remove 差量，保留其他字段） */
 export interface TagWriteRequest {
   absPath: string;
-  add?: string[]; // 要新增的标签（写 dc:subject，自动去重）
+  add?: string[]; // 要新增的标签（写 XMP-ptm:Tags，自动去重）
   remove?: string[]; // 要删除的标签
   setLabel?: string; // 设置主标签 xmp:Label
 }

@@ -179,10 +179,10 @@ export interface HiddenFolderRecord {
   hiddenAt: number;  // 时间戳
 }
 
-/** XMP 标签读取结果（D3：dc:subject 合并去重 + xmp:Label） */
+/** XMP 标签读取结果（D3：XMP-ptm:Tags 优先，兼容 dc:subject + xmp:Label） */
 export interface TagInfo {
   absPath: string;
-  subjects: string[];   // dc:subject 去重合并
+  subjects: string[];   // XMP-ptm:Tags 优先，兼容 dc:subject 并去重
   label?: string;       // xmp:Label
   ok: boolean;
   error?: string;
@@ -191,7 +191,7 @@ export interface TagInfo {
 /** 标签写入请求（D3：add/remove 差量，保留其他字段） */
 export interface TagWriteRequest {
   absPath: string;
-  add?: string[];       // 要新增的标签（写 dc:subject，自动去重）
+  add?: string[];       // 要新增的标签（写 XMP-ptm:Tags，自动去重）
   remove?: string[];    // 要删除的标签
   setLabel?: string;    // 设置主标签 xmp:Label
 }
@@ -268,8 +268,8 @@ export class XmpService {
   private queue: Promise<void> = Promise.resolve();
   private exif: ExifTool | null = null;
 
-  async read(absPath: string): Promise<TagInfo>;             // readMetadata → 合并 dc:subject / xmp:Label
-  async write(req: TagWriteRequest): Promise<TagInfo>;       // writeMetadata({Subject, Label}, path, ['overwrite_original'])
+  async read(absPath: string): Promise<TagInfo>;             // readMetadata → 读取 XMP-ptm:Tags（兼容 dc:subject）/ xmp:Label
+  async write(req: TagWriteRequest): Promise<TagInfo>;       // writeMetadata({Tags, Subject, Label}, path, ['overwrite_original'])
   async readBulk(absPaths: string[]): Promise<TagInfo[]>;    // 逐张排队
   async writeBatch(reqs: TagWriteRequest[], onProgress?): Promise<{okCount:number; failCount:number}>;
   async renameTag(from: string, to: string): Promise<number>; // P1：全量图片读改写
@@ -278,7 +278,7 @@ export class XmpService {
 ```
 
 要点：
-- 写标签只构造 `{ Subject: [...], Label: ... }` 映射，exiftool-vendored 会合并进原 XMP，保留其他字段（D3）。
+- 写标签只构造 `{ Tags: JSON.stringify([...]), Subject: '', Label: ... }` 映射，exiftool-vendored 会合并进原 XMP，保留其他字段；清空 `Subject` 用于渐进迁移并避免 Windows 属性面板显示旧标签（D3）。
 - RAW/HEIC 写回失败时返回 `ok:false` + 错误码，UI 提示重试（不阻塞队列）。
 - 单个任务超时（`spawnTimeout: 30000`），失败进入错误映射表。
 
@@ -339,7 +339,7 @@ sequenceDiagram
     R->>R: 乐观更新：本地 tags 立即 +「风光」
     R->>M: invoke('tags:write-image', { absPath, add:['风光'] })
     M->>X: write(req)（入队）
-    X->>E: writeMetadata({ Subject:[...], Label }, absPath, ['overwrite_original'])
+    X->>E: writeMetadata({ Tags: JSON, Subject:'', Label }, absPath, ['overwrite_original'])
     E-->>X: 写入成功
     X-->>M: { ok, data: TagInfo }
     M-->>R: { ok, data }
