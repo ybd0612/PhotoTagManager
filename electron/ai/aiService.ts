@@ -1,9 +1,9 @@
-import { stat, writeFile, access } from 'fs/promises';
-import { join } from 'path';
+import { stat, writeFile, access, readFile, rename, rm } from 'fs/promises';
+import { isAbsolute, join, normalize, sep, basename, dirname, extname } from 'path';
 
 import { capabilities, type CapabilitySpec, type ModelSpec } from './capabilityCatalog';
 import { computeCacheKey } from './cacheKey';
-import { modelDir, previewFile } from './paths';
+import { modelDir, previewDir, previewFile } from './paths';
 import { PIPELINE_VERSION, preprocessImage } from './preprocess';
 import {
   DEFAULT_CUTOUT_PARAMS,
@@ -57,6 +57,8 @@ export interface RunRequest {
 export interface RunResult {
   taskId: string;
   tempPath: string;
+  /** 派生文件要落在它旁边，标签也从它继承 */
+  sourceAbsPath: string;
   cacheHit: boolean;
   didApplySigmoid: boolean;
   maskWidth: number;
@@ -66,14 +68,71 @@ export interface RunResult {
   actionTag: string;
 }
 
+export interface SaveResult {
+  savedPath: string;
+  targetName: string;
+  /** true 表示首选举了名，实际写成 .cutout.N.png */
+  renamed: boolean;
+  tagsWritten: string[];
+}
+
+export interface CleanupReport {
+  deleted: number;
+  /** 索引里指向暂存外的条目数：拒绝删除，只清索引 */
+  refused: number;
+  freedBytes: number;
+  expiredBytes: number;
+}
+
+export interface PreviewIndexEntry {
+  /** 相对暂存目录的文件名（正常就是 `<五元组键>.png`） */
+  fileName: string;
+  sizeBytes: number;
+  sourceAbsPath: string;
+  capabilityId: string;
+  modelId: string;
+  createdAt: number;
+  lastAccessedAt: number;
+}
+
+interface PreviewIndex {
+  version: 1;
+  entries: Record<string, PreviewIndexEntry>;
+}
+
+/** 默认保留 30 天（§4.7 建议值，设置页可改）。 */
+const DEFAULT_RETENTION_DAYS = 30;
+/** 默认暂存总量上限 1 GiB。实测一张 690x920 成品约 1.1MB，1000 张约 1.1GB。 */
+const DEFAULT_PREVIEW_MAX_BYTES = 1024 * 1024 * 1024;
+
 export interface RunHandle {
   taskId: string;
   promise: Promise<RunResult>;
 }
 
+/** 元数据通道（生产实现绑定 XmpService，测试注入假件）。 */
+export interface MetadataGateway {
+  readTags(absPath: string): Promise<string[]>;
+  writeTags(absPath: string, add: string[]): Promise<void>;
+  /** 把原图的 EXIF 等基础元数据复制进派生文件；不提供时跳过该步 */
+  copyBase?(fromPath: string, toPath: string): Promise<void>;
+}
+
+export interface PreviewRetention {
+  /** 保留期，默认 30 天 */
+  retentionDays?: number;
+  /** 暂存总量上限（字节），默认 1 GiB */
+  maxBytes?: number;
+  now?: () => number;
+}
+
 export interface AiServiceDeps {
   runner: InferenceRunner;
   store: ModelGateway;
+  meta?: MetadataGateway;
+  previewRetention?: PreviewRetention;
+  /** 移出暂存用的原语，默认 fs.rename；测试用它注入"保存失败" */
+  moveFile?: (fromPath: string, toPath: string) => Promise<void>;
   onProgress?: (p: AiProgress) => void;
   onDone?: (r: RunResult) => void;
   onError?: (e: { taskId: string; code: string; message: string }) => void;
@@ -122,6 +181,8 @@ export class AiService {
   private queueTail: Promise<void> = Promise.resolve();
   private readonly controllers = new Map<string, AbortController>();
   private readonly cancelled = new Set<string>();
+  /** taskId → 最近一次成功结果，`ai:save(taskId)` 靠它找回暂存文件与原图 */
+  private readonly finished = new Map<string, RunResult>();
   private seq = 0;
 
   constructor(deps: AiServiceDeps) {
@@ -182,6 +243,207 @@ export class AiService {
     await this.deps.runner.dispose();
   }
 
+  /**
+   * 把暂存结果移入原图旁，成为 `原名.cutout.png`（冲突递增 `.cutout.2.png`）。
+   *
+   * 顺序上有讲究：**先移动成功再写元数据**。移动失败（Windows 上文件被占用是日常事件）
+   * 时暂存结果必须原样保留，用户看过并认可的东西不能因为一次写入失败就消失（§6 / A5）。
+   */
+  async save(taskId: string): Promise<SaveResult> {
+    const run = this.finished.get(taskId);
+    if (!run) throw new AiTaskError('TASK_NOT_FOUND', '该任务的结果已保存或已失效，请重新处理一次');
+    const cap = this.catalog.find((c) => c.id === run.capabilityId);
+    if (!cap) throw new AiTaskError('CAPABILITY_UNAVAILABLE', `清单里没有 ID 为 ${run.capabilityId} 的行为`);
+    if (!(await exists(run.sourceAbsPath))) {
+      throw new AiTaskError('SOURCE_MISSING', `找不到原图：${run.sourceAbsPath}`);
+    }
+    if (!(await exists(run.tempPath))) {
+      this.finished.delete(taskId);
+      throw new AiTaskError('PREVIEW_MISSING', '预览结果已被清理，请重新处理一次');
+    }
+
+    const dir = dirname(run.sourceAbsPath);
+    const stem = basename(run.sourceAbsPath, extname(run.sourceAbsPath));
+    const wanted = await pickTargetName(dir, stem, cap.outputSuffix, cap.outputExt);
+    const firstChoice = join(dir, `${stem}.${cap.outputSuffix}${cap.outputExt}`);
+
+    try {
+      await (this.deps.moveFile ?? rename)(run.tempPath, wanted);
+    } catch (err) {
+      // 移动没成功 ⇒ 暂存结果必须还在，用户看过并认可的东西不能因一次写入失败就消失
+      throw new AiTaskError(
+        'SAVE_FAILED',
+        `保存到照片目录失败：${errorMessage(err)}。结果仍保留在预览暂存中，可直接重试`
+      );
+    }
+
+    await this.removePreviewEntry(run.tempPath);
+    this.finished.delete(taskId);
+
+    let tagsWritten: string[] = [];
+    if (this.deps.meta) {
+      try {
+        const inherited = await this.deps.meta.readTags(run.sourceAbsPath);
+        tagsWritten = [...new Set([...inherited, cap.actionTag])];
+        await this.deps.meta.writeTags(wanted, tagsWritten);
+        await this.deps.meta.copyBase?.(run.sourceAbsPath, wanted);
+      } catch (err) {
+        // 文件已经落在目录里，不能谎称保存失败；明确报元数据这一步出了问题
+        throw new AiTaskError(
+          'METADATA_WRITE_FAILED',
+          `派生文件已保存为 ${basename(wanted)}，但写入标签/元数据失败：${errorMessage(err)}`
+        );
+      }
+    }
+
+    return { savedPath: wanted, targetName: basename(wanted), renamed: wanted !== firstChoice, tagsWritten };
+  }
+
+  /**
+   * 预览暂存的清理：**保留期与容量上限双条件**，任一触发即按最久未访问淘汰（§5.3）。
+   * 只按时间清理等于假设用户用量恒定，不够。
+   *
+   * 删除前必须校验路径前缀在 `ai-preview/` 内（§5.0 红线 3）：索引被篡改或写坏时，
+   * 少了这道校验就等于拿着一份 JSON 去删用户照片。只按索引删，目录里未被索引的
+   * 文件一律不动——我们不知道它是什么，就不该删它。
+   */
+  async cleanup(overrides: { retentionDays?: number; maxBytes?: number } = {}): Promise<CleanupReport> {
+    const index = await this.readPreviewIndex();
+    const retention = this.deps.previewRetention ?? {};
+    const now = (retention.now ?? Date.now)();
+    const retentionDays = overrides.retentionDays ?? retention.retentionDays ?? DEFAULT_RETENTION_DAYS;
+    const maxBytes = overrides.maxBytes ?? retention.maxBytes ?? DEFAULT_PREVIEW_MAX_BYTES;
+    const report: CleanupReport = { deleted: 0, refused: 0, freedBytes: 0, expiredBytes: 0 };
+
+    // 整轮只写一次索引：边删边写会被后面的整体覆盖把已删条目又写回去。
+    const nextEntries: Record<string, PreviewIndexEntry> = {};
+    const kept: { key: string; path: string; sizeBytes: number; lastAccessedAt: number }[] = [];
+
+    for (const [key, entry] of Object.entries(index.entries)) {
+      const resolved = resolveInsidePreview(entry.fileName);
+      if (!resolved) {
+        report.refused += 1;
+        continue; // 不删文件，也不保留这条索引
+      }
+      let sizeBytes: number;
+      try {
+        sizeBytes = (await stat(resolved)).size;
+      } catch {
+        continue; // 文件早就不在了，索引跟着清掉
+      }
+      kept.push({ key, path: resolved, sizeBytes, lastAccessedAt: entry.lastAccessedAt });
+    }
+
+    const expireBefore = now - retentionDays * 86_400_000;
+    const survivors: typeof kept = [];
+    let total = 0;
+    for (const item of kept) {
+      if (item.lastAccessedAt < expireBefore) {
+        await removeFile(item.path);
+        report.deleted += 1;
+        report.freedBytes += item.sizeBytes;
+        report.expiredBytes += item.sizeBytes;
+        continue;
+      }
+      survivors.push(item);
+      total += item.sizeBytes;
+    }
+
+    // 超上限：从最久未访问的开始淘汰，直到落到阈值以下
+    survivors.sort((a, b) => a.lastAccessedAt - b.lastAccessedAt);
+    while (total > maxBytes && survivors.length > 0) {
+      const item = survivors.shift()!;
+      await removeFile(item.path);
+      report.deleted += 1;
+      report.freedBytes += item.sizeBytes;
+      total -= item.sizeBytes;
+    }
+
+    for (const item of survivors) {
+      nextEntries[item.key] = { ...index.entries[item.key], sizeBytes: item.sizeBytes };
+    }
+    await this.writePreviewIndex({ version: 1, entries: nextEntries });
+    return report;
+  }
+
+  /** 设置页只读统计用（模型占用、可用磁盘、整卡显存在 T13 另给）。 */
+  async previewStats(): Promise<{ entries: number; totalBytes: number }> {
+    const index = await this.readPreviewIndex();
+    let totalBytes = 0;
+    let entries = 0;
+    for (const entry of Object.values(index.entries)) {
+      const resolved = resolveInsidePreview(entry.fileName);
+      if (!resolved) continue;
+      try {
+        totalBytes += (await stat(resolved)).size;
+        entries += 1;
+      } catch {
+        // 文件不在了，统计里跳过；索引由 cleanup 负责清
+      }
+    }
+    return { entries, totalBytes };
+  }
+
+  /** 记录一次可保存的结果，并登记进暂存索引（供 LRU 与保存用）。 */
+  private async settleRun(result: RunResult): Promise<RunResult> {
+    this.finished.set(result.taskId, result);
+    return result;
+  }
+
+  private async readPreviewIndex(): Promise<PreviewIndex> {
+    try {
+      const parsed = JSON.parse(await readFile(previewFile(PREVIEW_INDEX_NAME), 'utf8')) as PreviewIndex;
+      return { version: 1, entries: parsed.entries ?? {} };
+    } catch {
+      return { version: 1, entries: {} };
+    }
+  }
+
+  private async writePreviewIndex(index: PreviewIndex): Promise<void> {
+    const tmp = previewFile(`${PREVIEW_INDEX_NAME}.tmp`);
+    await writeFile(tmp, JSON.stringify(index, null, 2));
+    await rename(tmp, previewFile(PREVIEW_INDEX_NAME));
+  }
+
+  private async recordPreviewEntry(result: RunResult): Promise<void> {
+    const index = await this.readPreviewIndex();
+    const now = (this.deps.previewRetention?.now ?? Date.now)();
+    let sizeBytes = 0;
+    try {
+      sizeBytes = (await stat(result.tempPath)).size;
+    } catch {
+      return;
+    }
+    const key = basename(result.tempPath, extname(result.tempPath));
+    index.entries[key] = {
+      fileName: basename(result.tempPath),
+      sizeBytes,
+      sourceAbsPath: result.sourceAbsPath,
+      capabilityId: result.capabilityId,
+      modelId: result.modelId,
+      createdAt: index.entries[key]?.createdAt ?? now,
+      lastAccessedAt: now
+    };
+    await this.writePreviewIndex(index);
+  }
+
+  private async removePreviewEntry(tempPath: string): Promise<void> {
+    const index = await this.readPreviewIndex();
+    const key = basename(tempPath, extname(tempPath));
+    if (!index.entries[key]) return;
+    delete index.entries[key];
+    await this.writePreviewIndex(index);
+  }
+
+  /** 缓存命中也要刷时间，否则 LRU 记的是"第一次生成"而不是"最近在用"。 */
+  private async touchPreviewEntry(tempPath: string): Promise<void> {
+    const index = await this.readPreviewIndex();
+    const key = basename(tempPath, extname(tempPath));
+    if (!index.entries[key]) return;
+    index.entries[key].lastAccessedAt = (this.deps.previewRetention?.now ?? Date.now)();
+    await this.writePreviewIndex(index);
+  }
+
   private async execute(taskId: string, req: RunRequest, signal: AbortSignal): Promise<RunResult> {
     this.throwIfCancelled(taskId);
     const cap = this.catalog.find((c) => c.id === req.capabilityId);
@@ -214,6 +476,7 @@ export class AiService {
       const cached: RunResult = {
         taskId,
         tempPath,
+        sourceAbsPath: req.absPath,
         cacheHit: true,
         didApplySigmoid: false,
         maskWidth: model.inputDims[3] ?? 0,
@@ -222,7 +485,8 @@ export class AiService {
         modelId: model.id,
         actionTag: cap.actionTag
       };
-      return cached;
+      await this.touchPreviewEntry(tempPath);
+      return this.settleRun(cached);
     }
 
     // ── 确保模型就绪（下载是这一步的内部细节，不是用户步骤）─────────────
@@ -284,9 +548,10 @@ export class AiService {
     }
     this.throwIfCancelled(taskId);
 
-    return {
+    const fresh: RunResult = {
       taskId,
       tempPath,
+      sourceAbsPath: req.absPath,
       cacheHit: false,
       didApplySigmoid: composed.didApplySigmoid,
       maskWidth: composed.maskWidth,
@@ -295,6 +560,8 @@ export class AiService {
       modelId: model.id,
       actionTag: cap.actionTag
     };
+    await this.recordPreviewEntry(fresh);
+    return this.settleRun(fresh);
   }
 
   private throwIfCancelled(taskId: string): void {
@@ -327,6 +594,38 @@ function toMaskPlane(data: Float32Array, dims: number[]): MaskPlane {
   return { data: data.subarray(0, width * height), width, height };
 }
 
+/**
+ * 暂存索引就放在 `ai-preview/` 目录内：这样"清理只允许作用于暂存目录"这条
+ * 红线（§5.0 红线 3）天然成立，索引和它描述的文件不可能分家。
+ */
+const PREVIEW_INDEX_NAME = 'index.json';
+
+/**
+ * 把索引里的 fileName 解析成一个确定落在暂存目录内的绝对路径。
+ * 越界（绝对路径指向别处、或 ../.. 爬出去）返回 null，调用方必须拒绝删除。
+ * 注：暂存目录内若存在指向外部的符号链接，`rm` 只断开链接本身，不会顺带删掉目标。
+ */
+function resolveInsidePreview(fileName: string): string | null {
+  const root = normalize(previewDir()) + sep;
+  const candidate = normalize(isAbsolute(fileName) ? fileName : join(previewDir(), fileName));
+  return candidate.startsWith(root) && candidate !== normalize(previewDir()) ? candidate : null;
+}
+
+/** `原名.cutout.png` 已存在时不覆盖，改用 `原名.cutout.2.png`（§4.4 同名冲突）。 */
+async function pickTargetName(dir: string, stem: string, suffix: string, ext: string): Promise<string> {
+  const first = join(dir, `${stem}.${suffix}${ext}`);
+  if (!(await exists(first))) return first;
+  for (let n = 2; n < 1000; n++) {
+    const candidate = join(dir, `${stem}.${suffix}.${n}${ext}`);
+    if (!(await exists(candidate))) return candidate;
+  }
+  throw new AiTaskError('SAVE_NAME_EXHAUSTED', `${stem}.${suffix} 的序号已用尽，请先清理同名派生文件`);
+}
+
+async function removeFile(path: string): Promise<void> {
+  await rm(path, { force: true });
+}
+
 async function exists(path: string): Promise<boolean> {
   try {
     await access(path);
@@ -338,7 +637,6 @@ async function exists(path: string): Promise<boolean> {
 
 async function removeQuietly(path: string): Promise<void> {
   try {
-    const { rm } = await import('fs/promises');
     await rm(path, { force: true });
   } catch {
     // 清理失败不改变本次任务的结论

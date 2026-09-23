@@ -262,9 +262,10 @@ describe('ai/aiService —— 一次点击走完 下载→加载→推理→写�
     const before = await readdir(photoDir);
     await service.run({ absPath: photoPath, capabilityId: 'portrait-cutout' });
     expect(await readdir(photoDir)).toEqual(before);
-    const out = await readdir(previewDir());
-    expect(out).toHaveLength(1);
-    expect(out[0]).toMatch(/^[0-9a-f]{40}\.png$/);
+    const pngs = (await readdir(previewDir())).filter((f) => f.endsWith('.png'));
+    expect(pngs).toHaveLength(1);
+    expect(pngs[0]).toMatch(/^[0-9a-f]{40}\.png$/);
+    expect(before.some((f) => f.endsWith('.png'))).toBe(false);
   });
 
   it('推理输入形状取自清单，服务侧不写死', async () => {
