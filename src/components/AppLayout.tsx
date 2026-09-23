@@ -26,6 +26,7 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import DriveFileRenameOutlineIcon from '@mui/icons-material/DriveFileRenameOutline';
 import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import SettingsIcon from '@mui/icons-material/Settings';
 import { call, getApi } from '../api';
 import { useAppStore } from '../store/useAppStore';
 import { cancelScan, rescan, startScan } from '../hooks/useScan';
@@ -35,6 +36,7 @@ import { ThumbnailGrid } from './ThumbnailGrid';
 import { PreviewOverlay } from './PreviewOverlay';
 import { UpdateDialog } from './UpdateDialog';
 import { AboutDialog } from './AboutDialog';
+import { SettingsDialog } from './settings/SettingsDialog';
 import type { RootEntry, UpdateStatus } from '../../shared/types';
 
 /**
@@ -59,6 +61,7 @@ export function AppLayout(): JSX.Element {
   const [removeTarget, setRemoveTarget] = useState<RootEntry | null>(null);
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
   const [aboutDialogOpen, setAboutDialogOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ state: 'idle' });
 
   const selectedRoot = roots.find((r) => r.id === selectedRootId) ?? null;
@@ -260,6 +263,11 @@ export function AppLayout(): JSX.Element {
               <SystemUpdateAltIcon />
             </IconButton>
           </Tooltip>
+          <Tooltip title="设置">
+            <IconButton onClick={() => setSettingsOpen(true)} aria-label="设置">
+              <SettingsIcon />
+            </IconButton>
+          </Tooltip>
           <Tooltip title="关于照片标签管家">
             <IconButton onClick={() => setAboutDialogOpen(true)} aria-label="关于照片标签管家">
               <InfoOutlinedIcon />
@@ -384,6 +392,9 @@ export function AppLayout(): JSX.Element {
 
       {/* 更新状态对话框 */}
       <UpdateDialog open={updateDialogOpen} onClose={() => setUpdateDialogOpen(false)} />
+
+      {/* 应用级设置总入口（D16） */}
+      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
       {/* 关于对话框 */}
       <AboutDialog open={aboutDialogOpen} onClose={() => setAboutDialogOpen(false)} />

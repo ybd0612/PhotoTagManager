@@ -71,7 +71,7 @@ function createMockApi(): PhotoTagApi {
     aiModelDelete: vi.fn(async () => ({ ok: true as const, data: { modelId: 'u2netp', status: 'absent' as const } })),
     aiModelUnload: vi.fn(async () => ({ ok: true as const, data: { modelId: 'u2netp', status: 'present' as const } })),
     aiModelSetDefault: vi.fn(async () => ({ ok: true as const, data: { capabilities: [] } })),
-    aiStorageStats: vi.fn(async () => ({ ok: true as const, data: { preview: { entries: 0, totalBytes: 0 }, models: [], loadedModelId: null, freeDiskBytes: null, retention: { retentionDays: 30, maxBytes: 1 } } })),
+    aiStorageStats: vi.fn(async () => ({ ok: true as const, data: { preview: { entries: 0, totalBytes: 0 }, models: [], loadedModelId: null, freeDiskBytes: null, gpu: null, retention: { retentionDays: 30, maxBytes: 1 } } })),
     onAiProgress: vi.fn(() => () => undefined),
     onAiDone: vi.fn(() => () => undefined),
     onAiError: vi.fn(() => () => undefined),

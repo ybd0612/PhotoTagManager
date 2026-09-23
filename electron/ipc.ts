@@ -1,5 +1,5 @@
 import { app, clipboard, dialog, ipcMain, shell, type BrowserWindow } from 'electron';
-import type { AiRunAck, AiRunRequest, IpcResult, TagWriteRequest, UpdateStatus } from '../shared/types';
+import type { AiGpuMemory, AiRunAck, AiRunRequest, IpcResult, TagWriteRequest, UpdateStatus } from '../shared/types';
 import type { ScanService } from './services/scanService';
 import type { XmpService } from './services/xmpService';
 import type { ThumbnailService } from './services/thumbnailService';
@@ -54,6 +54,8 @@ export interface IpcDeps {
     store: AiStoreView;
     runner: AiRunnerView;
     freeDiskBytes(): Promise<number | null>;
+    /** 整卡显存（口径必须标注"整卡"，分进程显存拿不到） */
+    gpuStats(): Promise<AiGpuMemory | null>;
     retention: { retentionDays: number; maxBytes: number };
   };
 }
@@ -289,9 +291,10 @@ export function registerIpc(deps: IpcDeps): void {
   });
 
   handle('ai:storage-stats', async (): Promise<unknown> => {
-    const [preview, freeDiskBytes] = await Promise.all([
+    const [preview, freeDiskBytes, gpu] = await Promise.all([
       deps.ai.service.previewStats(),
-      deps.ai.freeDiskBytes()
+      deps.ai.freeDiskBytes(),
+      deps.ai.gpuStats()
     ]);
     const installed = await deps.ai.store.installedModels();
     return {
@@ -303,6 +306,7 @@ export function registerIpc(deps: IpcDeps): void {
       })),
       loadedModelId: deps.ai.runner.loadedModelId,
       freeDiskBytes,
+      gpu,
       retention: deps.ai.retention
     };
   });

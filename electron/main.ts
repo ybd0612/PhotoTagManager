@@ -14,6 +14,7 @@ import { ModelStore } from './ai/modelStore';
 import { ChildRunner, makeUtilityProcessSpawner } from './ai/runner';
 import { AiService, type MetadataGateway } from './ai/aiService';
 import { statfs } from 'fs/promises';
+import { readWholeGpuMemory } from './ai/gpuStats';
 
 electronLog.initialize();
 
@@ -210,6 +211,8 @@ void app.whenReady().then(() => {
           return null; // 读不到就报"未知"，不能显示 0 让用户以为盘满了
         }
       },
+      // 只能拿到整卡显存：分进程显存本机驱动返回 [N/A]，所以口径必须标"整卡"
+      gpuStats: () => readWholeGpuMemory(),
       retention: aiRetention
     }
   });

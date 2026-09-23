@@ -7,7 +7,8 @@ import type {
   AiErrorPayload,
   AiPhase,
   AiProgressPayload,
-  AiSaveResult
+  AiSaveResult,
+  AiStorageStats
 } from '../../shared/types';
 
 /**
@@ -49,11 +50,14 @@ export interface AiPendingConfirm {
 
 interface AiState {
   catalog: AiCatalogResult | null;
+  /** 设置页只读统计（模型占用 / 可用磁盘 / 整卡显存 / 暂存条目） */
+  stats: AiStorageStats | null;
   task: AiTask | null;
   result: AiDonePayload | null;
   error: AiErrorPayload | null;
   pendingConfirm: AiPendingConfirm | null;
   init: () => void;
+  loadStats: () => Promise<void>;
   ensureCatalog: () => Promise<void>;
   refreshCatalog: () => Promise<void>;
   usableCapabilities: () => AiCapabilityView[];
@@ -73,6 +77,7 @@ let subscribed = false;
 
 export const useAiStore = create<AiState>((set, get) => ({
   catalog: null,
+  stats: null,
   task: null,
   result: null,
   error: null,
@@ -108,6 +113,14 @@ export const useAiStore = create<AiState>((set, get) => ({
       set({ catalog });
     } catch (err) {
       set({ catalog: { capabilities: [] }, error: { taskId: '', code: 'CATALOG_FAILED', message: String(err) } });
+    }
+  },
+
+  loadStats: async () => {
+    try {
+      set({ stats: await call(getApi().aiStorageStats()) });
+    } catch {
+      set({ stats: null }); // 读不到就显示"未知"，不许显示 0
     }
   },
 

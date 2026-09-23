@@ -183,6 +183,7 @@ function fakeDeps(): IpcDeps {
       store,
       runner,
       freeDiskBytes: async () => 123456,
+      gpuStats: async () => ({ usedMiB: 1178, totalMiB: 8151, scope: 'whole-gpu' as const }),
       retention: { retentionDays: 30, maxBytes: 1024 * 1024 * 1024 }
     }
   };
@@ -349,12 +350,15 @@ describe('ai IPC handler —— IpcResult 信封与转发', () => {
       models: Array<{ id: string; sizeBytes: number }>;
       loadedModelId: string | null;
       freeDiskBytes: number | null;
+      gpu: unknown;
       retention: { retentionDays: number; maxBytes: number };
     };
     expect(data.preview).toEqual({ entries: 2, totalBytes: 3000 });
     expect(data.models).toEqual([{ id: 'u2netp', sizeBytes: 4574861, status: 'present' }]);
     expect(data.loadedModelId).toBe('u2netp');
     expect(data.freeDiskBytes).toBe(123456);
+    // 显存必须是整卡口径的对象，不能是 undefined
+    expect(data.gpu).toEqual({ usedMiB: 1178, totalMiB: 8151, scope: 'whole-gpu' });
     expect(data.retention).toEqual({ retentionDays: 30, maxBytes: 1024 * 1024 * 1024 });
   });
 
@@ -362,9 +366,11 @@ describe('ai IPC handler —— IpcResult 信封与转发', () => {
     handlers.clear();
     const deps = fakeDeps();
     deps.ai!.freeDiskBytes = async () => null;
+    deps.ai!.gpuStats = async () => null;
     registerIpc(deps);
     const res = await invoke('ai:storage-stats');
-    expect((res.data as { freeDiskBytes: unknown }).freeDiskBytes).toBeNull();
+    expect((res.data as { freeDiskBytes: unknown; gpu: unknown }).freeDiskBytes).toBeNull();
+    expect((res.data as { gpu: unknown }).gpu).toBeNull();
   });
 
   it('保存失败也走信封并保留错误码', async () => {

@@ -205,12 +205,21 @@ export interface AiSaveResult {
   tagsWritten: string[];
 }
 
+export interface AiGpuMemory {
+  usedMiB: number;
+  totalMiB: number;
+  /** 只能是整卡口径：分进程显存拿不到（nvidia-smi --query-compute-apps 返回 [N/A]） */
+  scope: 'whole-gpu';
+}
+
 export interface AiStorageStats {
   preview: { entries: number; totalBytes: number };
   models: Array<{ id: string; sizeBytes: number; status: AiModelStatus }>;
   loadedModelId: string | null;
   /** 读不到时为 null，界面要显示"未知"而不是 0 */
   freeDiskBytes: number | null;
+  /** 整卡显存；null = 拿不到（非 NVIDIA / 命令不可用） */
+  gpu: AiGpuMemory | null;
   retention: { retentionDays: number; maxBytes: number };
 }
 
