@@ -21,7 +21,7 @@
     "shared",
     "tests/scan.test.ts",
     "tests/xmp.test.ts",
-    "tests/ai",
+    "tests/ai/**/*.test.ts",
     "electron.vite.config.ts",
     "vitest.config.ts"
   ]
