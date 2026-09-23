@@ -18,10 +18,30 @@
   "build": {
     "appId": "com.ybd0612.phototagmanager",
     "productName": "PhotoTagManager",
-    "directories": { "output": "dist" },
-    "files": ["out/**/*", "package.json"],
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "out/**/*",
+      "package.json",
+      "!node_modules/onnxruntime-node/bin/napi-v6/darwin/**",
+      "!node_modules/onnxruntime-node/bin/napi-v6/linux/**",
+      "!node_modules/onnxruntime-node/bin/napi-v6/win32/arm64/**"
+    ],
+    "asarUnpack": [
+      "node_modules/onnxruntime-node/**",
+      "node_modules/sharp/**",
+      "node_modules/@img/**"
+    ],
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
     "nsis": {
@@ -45,9 +65,11 @@
     "electron-log": "^5.1.0",
     "electron-updater": "^6.3.9",
     "exiftool-vendored": "^37.0.0",
+    "onnxruntime-node": "1.30.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-window": "^1.8.10",
+    "sharp": "0.35.4",
     "zustand": "^4.5.0"
   },
   "devDependencies": {
