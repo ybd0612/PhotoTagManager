@@ -13,7 +13,8 @@
     "typecheck": "tsc --build tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "dist": "electron-builder"
+    "dist": "electron-builder",
+    "verify:ai-child": "electron-vite build && electron scripts/ai-child-probe.cjs"
   },
   "build": {
     "appId": "com.ybd0612.phototagmanager",

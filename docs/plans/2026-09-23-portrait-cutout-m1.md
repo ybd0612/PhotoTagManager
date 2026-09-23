@@ -283,3 +283,26 @@ Q16 失败可诊断性（错误码 + 查看日志入口）· Q17 同图多份暂
 `app.asar.unpacked` 内原生库恰为 5 个：onnxruntime.dll 28,754,232 / DirectML.dll 18,527,584 /
 dxcompiler.dll 17,986,360 / dxil.dll 1,508,664 / onnxruntime_binding.node 298,848，共 64.4MB，
 无 darwin/linux/win32-arm64 残留。
+
+### 真 Electron utilityProcess 复核（2026-09-23，`npm run verify:ai-child`）
+
+node 环境的集成测试只能证明 `ChildInference` 本身，证明不了 `aiChild.js` 作为
+`utilityProcess` 子进程的传输链路。用真 Electron 跑打包产物复核，结果：
+
+```
+[probe] load reply ok=true {"modelId":"u2netp","loadMs":4953,
+        "outputNames":["1959","1960","1961","1962","1963","1964","1965"]}
+[probe] infer ok len=102400 dims=1x1x320x320 out=1959 inferMs=39 range=[0.000,0.001]
+[probe] 未知类型回 ok=false msg=未知的子进程请求类型：bogus
+[probe] child exit code=0
+```
+
+由此确认：`out/main/aiChild.js` 可被 fork；子进程内 DirectML 会话建立成功
+（7 个输出、名 `1959`…`1965`，与"已验证事实"表一致）；`[1,3,320,320]` 输入回传
+`Float32Array(102400)`，推理 39ms 与 M0 的 20/8/7ms 同量级；协议错误在子进程内
+转成 `ok:false` 而不是崩进程；`child.kill()` 后退出码 0（不留孤儿）。
+
+台账相应更新：
+- §8-18 的"子进程崩溃不影响主窗口"——传输与生命周期已在真 Electron 里实测，
+  **仍待人工**的是注入必崩模型（BiRefNet）后的窗口存活观察；
+- §8-2 / §8-5 的"一次点击走完、加载不可见"——底层链路已实测，界面层仍待人工走一遍。
