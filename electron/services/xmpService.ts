@@ -219,6 +219,28 @@ export class XmpService {
     return renamed;
   }
 
+  /**
+   * 把源文件的基础元数据（EXIF 拍摄时间、色彩配置等）复制进目标文件。
+   *
+   * 为什么需要：模型吃像素不吃元数据，抠图产出是被重新编码过的 PNG，本身是"裸"的。
+   * 不复制就没有拍摄时间，宽色域照片还会因缺 ICC 从 Display P3 掉回 sRGB 而偏色
+   * （规格 §4.4 的两个必处理细节之一）。
+   * 失败必须抛出，让调用方报可读原因，不能静默产出一个元数据不全的派生文件。
+   */
+  async copyMetadataFrom(sourceAbsPath: string, targetAbsPath: string): Promise<void> {
+    await this.enqueue(async () => {
+      const exif = await this.getExif();
+      // -all:all 只会带过同名可写标签；ICC 剖面是独立二进制块，必须再点名 -ICC_PROFILE。
+      // 本机 exiftool 13.59 实测：这样组合后目标 PNG 读回同时有 DateTimeOriginal 与
+      // ProfileDescription（只给 -all:all 时拍摄时间与剖面都拿不到）。
+      await exif.write(
+        targetAbsPath,
+        {},
+        ['-overwrite_original', '-TagsFromFile', sourceAbsPath, '-all:all', '-ICC_PROFILE']
+      );
+    });
+  }
+
   /** 读取图片基本信息（P1：分辨率/拍摄时间/文件大小/相机型号） */
   async getImageInfo(absPath: string): Promise<ImageInfo> {
     return this.enqueue(async () => {

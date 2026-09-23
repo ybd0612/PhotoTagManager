@@ -1,5 +1,15 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
-import type { PhotoTagApi, ScanBatch, ScanStats, ThumbnailResult, UpdateStatus } from '../shared/types';
+import type {
+  AiDonePayload,
+  AiErrorPayload,
+  AiProgressPayload,
+  AiRunRequest,
+  PhotoTagApi,
+  ScanBatch,
+  ScanStats,
+  ThumbnailResult,
+  UpdateStatus
+} from '../shared/types';
 
 /**
  * 事件订阅辅助：返回取消订阅函数（渲染侧 useScan / useThumbnails 依赖）。
@@ -62,7 +72,21 @@ const api: PhotoTagApi = {
   checkUpdate: () => ipcRenderer.invoke('update:check'),
   downloadUpdate: () => ipcRenderer.invoke('update:download'),
   installUpdate: () => ipcRenderer.invoke('update:install'),
-  onUpdateStatus: (cb: (status: UpdateStatus) => void) => subscribe<UpdateStatus>('update:status', cb)
+  onUpdateStatus: (cb: (status: UpdateStatus) => void) => subscribe<UpdateStatus>('update:status', cb),
+  // 照片 AI 处理（M1：人像抠图）。一次 aiRun 内部走完 下载→加载→推理（D14）
+  aiCatalog: () => ipcRenderer.invoke('ai:catalog'),
+  aiRun: (req: AiRunRequest) => ipcRenderer.invoke('ai:run', req),
+  aiCancel: (taskId: string) => ipcRenderer.invoke('ai:cancel', taskId),
+  aiSave: (taskId: string) => ipcRenderer.invoke('ai:save', taskId),
+  aiModelDownload: (modelId: string) => ipcRenderer.invoke('ai:model-download', modelId),
+  aiModelDelete: (modelId: string) => ipcRenderer.invoke('ai:model-delete', modelId),
+  aiModelUnload: (modelId: string) => ipcRenderer.invoke('ai:model-unload', modelId),
+  aiModelSetDefault: (capabilityId: string, modelId: string) =>
+    ipcRenderer.invoke('ai:model-set-default', capabilityId, modelId),
+  aiStorageStats: () => ipcRenderer.invoke('ai:storage-stats'),
+  onAiProgress: (cb: (p: AiProgressPayload) => void) => subscribe<AiProgressPayload>('ai:progress', cb),
+  onAiDone: (cb: (payload: AiDonePayload) => void) => subscribe<AiDonePayload>('ai:done', cb),
+  onAiError: (cb: (err: AiErrorPayload) => void) => subscribe<AiErrorPayload>('ai:error', cb)
 };
 
 contextBridge.exposeInMainWorld('api', api);

@@ -43,6 +43,37 @@ export class ChildNotRespondingError extends Error {
   }
 }
 
+/**
+ * 把 Electron 的 utilityProcess 适配成 ChildRunner 需要的 SpawnedChild。
+ *
+ * 由调用方把 `utilityProcess` 传进来（而不是在这里 import 'electron'），
+ * 这样 runner 模块在 node 环境也能安全 import、生命周期可以用假件测。
+ */
+export interface UtilityProcessLike {
+  fork(modulePath: string): {
+    postMessage(message: unknown): void;
+    kill(): void;
+    on(event: 'message', listener: (message: { data: unknown }) => void): void;
+    on(event: 'exit', listener: (code: number | null) => void): void;
+  };
+}
+
+export function makeUtilityProcessSpawner(utilityProcess: UtilityProcessLike): SpawnChild {
+  return (entry: string): SpawnedChild => {
+    const child = utilityProcess.fork(entry);
+    return {
+      postMessage: (message) => child.postMessage(message),
+      kill: () => {
+        child.kill();
+      },
+      onMessage: (listener) => {
+        child.on('message', (message) => listener({ type: 'message', payload: message.data as never }));
+        child.on('exit', (code) => listener({ type: 'exit', code }));
+      }
+    };
+  };
+}
+
 export interface ChildRunnerOptions {
   spawn: SpawnChild;
   entry: string;

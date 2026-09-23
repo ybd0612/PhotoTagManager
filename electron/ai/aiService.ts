@@ -3,7 +3,7 @@ import { isAbsolute, join, normalize, sep, basename, dirname, extname } from 'pa
 
 import { capabilities, type CapabilitySpec, type ModelSpec } from './capabilityCatalog';
 import { computeCacheKey } from './cacheKey';
-import { modelDir, previewDir, previewFile } from './paths';
+import { modelDir, previewDir, previewFile, settingsFile } from './paths';
 import { PIPELINE_VERSION, preprocessImage } from './preprocess';
 import {
   DEFAULT_CUTOUT_PARAMS,
@@ -110,6 +110,12 @@ export interface RunHandle {
   promise: Promise<RunResult>;
 }
 
+/** 主进程 → 渲染层的一次性事件（IPC 层原样转成 ai:progress / ai:done / ai:error） */
+export type AiEvent =
+  | { type: 'progress'; payload: AiProgress }
+  | { type: 'done'; payload: RunResult }
+  | { type: 'error'; payload: { taskId: string; code: string; message: string } };
+
 /** 元数据通道（生产实现绑定 XmpService，测试注入假件）。 */
 export interface MetadataGateway {
   readTags(absPath: string): Promise<string[]>;
@@ -138,6 +144,12 @@ export interface AiServiceDeps {
   onError?: (e: { taskId: string; code: string; message: string }) => void;
   /** 便于测试注入 */
   catalog?: CapabilitySpec[];
+}
+
+/** settings.json 里的 AI 段（§5.0）。M1 只有默认模型覆盖与暂存保留配置。 */
+export interface AiSettings {
+  aiDefaults?: Record<string, string>;
+  previewRetention?: { retentionDays?: number; maxBytes?: number };
 }
 
 /** 带错误码的失败：界面按 message 显示，日志按 code 定位（Q16 的起点）。 */
@@ -183,6 +195,7 @@ export class AiService {
   private readonly cancelled = new Set<string>();
   /** taskId → 最近一次成功结果，`ai:save(taskId)` 靠它找回暂存文件与原图 */
   private readonly finished = new Map<string, RunResult>();
+  private readonly listeners = new Set<(event: AiEvent) => void>();
   private seq = 0;
 
   constructor(deps: AiServiceDeps) {
@@ -204,13 +217,13 @@ export class AiService {
     const run = async (): Promise<RunResult> => {
       try {
         const result = await this.execute(taskId, req, controller.signal);
-        this.deps.onDone?.(result);
+        this.publish({ type: 'done', payload: result });
         return result;
       } catch (err) {
         const mapped = this.cancelled.has(taskId)
           ? new AiTaskError('CANCELLED', '任务已取消')
           : toTaskError(err);
-        this.deps.onError?.({ taskId, code: mapped.code, message: mapped.message });
+        this.publish({ type: 'error', payload: { taskId, code: mapped.code, message: mapped.message } });
         throw mapped;
       } finally {
         this.controllers.delete(taskId);
@@ -236,6 +249,61 @@ export class AiService {
     this.cancelled.add(taskId);
     this.controllers.get(taskId)?.abort();
     return true;
+  }
+
+  /** 用户选定的默认模型（下拉里「设为默认」）；没有覆盖时回清单自带的默认值。 */
+  async defaultModelFor(capabilityId: string): Promise<string> {
+    const settings = await this.readSettings();
+    const override = settings.aiDefaults?.[capabilityId];
+    if (override && this.catalog.find((c) => c.id === capabilityId)?.models.some((m) => m.id === override && m.verified)) {
+      return override;
+    }
+    return this.catalog.find((c) => c.id === capabilityId)?.defaultModelId ?? '';
+  }
+
+  /** 只允许设成该行为下已实测跑通的模型，否则报错而不是默默生效。 */
+  async setDefaultModel(capabilityId: string, modelId: string): Promise<void> {
+    const cap = this.catalog.find((c) => c.id === capabilityId);
+    if (!cap) throw new AiTaskError('CAPABILITY_UNAVAILABLE', `清单里没有 ID 为 ${capabilityId} 的行为`);
+    const model = cap.models.find((m) => m.id === modelId);
+    if (!model) throw new AiTaskError('MODEL_UNAVAILABLE', `行为 ${capabilityId} 下没有模型 ${modelId}`);
+    if (!model.verified) {
+      throw new AiTaskError('MODEL_NOT_VERIFIED', `模型 ${model.id} 未在本引擎实测跑通，不能设为默认`);
+    }
+    const settings = await this.readSettings();
+    settings.aiDefaults = { ...settings.aiDefaults, [capabilityId]: modelId };
+    await this.writeSettings(settings);
+  }
+
+  private async readSettings(): Promise<AiSettings> {
+    try {
+      return JSON.parse(await readFile(settingsFile(), 'utf8')) as AiSettings;
+    } catch {
+      return {};
+    }
+  }
+
+  private async writeSettings(settings: AiSettings): Promise<void> {
+    const tmp = `${settingsFile()}.tmp`;
+    await writeFile(tmp, JSON.stringify(settings, null, 2));
+    await rename(tmp, settingsFile());
+  }
+
+  /** IPC 用：过滤后的可渲染清单——只含实测跑通的模型（§4.3）。 */
+  usableCatalog(): CapabilitySpec[] {
+    return this.catalog
+      .filter((cap) => cap.models.some((m) => m.verified))
+      .map((cap) => ({ ...cap, models: cap.models.filter((m) => m.verified) }));
+  }
+
+  /** IPC 用：按 modelId 找下载规格（跨行为查找，模型管理下拉只给 id）。 */
+  findModelSpec(modelId: string): { capabilityId: string; spec: ModelDownloadSpec } | null {
+    for (const cap of this.catalog) {
+      const model = cap.models.find((m) => m.id === modelId);
+      if (!model) continue;
+      return { capabilityId: cap.id, spec: toDownloadSpec(model) };
+    }
+    return null;
   }
 
   async dispose(): Promise<void> {
@@ -448,7 +516,11 @@ export class AiService {
     this.throwIfCancelled(taskId);
     const cap = this.catalog.find((c) => c.id === req.capabilityId);
     if (!cap) throw new AiTaskError('CAPABILITY_UNAVAILABLE', `清单里没有 ID 为 ${req.capabilityId} 的行为`);
-    const model = resolveModel(this.catalog, req.capabilityId, req.modelId);
+    const model = resolveModel(
+      this.catalog,
+      req.capabilityId,
+      req.modelId ?? (await this.defaultModelFor(req.capabilityId))
+    );
     // 后处理函数必须已注册，否则宁可在跑之前失败
     getPostprocessor(cap.postprocessId);
 
@@ -569,7 +641,29 @@ export class AiService {
   }
 
   private emit(taskId: string, phase: AiPhase, percent: number): void {
-    this.deps.onProgress?.({ taskId, phase, percent });
+    this.publish({ type: 'progress', payload: { taskId, phase, percent } });
+  }
+
+  /**
+   * IPC 层用它把 ai:progress / ai:done / ai:error 转发给窗口。
+   * 订阅而不是构造时注入，是因为窗口会被重建（最小化到托盘后关窗再开）。
+   */
+  subscribe(listener: (event: AiEvent) => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  private publish(event: AiEvent): void {
+    if (event.type === 'progress') this.deps.onProgress?.(event.payload);
+    if (event.type === 'done') this.deps.onDone?.(event.payload);
+    if (event.type === 'error') this.deps.onError?.(event.payload);
+    for (const listener of this.listeners) {
+      try {
+        listener(event);
+      } catch {
+        // 一个订阅者抛错不影响其他订阅者与本次任务
+      }
+    }
   }
 }
 

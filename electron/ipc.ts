@@ -1,11 +1,44 @@
 import { app, clipboard, dialog, ipcMain, shell, type BrowserWindow } from 'electron';
-import type { IpcResult, TagWriteRequest, UpdateStatus } from '../shared/types';
+import type { AiRunAck, AiRunRequest, IpcResult, TagWriteRequest, UpdateStatus } from '../shared/types';
 import type { ScanService } from './services/scanService';
 import type { XmpService } from './services/xmpService';
 import type { ThumbnailService } from './services/thumbnailService';
 import type { FolderStore } from './services/folderStore';
 import type { RootStore } from './services/rootStore';
 import type { UpdaterService } from './services/updaterService';
+import type { AiEvent, RunRequest, RunResult, SaveResult } from './ai/aiService';
+import type { CapabilitySpec } from './ai/capabilityCatalog';
+import type { ModelDownloadSpec, ModelStore } from './ai/modelStore';
+
+/** AI 推理子进程的只读运行态视图（ipc 只需要"当前驻留哪个模型"和卸载入口） */
+export interface AiRunnerView {
+  readonly loadedModelId: string | null;
+  unload(): Promise<void>;
+}
+
+/** ipc 用到的 ModelStore 那部分，声明成视图便于契约测试注入假件。 */
+export interface AiStoreView {
+  status(modelId: string): Promise<'absent' | 'downloading' | 'present'>;
+  download(spec: ModelDownloadSpec, signal?: AbortSignal): Promise<{ path: string }>;
+  remove(modelId: string): Promise<void>;
+  installedModels(): Promise<Awaited<ReturnType<ModelStore['installedModels']>>>;
+}
+
+/**
+ * ipc 只用到 AiService 的这几个方法。声明成结构化视图而不是依赖具体类，
+ * 这样契约测试里的假件能被编译检查，而不是靠一次 as unknown 绕过类型。
+ */
+export interface AiServiceView {
+  startRun(req: RunRequest): { taskId: string; promise: Promise<RunResult> };
+  cancel(taskId: string): boolean;
+  save(taskId: string): Promise<SaveResult>;
+  previewStats(): Promise<{ entries: number; totalBytes: number }>;
+  subscribe(listener: (event: AiEvent) => void): () => void;
+  usableCatalog(): CapabilitySpec[];
+  defaultModelFor(capabilityId: string): Promise<string>;
+  setDefaultModel(capabilityId: string, modelId: string): Promise<void>;
+  findModelSpec(modelId: string): { capabilityId: string; spec: ModelDownloadSpec } | null;
+}
 
 export interface IpcDeps {
   scan: ScanService;
@@ -15,6 +48,14 @@ export interface IpcDeps {
   roots: RootStore;
   updater: UpdaterService;
   getWindow: () => BrowserWindow | null;
+  /** 照片 AI 处理（M1：人像抠图） */
+  ai: {
+    service: AiServiceView;
+    store: AiStoreView;
+    runner: AiRunnerView;
+    freeDiskBytes(): Promise<number | null>;
+    retention: { retentionDays: number; maxBytes: number };
+  };
 }
 
 /**
@@ -160,4 +201,116 @@ export function registerIpc(deps: IpcDeps): void {
   handle('update:check', (): Promise<UpdateStatus> => deps.updater.check());
   handle('update:download', (): Promise<UpdateStatus> => deps.updater.download());
   handle('update:install', (): UpdateStatus => deps.updater.install());
+
+  // ── 照片 AI 处理（M1：人像抠图）────────────────────────────────────────
+  // 用户侧只有一个动作 ai:run：确保模型就绪（下载 + 加载）是 aiService 的内部步骤，
+  // 不暴露成独立通道（D14）。这里也**不存在** ai:discard / ai:pending-review（D18 已作废）。
+  const sendAiEvent = (channel: string, payload: unknown): void => {
+    const win = deps.getWindow();
+    if (win && !win.isDestroyed()) {
+      win.webContents.send(channel, payload);
+    }
+  };
+
+  /** 清单 + 本机状态一次拿全。只含实测跑通的条目（§4.3 硬规则：没跑通的连灰都不给看）。 */
+  const buildCatalog = async () => {
+    const usable = deps.ai.service.usableCatalog();
+    const capabilities = await Promise.all(
+      usable.map(async (cap) => {
+        const preferred = await deps.ai.service.defaultModelFor(cap.id);
+        return {
+          id: cap.id,
+          label: cap.label,
+          description: cap.description,
+          actionTag: cap.actionTag,
+          outputSuffix: cap.outputSuffix,
+          outputExt: cap.outputExt,
+          defaultModelId: preferred,
+          models: await Promise.all(
+            cap.models.map(async (m) => ({
+              id: m.id,
+              displayName: m.displayName,
+              sizeBytes: m.sizeBytes,
+              verified: m.verified,
+              status: await deps.ai.store.status(m.id),
+              loaded: deps.ai.runner.loadedModelId === m.id,
+              isDefault: preferred === m.id,
+              inputWidth: m.inputDims[3] ?? 0,
+              inputHeight: m.inputDims[2] ?? 0
+            }))
+          )
+        };
+      })
+    );
+    return { capabilities };
+  };
+
+  handle('ai:catalog', (): Promise<unknown> => buildCatalog());
+
+  handle('ai:run', (req: AiRunRequest): AiRunAck => {
+    const handle = deps.ai.service.startRun(req);
+    return { taskId: handle.taskId };
+  });
+
+  handle('ai:cancel', (taskId: string): boolean => deps.ai.service.cancel(taskId));
+
+  handle('ai:save', (taskId: string): Promise<unknown> => deps.ai.service.save(taskId));
+
+  // 模型管理（D17：唯一入口是组合按钮的下拉，设置页不重复提供这些操作）
+  handle('ai:model-download', async (modelId: string): Promise<unknown> => {
+    const target = deps.ai.service.findModelSpec(modelId);
+    if (!target) throw new Error(`清单里没有模型 ${modelId}`);
+    await deps.ai.store.download(target.spec);
+    return { modelId, status: await deps.ai.store.status(modelId) };
+  });
+
+  handle('ai:model-delete', async (modelId: string): Promise<unknown> => {
+    const loaded = deps.ai.runner.loadedModelId === modelId;
+    if (loaded) await deps.ai.runner.unload(); // 先释放显存再回收磁盘，别留半卸载状态
+    await deps.ai.store.remove(modelId);
+    return {
+      modelId,
+      status: await deps.ai.store.status(modelId),
+      reason: loaded ? '删除前已自动卸载该模型' : undefined
+    };
+  });
+
+  handle('ai:model-unload', async (modelId: string): Promise<unknown> => {
+    if (deps.ai.runner.loadedModelId !== modelId) {
+      return { modelId, status: await deps.ai.store.status(modelId), reason: '该模型本来未加载' };
+    }
+    await deps.ai.runner.unload();
+    return { modelId, status: await deps.ai.store.status(modelId), unloaded: true };
+  });
+
+  handle('ai:model-set-default', async (capabilityId: string, modelId: string): Promise<unknown> => {
+    await deps.ai.service.setDefaultModel(capabilityId, modelId);
+    return buildCatalog();
+  });
+
+  handle('ai:storage-stats', async (): Promise<unknown> => {
+    const [preview, freeDiskBytes] = await Promise.all([
+      deps.ai.service.previewStats(),
+      deps.ai.freeDiskBytes()
+    ]);
+    const installed = await deps.ai.store.installedModels();
+    return {
+      preview,
+      models: Object.entries(installed).map(([id, entry]) => ({
+        id,
+        sizeBytes: entry.sizeBytes,
+        status: 'present' as const
+      })),
+      loadedModelId: deps.ai.runner.loadedModelId,
+      freeDiskBytes,
+      retention: deps.ai.retention
+    };
+  });
+
+  // 事件转发：一次点击内可能是 download / load / infer / encode 四个阶段
+  deps.ai.service.subscribe((event) => {
+    if (event.type === 'progress') sendAiEvent('ai:progress', event.payload);
+    else if (event.type === 'done') sendAiEvent('ai:done', { ...event.payload });
+    else sendAiEvent('ai:error', event.payload);
+  });
 }

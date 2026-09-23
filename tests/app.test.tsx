@@ -61,7 +61,20 @@ function createMockApi(): PhotoTagApi {
     checkUpdate: vi.fn(async () => ({ ok: true as const, data: { state: 'not-available' as const } })),
     downloadUpdate: vi.fn(async () => ({ ok: true as const, data: { state: 'downloading' as const, percent: 0 } })),
     installUpdate: vi.fn(async () => ({ ok: true as const, data: { state: 'downloaded' as const, percent: 100 } })),
-    onUpdateStatus: vi.fn(() => () => undefined)
+    onUpdateStatus: vi.fn(() => () => undefined),
+    // 照片 AI 处理（M1）
+    aiCatalog: vi.fn(async () => ({ ok: true as const, data: { capabilities: [] } })),
+    aiRun: vi.fn(async () => ({ ok: true as const, data: { taskId: 'ai-1' } })),
+    aiCancel: vi.fn(async () => ({ ok: true as const, data: true })),
+    aiSave: vi.fn(async () => ({ ok: true as const, data: { savedPath: '', targetName: '', renamed: false, tagsWritten: [] } })),
+    aiModelDownload: vi.fn(async () => ({ ok: true as const, data: { modelId: 'u2netp', status: 'present' as const } })),
+    aiModelDelete: vi.fn(async () => ({ ok: true as const, data: { modelId: 'u2netp', status: 'absent' as const } })),
+    aiModelUnload: vi.fn(async () => ({ ok: true as const, data: { modelId: 'u2netp', status: 'present' as const } })),
+    aiModelSetDefault: vi.fn(async () => ({ ok: true as const, data: { capabilities: [] } })),
+    aiStorageStats: vi.fn(async () => ({ ok: true as const, data: { preview: { entries: 0, totalBytes: 0 }, models: [], loadedModelId: null, freeDiskBytes: null, retention: { retentionDays: 30, maxBytes: 1 } } })),
+    onAiProgress: vi.fn(() => () => undefined),
+    onAiDone: vi.fn(() => () => undefined),
+    onAiError: vi.fn(() => () => undefined),
   };
 }
 

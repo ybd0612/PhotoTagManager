@@ -113,6 +113,114 @@ export type IpcResult<T> =
   | { ok: true; data: T }
   | { ok: false; error: { code: string; message: string } };
 
+/** 模型在本机的状态（下拉里每行都要显示） */
+export type AiModelStatus = 'absent' | 'downloading' | 'present';
+
+/** 清单里的一个候选模型 + 它的本机状态（能力清单是唯一事实源，界面不写死任何字段） */
+export interface AiModelView {
+  id: string;
+  displayName: string;
+  sizeBytes: number;
+  /** 只有实测跑通的条目允许进 UI（规格 §4.3 硬规则） */
+  verified: boolean;
+  status: AiModelStatus;
+  /** 是否已加载进显存。加载对用户不可见（D14），但下拉里要如实显示 */
+  loaded: boolean;
+  isDefault: boolean;
+  /** 掩码在多少像素上算的：分屏模式要据此注明（§4.5） */
+  inputWidth: number;
+  inputHeight: number;
+}
+
+/** 一个行为（M1 只有「人像抠图」） */
+export interface AiCapabilityView {
+  id: string;
+  /** 主按钮文案，语义恒定不随内部状态变化（D13） */
+  label: string;
+  description: string;
+  /** 派生文件要追加的行为标签；UI / 写入 / 筛选都取这个字段（D10） */
+  actionTag: string;
+  outputSuffix: string;
+  outputExt: string;
+  defaultModelId: string;
+  models: AiModelView[];
+}
+
+export interface AiCatalogResult {
+  capabilities: AiCapabilityView[];
+}
+
+export interface AiRunRequest {
+  absPath: string;
+  capabilityId: string;
+  modelId?: string;
+  /** 首次下载的代价告知已由界面确认（AG2）。已下载时不需要 */
+  downloadApproved?: boolean;
+  /** 显式选 CPU 慢速模式（D12：必须用户显式勾选，不允许无声降级） */
+  backend?: 'dml' | 'cpu';
+}
+
+/** ai:run 立刻回 taskId；进度与结果一律走事件（一次点击内部走完下载与加载） */
+export interface AiRunAck {
+  taskId: string;
+}
+
+export type AiPhase = 'download' | 'load' | 'infer' | 'encode';
+
+export interface AiProgressPayload {
+  taskId: string;
+  phase: AiPhase;
+  percent?: number;
+}
+
+export interface AiDonePayload {
+  taskId: string;
+  /** 暂存文件的绝对路径（userData 下，不在照片目录内） */
+  tempPath: string;
+  sourceAbsPath: string;
+  /** true 表示命中缓存、没有重跑推理 */
+  cacheHit: boolean;
+  didApplySigmoid: boolean;
+  maskWidth: number;
+  maskHeight: number;
+  capabilityId: string;
+  modelId: string;
+  actionTag: string;
+  /** 界面据此显示"掩码在 NxN 下计算"，数值来自清单不硬编码 */
+  inputWidth: number;
+  inputHeight: number;
+}
+
+export interface AiErrorPayload {
+  taskId: string;
+  code: string;
+  message: string;
+}
+
+export interface AiSaveResult {
+  savedPath: string;
+  targetName: string;
+  /** true 表示首选举了名，实际写成 .cutout.N.png（§4.4 同名冲突） */
+  renamed: boolean;
+  tagsWritten: string[];
+}
+
+export interface AiStorageStats {
+  preview: { entries: number; totalBytes: number };
+  models: Array<{ id: string; sizeBytes: number; status: AiModelStatus }>;
+  loadedModelId: string | null;
+  /** 读不到时为 null，界面要显示"未知"而不是 0 */
+  freeDiskBytes: number | null;
+  retention: { retentionDays: number; maxBytes: number };
+}
+
+export interface AiModelOpResult {
+  modelId: string;
+  status: AiModelStatus;
+  /** 卸载/删除没生效时给一句原因，不静默 */
+  reason?: string;
+}
+
 /** preload 暴露到 window.api 的白名单接口（electron/preload.ts 与 src/api.ts 严格一致） */
 export interface PhotoTagApi {
   // 目录选择
@@ -157,4 +265,18 @@ export interface PhotoTagApi {
   downloadUpdate(): Promise<IpcResult<UpdateStatus>>;
   installUpdate(): Promise<IpcResult<UpdateStatus>>;
   onUpdateStatus(cb: (status: UpdateStatus) => void): () => void;
+  // 照片 AI 处理（M1：人像抠图）。用户侧只有 aiRun 一个动作——下载与加载是它的内部步骤（D14）
+  aiCatalog(): Promise<IpcResult<AiCatalogResult>>;
+  aiRun(req: AiRunRequest): Promise<IpcResult<AiRunAck>>;
+  aiCancel(taskId: string): Promise<IpcResult<boolean>>;
+  aiSave(taskId: string): Promise<IpcResult<AiSaveResult>>;
+  aiModelDownload(modelId: string): Promise<IpcResult<AiModelOpResult>>;
+  aiModelDelete(modelId: string): Promise<IpcResult<AiModelOpResult>>;
+  aiModelUnload(modelId: string): Promise<IpcResult<AiModelOpResult>>;
+  aiModelSetDefault(capabilityId: string, modelId: string): Promise<IpcResult<AiCatalogResult>>;
+  aiStorageStats(): Promise<IpcResult<AiStorageStats>>;
+  onAiProgress(cb: (p: AiProgressPayload) => void): () => void;
+  onAiDone(cb: (payload: AiDonePayload) => void): () => void;
+  onAiError(cb: (err: AiErrorPayload) => void): () => void;
+  // 注意：**没有** aiDiscard——D18 之后"不保存就是丢弃"，不需要显式删除动作
 }
