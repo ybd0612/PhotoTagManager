@@ -20,6 +20,9 @@ import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import { call, formatBytes, getApi, toFileUrl } from '../api';
 import { useAppStore } from '../store/useAppStore';
+import { useAiStore } from '../store/useAiStore';
+import { AiActionSplitButton } from './AiActionSplitButton';
+import { AiCompareView } from './AiCompareView';
 import type { ImageInfo } from '../../shared/types';
 
 /**
@@ -27,6 +30,7 @@ import type { ImageInfo } from '../../shared/types';
  */
 export function PreviewOverlay(): JSX.Element | null {
   const preview = useAppStore((s) => s.preview);
+  const aiResult = useAiStore((s) => s.result);
   const tagCache = useAppStore((s) => s.tagCache);
   const closePreview = useAppStore((s) => s.closePreview);
   const previewStep = useAppStore((s) => s.previewStep);
@@ -131,6 +135,20 @@ export function PreviewOverlay(): JSX.Element | null {
     } catch {
       setSnackbar('复制文件失败');
     }
+  };
+
+  /**
+   * 保存成功后的可见性处理（§4.4 C2）：明确告诉用户去哪看、要不要重扫，
+   * 不允许静默——点了保存却找不到文件，用户第一反应是保存失败。
+   */
+  const handleAiSaved = (saved: { targetName: string; renamed: boolean }): void => {
+    setSnackbar(
+      saved.renamed
+        ? '已保存为 ' +
+          saved.targetName +
+          '（同名已存在，序号顺延）；重新扫描该目录后出现在网格中'
+        : '已保存为 ' + saved.targetName + '；重新扫描该目录后出现在网格中'
+    );
   };
 
   const revealInExplorer = async (absPath: string): Promise<void> => {
@@ -315,6 +333,13 @@ export function PreviewOverlay(): JSX.Element | null {
         )}
       </Box>
 
+      {/* 底栏：AI 行为按钮 + 对比视图（无结果时 AiCompareView 自己返回 null） */}
+      <Box className="shrink-0 px-4 pt-3" sx={{ borderTop: '1px solid rgba(255,255,255,0.12)' }}>
+        <Stack direction="row" spacing={2} alignItems="flex-start" data-testid="ai-bar">
+          {absPath && <AiActionSplitButton absPath={absPath} />}
+          {aiResult && <AiCompareView onSaved={handleAiSaved} />}
+        </Stack>
+      </Box>
       {/* 底栏：标签 + 信息 */}
       <Box className="shrink-0 px-4 py-3" sx={{ borderTop: '1px solid rgba(255,255,255,0.12)' }}>
         <Stack direction="row" spacing={1} alignItems="center" className="mb-2 flex-wrap">
