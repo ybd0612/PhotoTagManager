@@ -48,6 +48,9 @@ export interface PreprocessedInput {
   scale: number;
   padX: number;
   padY: number;
+  /** 补边后内容区在目标画布上的实际尺寸，与 padX/padY 一起构成裁剪矩形 */
+  contentWidth: number;
+  contentHeight: number;
 }
 
 /** 补边像素值（转正后、缩放后的 RGB 空间用 0 填充）。 */
@@ -109,6 +112,8 @@ export async function preprocessImage(absPath: string, model: ModelSpec): Promis
     sourceHeight: rgb.height,
     scale,
     padX,
-    padY
+    padY,
+    contentWidth,
+    contentHeight
   };
 }

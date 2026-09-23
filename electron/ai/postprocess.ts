@@ -52,6 +52,32 @@ export interface NumericRange {
   max: number;
 }
 
+export interface MaskRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * 把掩码裁到"补边画布上的内容区"。
+ *
+ * 掩码是在等比缩放 + 居中补边后的画布上算出来的；不先裁掉补边就整幅放大回原图，
+ * 内容与原图会整体错位（横向图会被纵向拉伸）。越界部分夹进画布，空矩形退化为一像素。
+ */
+export function cropMaskPlane(plane: MaskPlane, rect: MaskRect): MaskPlane {
+  const width = Math.max(1, Math.min(Math.round(rect.width), plane.width));
+  const height = Math.max(1, Math.min(Math.round(rect.height), plane.height));
+  const x = Math.max(0, Math.min(Math.round(rect.x), plane.width - width));
+  const y = Math.max(0, Math.min(Math.round(rect.y), plane.height - height));
+  const out = new Float32Array(width * height);
+  for (let row = 0; row < height; row++) {
+    const from = (y + row) * plane.width + x;
+    out.set(plane.data.subarray(from, from + width), row * width);
+  }
+  return { data: out, width, height };
+}
+
 export interface AlphaResult {
   alpha: Uint8Array;
   didApplySigmoid: boolean;
