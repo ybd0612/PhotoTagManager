@@ -351,10 +351,12 @@ export class AiService {
     let tagsWritten: string[] = [];
     if (this.deps.meta) {
       try {
+        // 顺序不能反：exiftool 的 -all:all 会把 XMP-ptm:Tags 也从源图刷过去，
+        // 先写标签再复制 → 行为标签被源图的旧标签覆盖掉（端到端实测到过）。
+        await this.deps.meta.copyBase?.(run.sourceAbsPath, wanted);
         const inherited = await this.deps.meta.readTags(run.sourceAbsPath);
         tagsWritten = [...new Set([...inherited, cap.actionTag])];
         await this.deps.meta.writeTags(wanted, tagsWritten);
-        await this.deps.meta.copyBase?.(run.sourceAbsPath, wanted);
       } catch (err) {
         // 文件已经落在目录里，不能谎称保存失败；明确报元数据这一步出了问题
         throw new AiTaskError(

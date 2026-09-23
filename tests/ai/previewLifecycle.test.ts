@@ -142,11 +142,17 @@ describe('ai/aiService.save —— 移入原图旁', () => {
   it('② 元数据：先读原图标签，再往派生文件写「继承的标签 + 清单里的行为标签」', async () => {
     const saved = await service.save((await newPreview()).taskId);
     const write = meta.calls.find((c) => c.op === 'write');
-    expect(meta.calls[0]).toMatchObject({ op: 'read', absPath: photoPath });
+    expect(meta.calls.some((c) => c.op === 'read')).toBe(true);
     expect(write?.absPath).toBe(saved.savedPath);
     expect(write?.add).toEqual(['旅行', '2024', actionTag]);
     // 行为标签必须来自清单字段，而不是测试或实现里的字面量
     expect(actionTag).toBe('AI人像抠图');
+    // 顺序钉死：copyBase 会把 XMP-ptm:Tags 从源图刷回去，必须早于写标签，
+    // 否则刚追加的行为标签被覆盖（端到端实测到过这个 bug）
+    const copyIdx = meta.calls.findIndex((c) => c.op === 'copy');
+    const writeIdx = meta.calls.findIndex((c) => c.op === 'write');
+    expect(copyIdx).toBeGreaterThanOrEqual(0);
+    expect(copyIdx).toBeLessThan(writeIdx);
   });
 
   it('② 保留 EXIF/ICC：把原图元数据复制进派生文件', async () => {
