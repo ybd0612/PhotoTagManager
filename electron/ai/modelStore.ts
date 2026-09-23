@@ -209,7 +209,6 @@ export class ModelStore {
     }
 
     await rename(part, target);
-    return received;
   }
 
   private async readExisting(target: string, spec: ModelDownloadSpec) {
@@ -258,7 +257,7 @@ async function sha256OfFile(path: string): Promise<string> {
   await new Promise<void>((resolve, reject) => {
     const rs = createReadStream(path);
     rs.on('error', reject);
-    rs.on('data', (chunk: Buffer) => hash.update(chunk));
+    rs.on('data', (chunk: string | Buffer) => hash.update(chunk));
     rs.on('end', resolve);
   });
   return hash.digest('hex');
