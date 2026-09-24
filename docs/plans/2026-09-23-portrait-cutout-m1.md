@@ -238,14 +238,14 @@ Q16 失败可诊断性（错误码 + 查看日志入口）· Q17 同图多份暂
 ### 人工验收清单（一条命令一条观察 · 2026-09-24 整理）
 
 环境先说清楚，省得每条重复：安装包 `dist/PhotoTagManager-0.1.3-x64.exe`；
-**认包看字节**：最新 = **121,410,280**（16:07 重建：CPU 开关、后端变化重建会话、打包收紧、预览界面返工、**保存后自动刷新**）；
-`121,409,167` 是它前一版（**不含自动刷新**），`121,556,711` 是 12:54 的旧包（**连 §8-16 开关都没有**）。
+**认包看字节**：最新 = **121,409,548**（16:53 重建：CPU 开关、后端重建会话、打包收紧、界面返工、保存后自动刷新、**R29 移到回收站**）；
+`121,410,280` 是它前一版（**不含删除**），`121,556,711` 是 12:54 的旧包（**连 §8-16 开关都没有**）。
 暂存目录打包后为 `%APPDATA%\PhotoTagManager\ai-preview\`，dev 跑时为 `%APPDATA%\Electron\ai-preview\`
 （dev 的 `--user-data-dir` 实测就是 `AppData\Roaming\Electron`）。
 "全新环境"= 先删掉 `%APPDATA%\PhotoTagManager\models\` 与 `ai-preview\` 两个目录再启动。
 
 **不必装**：`dist/win-unpacked/PhotoTagManager.exe` 双击即跑，和 asar 里验过的是同一份代码；
-**认最新用文件时间**（`ls -l dist/win-unpacked/PhotoTagManager.exe`，最新是 16:07）。
+**认最新用文件时间**（`ls -l dist/win-unpacked/PhotoTagManager.exe`，最新是 16:53）。
 `userData` 由 productName 决定，**与装机版同为 `%APPDATA%\PhotoTagManager`**，进程名也是
 `PhotoTagManager`，所以 §8-27 那条按进程名过滤的命令在它能用。只有要验「安装/卸载体验」本身时才需要跑那个 exe。
 
