@@ -8,7 +8,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import sharp from 'sharp';
 
-import { PIPELINE_VERSION, loadUprightRgb, preprocessImage } from '../../electron/ai/preprocess';
+import { PIPELINE_VERSION, loadUprightRgb, preprocessImage, assertSingleFrame } from '../../electron/ai/preprocess';
 import type { ModelSpec } from '../../electron/ai/capabilityCatalog';
 
 const IMAGENET = { rescale: 1 / 255, mean: [0.485, 0.456, 0.406], std: [0.229, 0.224, 0.225] };
@@ -175,3 +175,27 @@ describe('ai/preprocess —— 张量形状与数值', () => {
     expect(out.padX).toBe(6);
   });
 });
+
+describe('ai/preprocess —— 输入形态闸门（§6 的 GIF/多帧与 RAW 行）', () => {
+  it('多帧输入（GIF/动图）明确拒绝，而不是静默取首帧当正常结果', async () => {
+    expect(() => assertSingleFrame({ pages: 2, width: 8, height: 4 })).toThrow(/多帧|动图/);
+    // 单帧必须放行（否则所有普通照片都被挡掉）
+    expect(() => assertSingleFrame({ pages: 1, width: 8, height: 4 })).not.toThrow();
+    expect(() => assertSingleFrame({ width: 8, height: 4 })).not.toThrow();
+  });
+
+  it('解码失败的原始字节给出可读原因，不抛裸异常', async () => {
+    const junk = join(tmp, 'broken.jpg');
+    await writeFile(junk, Buffer.from('这不是图片'));
+    const model = specWith(4, 4);
+    await expect(preprocessImage(junk, model)).rejects.toThrow(/无法解码|解码/);
+  });
+
+  it('真多帧 GIF 必须被拒绝（夹具由 ffmpeg 生成，pages=4）', async () => {
+    const gif = join(process.cwd(), 'tests', 'fixtures', 'ai', 'anim2.gif');
+    const meta = await sharp(gif).metadata();
+    // 夹具本身必须是多帧，否则这条断言又会是空转
+    expect((meta.pages ?? 1)).toBeGreaterThan(1);
+    await expect(preprocessImage(gif, specWith(4, 4))).rejects.toThrow(/多帧|动图/);
+  });
+};

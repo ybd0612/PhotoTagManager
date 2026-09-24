@@ -26,15 +26,44 @@ export interface UprightRgb {
  * 不吃标记。依赖默认行为等于把方向正确性押在依赖库的默认值上，属回归高发点。
  */
 export async function loadUprightRgb(absPath: string): Promise<UprightRgb> {
-  const { data, info } = await sharp(absPath)
-    .rotate()
-    .removeAlpha()
-    .raw()
-    .toBuffer({ resolveWithObject: true });
+  // 先读元数据：既拿方向也拿帧数，多帧输入必须在解码前就被挡下来
+  let meta: sharp.Metadata;
+  try {
+    meta = await sharp(absPath).metadata();
+  } catch (err) {
+    throw new Error(`无法解码该图片（RAW/HEIC 或文件损坏）：${decodeReason(err)}`);
+  }
+  assertSingleFrame(meta);
+
+  let data: Buffer;
+  let info: sharp.OutputInfo;
+  try {
+    const raw = await sharp(absPath).rotate().removeAlpha().raw().toBuffer({ resolveWithObject: true });
+    data = raw.data;
+    info = raw.info;
+  } catch (err) {
+    throw new Error(`无法解码该图片（RAW/HEIC 或文件损坏）：${decodeReason(err)}`);
+  }
   if (info.channels !== 3) {
     throw new Error(`解码后不是三通道 RGB（实际 ${info.channels} 通道），无法送入模型`);
   }
   return { data, width: info.width, height: info.height, channels: 3 };
+}
+
+function decodeReason(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * 输入形态闸门（§6 的「GIF / 多帧图」行）。
+ *
+ * 明确拒绝而不是静默取首帧：多帧 GIF 的抠图产物形态没有共识，
+ * 悄悄按首帧处理会产出一张"看起来成功"但与用户预期无关的图。
+ */
+export function assertSingleFrame(meta: { pages?: number }): void {
+  if ((meta.pages ?? 1) > 1) {
+    throw new Error('不支持多帧/动图输入（如 GIF）：M1 只处理单帧图片');
+  }
 }
 
 export interface PreprocessedInput {

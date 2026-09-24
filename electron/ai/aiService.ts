@@ -594,7 +594,13 @@ export class AiService {
 
     // ── 预处理 + 推理 ────────────────────────────────────────────────────
     this.emit(taskId, 'infer', 0);
-    const input = await preprocessImage(req.absPath, model);
+    let input: Awaited<ReturnType<typeof preprocessImage>>;
+    try {
+      input = await preprocessImage(req.absPath, model);
+    } catch (err) {
+      // RAW / HEIC / 多帧 GIF / 损坏文件：给专用码，界面能说明原因而不是"未知错误"
+      throw new AiTaskError('DECODE_FAILED', errorMessage(err));
+    }
     let reply;
     try {
       reply = await this.deps.runner.infer({ modelId: model.id, dims: input.dims, data: input.tensor });
