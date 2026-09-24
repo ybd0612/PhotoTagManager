@@ -98,6 +98,12 @@ export class ChildRunner implements InferenceRunner {
   private loadedId: string | null = null;
   private restarting = false;
   private restarts = 0;
+  /**
+   * 子进程代际。真机探针实测到的竞态：超时回收 child#1 后立刻拉起 child#2，
+   * child#1 迟到的 exit 事件若不加区分地处理，会把 child#2 的在途请求打死，
+   * 并把仍然存活、占着显存的 child#2 从台账上抹掉（等于泄漏一个 DirectML 会话）。
+   */
+  private generation = 0;
 
   private readonly spawn: SpawnChild;
   private readonly entry: string;
@@ -143,6 +149,7 @@ export class ChildRunner implements InferenceRunner {
 
   async dispose(): Promise<void> {
     const child = this.child;
+    this.generation += 1;
     this.child = null;
     this.loadedId = null;
     this.failAll(new Error('推理服务已关闭'));
@@ -152,8 +159,11 @@ export class ChildRunner implements InferenceRunner {
   /** 子进程由 Electron 的 utilityProcess 或测试假件提供，两者都实现 SpawnedChild。 */
   private ensureChild(): SpawnedChild {
     if (this.child) return this.child;
+    const gen = ++this.generation;
     const child = this.spawn(this.entry);
     child.onMessage((event) => {
+      // 旧代际子进程迟到事件一律丢弃：它自己的退出与新进程无关
+      if (gen !== this.generation) return;
       if (event.type === 'message') {
         this.settle(event.payload);
         return;
@@ -165,6 +175,7 @@ export class ChildRunner implements InferenceRunner {
   }
 
   private handleExit(code: number | null): void {
+    this.generation += 1;
     this.child = null;
     this.loadedId = null;
     // 原生层报错是进程级的：把当次任务变成可读错误，下一次请求自然拉起新进程。
@@ -174,14 +185,18 @@ export class ChildRunner implements InferenceRunner {
           `若反复失败，多半是该模型在本引擎上不支持（详见能力清单的实测标记）。`
       )
     );
-    if (!this.restarting) {
-      this.restarts += 1;
-      this.restarting = true;
-      queueMicrotask(() => {
-        this.restarting = false;
-      });
-      this.onRestart?.({ code, restartCount: this.restarts });
-    }
+    this.noteRestart(code);
+  }
+
+  /** 一次"进程被换掉"记一笔，无论是自己退出还是被我们回收。 */
+  private noteRestart(code: number | null): void {
+    if (this.restarting) return;
+    this.restarts += 1;
+    this.restarting = true;
+    queueMicrotask(() => {
+      this.restarting = false;
+    });
+    this.onRestart?.({ code, restartCount: this.restarts });
   }
 
   private send(type: ChildRequest['type'], payload: unknown, timeoutMs: number, label: string): Promise<unknown> {
@@ -192,10 +207,12 @@ export class ChildRunner implements InferenceRunner {
         // 超时说明子进程卡死：回收它，让下一次请求换一个新进程。
         this.pending.delete(id);
         reject(new ChildNotRespondingError(`${label} 超时（${Math.round(timeoutMs / 1000)} 秒），已中止`));
+        this.generation += 1;
         this.child = null;
         this.loadedId = null;
         this.failAll(new Error(`${label} 超时，推理子进程已被回收`));
         child.kill();
+        this.noteRestart(null);
       }, timeoutMs);
       this.pending.set(id, { resolve, reject, timer, label });
       child.postMessage({ id, type, payload } as ChildRequest);

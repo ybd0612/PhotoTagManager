@@ -223,6 +223,34 @@ describe('ai/runner —— 子进程生死与重启（D9）', () => {
     await runner.dispose();
   });
 
+  test('回收旧子进程后，它迟到的 exit 事件不得打死新子进程在途的请求', async () => {
+    // 真机崩溃探针实测到的竞态：超时 → runner 回收 child#1 → 立刻拉起 child#2 发请求 →
+    // child#1 的 exit(code=0) 这时才到，把它自己的退出误算到 child#2 的在途请求上。
+    let firstSilent = true;
+    const spawned: FakeChild[] = [];
+    const runner = new ChildRunner({
+      spawn: () => {
+        const child = new FakeChild();
+        child.autoReply = !firstSilent;
+        spawned.push(child);
+        return child;
+      },
+      entry: 'aiChild.js',
+      loadTimeoutMs: 40
+    });
+    await expect(runner.load({ modelPath: 'p', model: modelSpec() })).rejects.toThrow(/超时/);
+    firstSilent = false;
+
+    const pending = runner.load({ modelPath: 'p', model: modelSpec() });
+    await new Promise((r) => setTimeout(r, 5));
+    spawned[0].crash(0);
+
+    expect(typeof (await pending)).toBe('number');
+    expect(runner.loadedModelId).toBe('u2netp');
+    expect(runner.restartCount).toBe(1);
+    await runner.dispose();
+  });
+
   test('子进程回 ok:false 时错误原文透传给调用方', async () => {
     const { runner, spawned } = makeRunner({ autoReply: false });
     const pending = runner.load({ modelPath: 'p', model: modelSpec() });
