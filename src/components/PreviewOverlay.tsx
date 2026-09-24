@@ -4,7 +4,6 @@ import {
   Button,
   Chip,
   CircularProgress,
-  Divider,
   IconButton,
   InputAdornment,
   Stack,
@@ -227,6 +226,43 @@ export function PreviewOverlay(): JSX.Element | null {
     );
   };
 
+  // 深色预览层上的三级文字对比，统一在这里，不在 JSX 里各处手写 rgba
+  const TEXT = { mid: 'rgba(255,255,255,0.72)', dim: 'rgba(255,255,255,0.55)' } as const;
+
+  /** 元数据：原来自己占一行 + 一条 Divider，现在并进动作行右端 */
+  const metaBlock = (
+    <Stack
+      direction="row"
+      spacing={1.5}
+      alignItems="center"
+      data-testid="preview-meta"
+      sx={{ ml: 'auto', whiteSpace: 'nowrap', pl: 1 }}
+    >
+      {infoLoading ? (
+        <CircularProgress size={14} sx={{ color: TEXT.dim }} aria-label="正在读取图片信息" />
+      ) : infoError ? (
+        <Typography variant="caption" sx={{ color: 'error.light' }}>图片信息读取失败</Typography>
+      ) : (
+        <>
+          {info?.width && info?.height ? (
+            <Typography variant="caption" sx={{ color: TEXT.dim }}>{info.width} × {info.height}</Typography>
+          ) : null}
+          {info?.sizeBytes != null ? (
+            <Typography variant="caption" sx={{ color: TEXT.dim }}>{formatBytes(info.sizeBytes)}</Typography>
+          ) : null}
+          {info?.dateTimeOriginal ? (
+            <Typography variant="caption" sx={{ color: TEXT.dim }}>{info.dateTimeOriginal}</Typography>
+          ) : null}
+          {[info?.make, info?.model].filter(Boolean).join(' ') ? (
+            <Typography variant="caption" sx={{ color: TEXT.dim }}>
+              {[info?.make, info?.model].filter(Boolean).join(' ')}
+            </Typography>
+          ) : null}
+        </>
+      )}
+    </Stack>
+  );
+
   return (
     <Box
       ref={dialogRef}
@@ -235,7 +271,7 @@ export function PreviewOverlay(): JSX.Element | null {
       aria-labelledby="preview-overlay-title"
       tabIndex={-1}
       className="fixed inset-0 z-50 flex flex-col"
-      sx={{ bgcolor: 'rgba(2,6,23,0.94)', color: 'white' }}
+      sx={{ bgcolor: 'rgb(2,6,23)', color: 'white' }}
     >
       {/* 顶栏 */}
       <Stack
@@ -357,11 +393,20 @@ export function PreviewOverlay(): JSX.Element | null {
         )}
       </Box>
 
-      {/* 底栏：AI 行为按钮 + 对比动作条（舞台在大图区；无结果时动作条自己返回 null） */}
-      <Box className="shrink-0 px-4 pt-3" sx={{ borderTop: '1px solid rgba(255,255,255,0.12)' }}>
-        <Stack direction="row" spacing={2} alignItems="center" data-testid="ai-bar">
+      {/* 底栏上半：AI 动作 + 对比动作 + 元数据（原来元数据自己一行还配一条 Divider） */}
+      <Box className="shrink-0 px-4 pt-2.5" sx={{ bgcolor: 'rgba(255,255,255,0.05)' }}>
+        <Stack
+          direction="row"
+          spacing={1.5}
+          alignItems="center"
+          data-testid="ai-bar"
+          sx={{ flexWrap: 'wrap', rowGap: 1 }}
+        >
           {absPath && <AiActionSplitButton absPath={absPath} />}
           <AiCompareActions absPath={image.absPath} onSaved={handleAiSaved} />
+          {/* 真机确认：metaBlock 上的 ml:'auto' 在可换行的 Stack 里不生效，用显式撑开件 */}
+          <Box component="span" sx={{ flex: 1, minWidth: 8 }} />
+          {metaBlock}
         </Stack>
       </Box>
       <Menu
@@ -382,10 +427,10 @@ export function PreviewOverlay(): JSX.Element | null {
         </MenuItem>
       </Menu>
       {trashDialog}
-      {/* 底栏：标签 + 信息 */}
-      <Box className="shrink-0 px-4 py-3" sx={{ borderTop: '1px solid rgba(255,255,255,0.12)' }}>
-        <Stack direction="row" spacing={1} alignItems="center" className="mb-2 flex-wrap">
-          <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)' }}>
+      {/* 底栏下半：标签编辑（与上半同一块面板，不再各画一条分隔线） */}
+      <Box className="shrink-0 px-4 pb-2.5 pt-1" sx={{ bgcolor: 'rgba(255,255,255,0.05)' }}>
+        <Stack direction="row" spacing={1} alignItems="center" className="flex-wrap">
+          <Typography variant="caption" sx={{ color: TEXT.mid }}>
             标签：
           </Typography>
           {tags.map((tag) => (
@@ -420,40 +465,6 @@ export function PreviewOverlay(): JSX.Element | null {
               )
             }}
           />
-        </Stack>
-
-        <Divider sx={{ borderColor: 'rgba(255,255,255,0.12)', my: 1 }} />
-
-        <Stack direction="row" spacing={2} alignItems="center" className="flex-wrap">
-          {infoLoading ? (
-            <CircularProgress size={14} sx={{ color: 'rgba(255,255,255,0.6)' }} aria-label="正在读取图片信息" />
-          ) : infoError ? (
-            <Typography variant="caption" color="error">图片信息读取失败</Typography>
-          ) : (
-            <>
-              {/* 属性按需展示：内容为空则隐藏该属性 */}
-              {info?.width && info?.height ? (
-                <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)' }}>
-                  {info.width} × {info.height}
-                </Typography>
-              ) : null}
-              {info?.sizeBytes != null ? (
-                <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)' }}>
-                  {formatBytes(info.sizeBytes)}
-                </Typography>
-              ) : null}
-              {info?.dateTimeOriginal ? (
-                <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)' }}>
-                  {info.dateTimeOriginal}
-                </Typography>
-              ) : null}
-              {[info?.make, info?.model].filter(Boolean).join(' ') ? (
-                <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)' }}>
-                  {[info?.make, info?.model].filter(Boolean).join(' ')}
-                </Typography>
-              ) : null}
-            </>
-          )}
         </Stack>
       </Box>
     </Box>
