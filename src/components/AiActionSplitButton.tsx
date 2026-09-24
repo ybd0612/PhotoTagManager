@@ -1,11 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import ButtonGroup from '@mui/material/ButtonGroup';
 import Checkbox from '@mui/material/Checkbox';
 import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
 import DialogContentText from '@mui/material/DialogContentText';
+import Divider from '@mui/material/Divider';
 import FormControlLabel from '@mui/material/FormControlLabel';
+import Popover from '@mui/material/Popover';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import { describeDownloadCost, useAiStore } from '../store/useAiStore';
@@ -113,54 +117,53 @@ export function AiActionSplitButton({ absPath }: Props) {
 function CapabilityButton({ cap, absPath, running }: { cap: AiCapabilityView; absPath: string; running: boolean }) {
   const task = useAiStore((s) => s.task);
   const requestRun = useAiStore((s) => s.requestRun);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const percent = running ? Math.max(0, Math.min(100, task?.percent ?? 0)) : 0;
 
+  const closeMenu = (): void => {
+    setAnchor(null);
+    triggerRef.current?.focus();
+  };
+
   return (
-    <Stack direction="row" spacing={0} sx={{ flexShrink: 0 }}>
-      <Button
+    <Box sx={{ flexShrink: 0 }}>
+      <ButtonGroup
         size="small"
         variant="contained"
-        onClick={() => requestRun(absPath, cap.id)}
-        // 进行中不置灰：用 disabled 表达"忙"会让人以为程序坏了
-        aria-busy={running}
-        aria-valuenow={running ? percent : undefined}
-        aria-valuemin={running ? 0 : undefined}
-        aria-valuemax={running ? 100 : undefined}
-        aria-label={`${cap.label}`}
-        sx={{
-          // 背景从左往右填充表达进度，文字始终保持可读对比
-          backgroundImage: running
-            ? `linear-gradient(to right, rgba(255,255,255,0.28) ${percent}%, transparent ${percent}%)`
-            : 'none',
-          position: 'relative'
-        }}
+        disableElevation
+        sx={{ borderRadius: 1.5, '& .MuiButton-root': { textTransform: 'none', fontWeight: 600 } }}
       >
-        {cap.label}
-      </Button>
-      <Button
-        ref={triggerRef}
-        size="small"
-        variant="contained"
-        onClick={() => setMenuOpen((v) => !v)}
-        aria-haspopup="menu"
-        aria-expanded={menuOpen}
-        aria-label={`选择模型（当前 ${cap.defaultModelId}）`}
-        sx={{ minWidth: 0, px: 1 }}
-      >
-        ▾
-      </Button>
-      {menuOpen && (
-        <ModelMenu
-          cap={cap}
-          onClose={() => {
-            setMenuOpen(false);
-            triggerRef.current?.focus();
+        <Button
+          onClick={() => requestRun(absPath, cap.id)}
+          // 进行中不置灰：用 disabled 表达"忙"会让人以为程序坏了
+          aria-busy={running}
+          aria-valuenow={running ? percent : undefined}
+          aria-valuemin={running ? 0 : undefined}
+          aria-valuemax={running ? 100 : undefined}
+          aria-label={`${cap.label}`}
+          sx={{
+            // 背景从左往右填充表达进度，文字始终保持可读对比
+            backgroundImage: running
+              ? `linear-gradient(to right, rgba(255,255,255,0.28) ${percent}%, transparent ${percent}%)`
+              : 'none'
           }}
-        />
-      )}
-    </Stack>
+        >
+          {cap.label}
+        </Button>
+        <Button
+          ref={triggerRef}
+          onClick={(event) => setAnchor(anchor ? null : event.currentTarget)}
+          aria-haspopup="menu"
+          aria-expanded={!!anchor}
+          aria-label={`选择模型（当前 ${cap.defaultModelId}）`}
+          sx={{ minWidth: 0, px: 1 }}
+        >
+          ▾
+        </Button>
+      </ButtonGroup>
+      {anchor && <ModelMenu cap={cap} anchorEl={anchor} onClose={closeMenu} />}
+    </Box>
   );
 }
 
@@ -169,7 +172,15 @@ function primaryActionOf(model: AiModelView): { label: string; action: 'download
   return { label: model.loaded ? '卸载' : '删除', action: model.loaded ? 'unload' : 'delete' };
 }
 
-function ModelMenu({ cap, onClose }: { cap: AiCapabilityView; onClose: () => void }) {
+function ModelMenu({
+  cap,
+  anchorEl,
+  onClose
+}: {
+  cap: AiCapabilityView;
+  anchorEl: HTMLElement;
+  onClose: () => void;
+}) {
   const modelAction = useAiStore((s) => s.modelAction);
   const backend = useAiStore((s) => s.backend);
   const setBackend = useAiStore((s) => s.setBackend);
@@ -179,7 +190,10 @@ function ModelMenu({ cap, onClose }: { cap: AiCapabilityView; onClose: () => voi
   const models = cap.models;
 
   useEffect(() => {
-    itemRefs.current[active]?.focus();
+    // Modal 挂载时会自己动一次焦点，把"打开即落在当前行"那次冲掉；晚一帧再落位，
+    // 否则键盘用户打开菜单后第一次回车没有目标
+    const raf = requestAnimationFrame(() => itemRefs.current[active]?.focus());
+    return () => cancelAnimationFrame(raf);
   }, [active]);
 
   const run = (index: number) => {
@@ -223,7 +237,7 @@ function ModelMenu({ cap, onClose }: { cap: AiCapabilityView; onClose: () => voi
   // 后端是运行时选择，不挂在某个模型行上；D17 要求动作可点、能 Tab 到，所以用原生 checkbox
   const backendToggle = (
     <FormControlLabel
-      sx={{ px: 1.25, display: 'block' }}
+      sx={{ px: 1.5, py: 0.5, display: 'block' }}
       control={
         <Checkbox
           size="small"
@@ -231,66 +245,92 @@ function ModelMenu({ cap, onClose }: { cap: AiCapabilityView; onClose: () => voi
           onChange={(event) => setBackend(event.target.checked ? 'cpu' : 'dml')}
         />
       }
-      label={<span style={{ fontSize: 13 }}>{CPU_TOGGLE_LABEL}</span>}
+      label={<Typography variant="body2">{CPU_TOGGLE_LABEL}</Typography>}
     />
   );
 
   return (
-    <div
-      style={{
-        position: 'absolute',
-        zIndex: 10,
-        background: '#fff',
-        border: '1px solid rgba(0,0,0,0.12)',
-        borderRadius: 4,
-        minWidth: 260,
-        padding: '4px 0'
+    <Popover
+      open
+      anchorEl={anchorEl}
+      onClose={onClose}
+      anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+      disableAutoFocus
+      disableRestoreFocus
+      disableScrollLock
+      PaperProps={{
+        // 主题色而不是硬编码 #fff：深色预览层里继承的白字落到白底上就是一片看不见
+        sx: {
+          minWidth: 330,
+          bgcolor: 'background.paper',
+          color: 'text.primary',
+          border: 1,
+          borderColor: 'divider',
+          boxShadow: 6
+        }
       }}
     >
-      <ul role="menu" aria-label={`${cap.label} 的候选模型`} onKeyDown={onKeyDown} style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+      <ul role="menu" aria-label={`${cap.label} 的候选模型`} onKeyDown={onKeyDown} style={{ listStyle: 'none', margin: 0, padding: '4px 0' }}>
         {models.map((model, index) => {
           const primary = primaryActionOf(model);
           return (
-            <li
+            <Box
+              component="li"
               key={model.id}
               role="menuitem"
-              ref={(el) => {
+              ref={(el: HTMLLIElement | null) => {
                 itemRefs.current[index] = el;
               }}
               // 只让当前行可被 Tab 落到，其余靠方向键换行
               tabIndex={index === active ? 0 : -1}
               onFocus={() => setActive(index)}
-              style={{ padding: '6px 10px', background: index === active ? 'rgba(25,118,210,0.08)' : undefined }}
+              sx={{
+                px: 1.5,
+                py: 0.75,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1.5,
+                bgcolor: index === active ? 'action.selected' : 'transparent'
+              }}
             >
-              <span>
-                {model.displayName} · {describeDownloadCost(model.sizeBytes).split('，')[0]} ·{' '}
-                {model.status === 'present' ? (model.loaded ? '已加载' : '已下载') : '未下载'}
-              </span>
-              <Stack direction="row" spacing={0.5} sx={{ ml: 1, display: 'inline' }}>
+              <Box sx={{ minWidth: 0, flex: 1 }}>
+                <Typography variant="body2" noWrap>
+                  {model.displayName}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" noWrap>
+                  {describeDownloadCost(model.sizeBytes).split('，')[0]} ·{' '}
+                  {model.status === 'present' ? (model.loaded ? '已加载' : '已下载') : '未下载'}
+                  {model.isDefault ? ' · 默认' : ''}
+                </Typography>
+              </Box>
+              <Stack direction="row" spacing={0.5}>
                 <Button
                   size="small"
                   onClick={() => void modelAction(model.id, primary.action).then(onClose)}
                   data-testid={`model-action-${primary.label}`}
+                  sx={{ textTransform: 'none' }}
                 >
                   {primary.label}
                 </Button>
                 {model.status === 'present' && !model.loaded && (
-                  <Button size="small" onClick={() => void modelAction(model.id, 'unload')}>
+                  <Button size="small" sx={{ textTransform: 'none' }} onClick={() => void modelAction(model.id, 'unload')}>
                     卸载
                   </Button>
                 )}
                 {!model.isDefault && (
-                  <Button size="small" onClick={() => void modelAction(model.id, 'set-default')}>
+                  <Button size="small" sx={{ textTransform: 'none' }} onClick={() => void modelAction(model.id, 'set-default')}>
                     设为默认
                   </Button>
                 )}
               </Stack>
-            </li>
+            </Box>
           );
         })}
       </ul>
+      <Divider />
       {backendToggle}
-    </div>
+    </Popover>
   );
 }
 

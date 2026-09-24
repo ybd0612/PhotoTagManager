@@ -3,7 +3,7 @@
 // 盯三条硬约束：主按钮语义恒定不置灰、进行中用背景进度 + 可取消、下拉必须可键盘导航。
 // 只用原生 DOM 断言：项目没装 @testing-library/jest-dom，不为此加依赖。
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, within, act } from '@testing-library/react';
+import { render, screen, fireEvent, within, act, waitFor } from '@testing-library/react';
 
 import { AiActionSplitButton } from '../../src/components/AiActionSplitButton';
 import { useAiStore, describeDownloadCost } from '../../src/store/useAiStore';
@@ -275,19 +275,29 @@ describe('AiActionSplitButton —— 组合按钮', () => {
     expect(screen.getByRole('button', { name: /取消/ })).toBeTruthy();
   });
 
-  it('③ 下拉可纯键盘操作：Tab 进入、方向键换行、回车执行该行主动作', () => {
+  it('③ 下拉可纯键盘操作：打开即落在当前行、方向键换行、回车执行该行主动作', async () => {
+    seedCatalog({
+      ...baseCap,
+      models: [
+        baseCap.models[0],
+        { ...baseCap.models[0], id: 'birefnet', displayName: 'BiRefNet', isDefault: false }
+      ]
+    });
     render(<AiActionSplitButton absPath="C:/photos/a.jpg" />);
     fireEvent.click(screen.getByRole('button', { name: /选择模型/ }));
     const menu = screen.getByRole('menu');
     const items = within(menu).getAllByRole('menuitem');
-    expect(items[0].textContent).toContain('U²-Netp');
-    expect(items[0].textContent).toMatch(/4\.4MB/);
-    // Tab 能进到菜单：当前行 tabIndex=0，其余 -1（不让 Tab 键逐个穿过所有行）
+    expect(items).toHaveLength(2);
+    // 只让当前行可被 Tab 落到，其余靠方向键换行
     expect(items[0].getAttribute('tabindex')).toBe('0');
+    expect(items[1].getAttribute('tabindex')).toBe('-1');
+    // 焦点在下一帧落位（Modal 挂载时自己会动一次焦点）
+    await waitFor(() => expect(document.activeElement).toBe(items[0]));
 
     fireEvent.keyDown(menu, { key: 'ArrowDown' });
+    await waitFor(() => expect(document.activeElement).toBe(items[1]));
     fireEvent.keyDown(menu, { key: 'ArrowUp' });
-    expect(document.activeElement).toBe(within(menu).getAllByRole('menuitem')[0]);
+    await waitFor(() => expect(document.activeElement).toBe(items[0]));
 
     // 已下载未加载 → 主动作是删除；不静默什么都不做
     fireEvent.keyDown(menu, { key: 'Enter' });
@@ -311,6 +321,25 @@ describe('AiActionSplitButton —— 组合按钮', () => {
     fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
     expect(screen.queryByRole('menu')).toBeNull();
     expect(document.activeElement).toBe(trigger);
+  });
+
+  it('菜单不得挂在预览层深色容器内：那里 color:white，白底菜单会变成白底白字（实测缺陷）', () => {
+    const { container } = render(
+      <div data-testid="dark-overlay" style={{ color: '#ffffff' }}>
+        <AiActionSplitButton absPath="C:/photos/a.jpg" />
+      </div>
+    );
+    const overlay = screen.getByTestId('dark-overlay');
+    expect(within(overlay).getByRole('button', { name: /选择模型/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /选择模型/ }));
+    const menu = screen.getByRole('menu');
+    // 挂在深色容器里 = 继承 color:white；渲染到 Portal 才拿得到主题默认文字色
+    expect(overlay.contains(menu)).toBe(false);
+    expect(container.contains(menu)).toBe(false);
+    // 模型行的可见文字也不能继承到白色
+    const row = within(menu).getAllByRole('menuitem')[0];
+    expect(overlay.contains(row)).toBe(false);
+    expect(row.textContent).toContain('U²-Netp');
   });
 
   it('hover 不承载动作：悬停不出现浮层，按钮数恒定两个', () => {
@@ -344,6 +373,9 @@ describe('AiActionSplitButton —— 组合按钮', () => {
     render(<AiActionSplitButton absPath="C:/photos/a.jpg" />);
     fireEvent.click(screen.getByRole('button', { name: /选择模型/ }));
     fireEvent.click(screen.getByRole('checkbox', { name: /CPU/ }));
+    expect(screen.getByTestId('ai-backend-notice')).toBeTruthy();
+    // 菜单是模态浮层（开着时应用容器被标 aria-hidden），关掉再操作主按钮
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
 
     const primary = screen.getByRole('button', { name: /^抠图$/ }) as HTMLButtonElement;
     expect(primary.disabled).toBe(false);
