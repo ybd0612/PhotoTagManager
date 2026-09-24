@@ -91,8 +91,11 @@ app.whenReady().then(async () => {
   // ---- B1：在途请求遇到子进程真死 ----
   let b1Err = null;
   const inflight = runner.load({ modelPath: U2NETP, model: U2, backend: 'dml' }).catch((e) => { b1Err = e; });
-  await new Promise((r) => setTimeout(r, 400));
+  // u2netp 的 DirectML 加载实测 7~8s，等 1.5s 时请求必定仍在途；
+  // 早先只等 400ms 时 UtilityProcess.pid 还没落地（读到空），kill 实际从未发生。
+  await new Promise((r) => setTimeout(r, 1500));
   const pid0 = live.length ? live[live.length - 1].pid : null;
+  check('B1 真的拿到了子进程 pid 并下了 kill', !!pid0, `pid=${pid0 ?? 'undefined'}`);
   if (pid0) process.kill(pid0);
   const b1Started = Date.now();
   await inflight;
@@ -145,7 +148,14 @@ app.whenReady().then(async () => {
   check('R 恢复后 u2netp 推理成功', !recErr && !!rec, `backend=${rBackend} 用时 ${rCost}ms ${forkInfo}；${recErr ? String(recErr.message).slice(0, 90) : 'ok'}`);
   check('R 掩码形状正确', !!rec && rec.data.length === 102400 && rec.dims.join('x') === '1x1x320x320',
     rec ? `len=${rec.data.length} dims=${rec.dims.join('x')} out=${rec.outputName}` : '');
-  check('R 自动重启确实发生过', runner.restartCount > restartsAfterB1, `restartCount=${runner.restartCount}`);
+  // 判据：B1 真杀进程引发的重启必须已发生，且 R 是在重启后的新进程上跑通的。
+  // A 的实测形态是错误在子进程内被 createMessageHandler 捕获（进程没死），
+  // 按设计不产生重启——早先写成"要求 A 之后再重启一次"是判据错，不是产品问题。
+  check(
+    'B1 的真死已触发重启且 R 跑在新进程上',
+    runner.restartCount >= 1 && restartsAfterB1 >= 1,
+    `restartCount=${runner.restartCount}（B1 后=${restartsAfterB1}，A 是否另起重启=${runner.restartCount > restartsAfterB1}）`
+  );
   check('R 窗口最终存活', !win.isDestroyed());
 
   clearTimeout(watchdog);

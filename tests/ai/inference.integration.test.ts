@@ -14,7 +14,14 @@ import {
   type ChildReply,
   type ChildRequest
 } from '../../electron/ai/inferenceChild';
-import { ChildRunner, ChildNotRespondingError, type SpawnedChild, type ChildListener } from '../../electron/ai/runner';
+import {
+  ChildRunner,
+  ChildNotRespondingError,
+  makeUtilityProcessSpawner,
+  type SpawnedChild,
+  type ChildListener,
+  type UtilityProcessLike
+} from '../../electron/ai/runner';
 import { getModel } from '../../electron/ai/capabilityCatalog';
 
 const FIXTURE = join(process.cwd(), 'tests', 'fixtures', 'models', 'u2netp.onnx');
@@ -265,6 +272,39 @@ describe('ai/runner —— 子进程生死与重启（D9）', () => {
     await runner.dispose();
     await expect(pending).rejects.toThrow(/已关闭/);
     expect(spawned[0].killed).toBe(1);
+  });
+});
+
+// ── 三点五、适配器必须跟 Electron 的载荷形状对齐 ─────────────────────────
+describe('ai/runner —— utilityProcess 适配器载荷形状（真机探针实测到的 bug）', () => {
+  it('Electron 父进程把消息本体直接交给监听器（不套 data 信封），在途请求必须能结算', async () => {
+    // 真机表现：所有 load / infer 都只能等到超时。原因就在适配器按 MessagePort 的
+    // 惯例读 message.data —— Electron 的 utilityProcess 'message' 给的是消息本体，
+    // 于是 reply.id 是 undefined，pending 永不命中。node 假件讲的是内部 ChildEvent
+    // 形状，所以两百多个用例全绿也照不出来。
+    const replyListeners: Array<(payload: unknown) => void> = [];
+    const exitListeners: Array<(code: number | null) => void> = [];
+    const fakeUtilityProcess = {
+      fork: () => ({
+        pid: 4242,
+        postMessage: (msg: { id: number }) => {
+          // 模拟 Electron：答复原样交给监听器，没有 { data: ... } 这一层
+          setTimeout(() => replyListeners.forEach((l) => l({ id: msg.id, ok: true, data: { loadMs: 7, outputNames: ['x'] } })), 0);
+        },
+        kill: () => {},
+        on: (event: string, cb: (arg: never) => void) => {
+          if (event === 'message') replyListeners.push(cb as (payload: unknown) => void);
+          if (event === 'exit') exitListeners.push(cb as unknown as (code: number | null) => void);
+        }
+      })
+    };
+    const runner = new ChildRunner({
+      spawn: makeUtilityProcessSpawner(fakeUtilityProcess as unknown as UtilityProcessLike),
+      entry: 'aiChild.js',
+      loadTimeoutMs: 500
+    });
+    await expect(runner.load({ modelPath: 'p', model: modelSpec() })).resolves.toBe(7);
+    await runner.dispose();
   });
 });
 

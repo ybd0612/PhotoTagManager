@@ -1,7 +1,7 @@
 # 人像抠图（M1）实施任务清单
 
 > 版本：v1.2 · 日期：2026-09-24 · 状态：**代码完成，待人工验收**（§8 中标注"待人工"的条目需在真实安装包上走一遍；
-> 另有两个**不是"待人工"而是待裁定/待定位**的开口：§8-16 缺 CPU 显式开关、§8-18 崩溃后服务不可继续，见文末两节）
+> 另有一个**不是"待人工"而是待裁定**的开口：§8-16 缺 CPU 显式开关（`AiRunRequest.backend` 无人传值），见文末说明）
 >
 > **规格权威源：[docs/design/ai-photo-processing.md](../design/ai-photo-processing.md)（v0.6）**。本文件只负责"怎么拆、按什么顺序做、每步做完算交付"。两者冲突时**以规格文档为准**，并回来改本文件。
 >
@@ -220,7 +220,7 @@ Q16 失败可诊断性（错误码 + 查看日志入口）· Q17 同图多份暂
 | 15 | 底栏只有已实测的行为 | 自动 ✓ | `aiUi.test.tsx`（verified 过滤） |
 | 16 | CPU 模式限核并说明代价 | 部分 | `buildSessionOptions` 单测锁线程数；**任务管理器观察待人工** |
 | 17 | 显存不足可读提示 + 一键卸载 | **待人工** | 需连续加载多模型构造 |
-| 18 | 子进程崩溃后主窗口存活 | **一半通过 / 恢复未通过** | 真机探针：崩溃捕获成可读错误、主进程与窗口存活、自动重启计数 ✓；但"重启后 u2netp 仍能跑"**不通过**（第二次 fork 的子进程无应答，根因未定位）→ 见文末《§8-18 真机崩溃恢复探针》 |
+| 18 | 子进程崩溃后主窗口存活 + 重启后仍能跑 | **自动 ✓（真机 Electron）** | `npm run verify:ai-crash` 全绿 exit 0：真杀进程后可读失败 68ms、主进程与窗口存活、BiRefNet 的 DmlFusedNode 被子进程内捕获、重启后 u2netp 6.6s 出正确掩码。**过程中揪出并修掉一个会让装机版抠图完全跑不通的传输 bug**，见文末《§8-18》 |
 | 19 | 暂存不污染视图 | 自动 ✓ | `cutoutE2E` 断言结果只落 `ai-preview` |
 | 20 | 缓存命中不重跑；改图必须重跑 | 自动 ✓ | `aiService` + `cutoutE2E`（inferCount 不变） |
 | 21 | 缓存键含参数 | 自动 ✓ | `cacheKey` 五分量变异反证各红一次 |
@@ -367,65 +367,66 @@ node 环境的集成测试只能证明 `ChildInference` 本身，证明不了 `a
 不设绝对耗时阈值，避免换机器就假红。§8-16 由"部分"升为自动证据；
 **界面必须写明"当前走 CPU、会慢很多"这条仍属人工观察项。**
 
-## §8-18 真机崩溃恢复探针（2026-09-24，一半通过 / 恢复未通过）
+## §8-18 真机崩溃恢复探针（2026-09-24，**全绿 exit 0**，顺带揪出一个致命传输 bug）
 
-跑法：`npm run verify:ai-crash`（= `electron-vite build && electron scripts/ai-crash-probe.cjs`）。
-探针**不自带 runner 副本**：新增构建入口 `out/main/crashHarness.js` 暴露生产的 `ChildRunner` +
-`makeUtilityProcessSpawner`，与 `out/main/index.js` require 的是同一个 `out/main/chunks/runner-*.js`
-（已核对，因此跑绿跑红都算在发布代码头上）。三段场景：
-B1 在途请求遇到子进程真死 → A 注入必崩模型 BiRefNet-lite@DirectML → R 崩溃后服务必须还能用。
+跑法：`npm run verify:ai-crash`。探针**不自带 runner 副本**：新增构建入口
+`out/main/crashHarness.js` 暴露生产的 `ChildRunner` + `makeUtilityProcessSpawner`，
+与 `out/main/index.js` require 的是同一个 `out/main/chunks/runner-<hash>.js`
+（已核对，因此跑绿跑红都算在发布代码头上）。三段场景：B1 在途请求遇到子进程真死 →
+A 注入必崩模型 BiRefNet-lite@DirectML → R 崩溃后服务必须还能用。
 判定不过 exit 1，探针自身总超时 exit 3。
+上一会话"探针跑很久没结果"的真因是脚本自身正则没闭合（`node --check` 一条命令即暴露），
+Electron 主进程加载失败弹的是**原生阻塞对话框**，进程挂着而 stdout 永远为空。
 
-### 已通过（实测）
+### 根因：`makeUtilityProcessSpawner` 解包解错了层
+
+`electron/ai/runner.ts` 原来读 `payload = message.data`。**套 `{ data }` 信封的是子进程那侧的
+`process.parentPort`；Electron 的 `utilityProcess.on('message')` 在父进程侧直接把消息本体交出来。**
+于是 `reply.id` 恒为 `undefined` → `pending.get(undefined)` 不命中 →
+**每一条子进程答复都被静默丢弃**，主进程只能等到超时。
+这不是崩溃恢复的边角问题：**修之前，装机版里没有任何一次抠图能走通。**
+
+为什么 220 个用例全绿也照不出来：runner 的测试假件讲的是**内部 `ChildEvent` 形状**，
+从没经过 `makeUtilityProcessSpawner` 这一层；而昨天通过的 `verify:ai-child` 探针自带一套
+手工收发（读的是 `msg.id`，恰好就是 Electron 的真实形状），所以它好、生产路径坏。
+**教训：跨进程适配器必须有一条"按宿主真实形状"的用例，不能让假件替宿主说话。**
+补的用例先红（`ChildNotRespondingError: 加载模型 u2netp 超时（1 秒）`）后绿。
+
+### 修好后的真机实测（`probe-exit=0`，总耗时 30.5s）
 
 | 断言 | 实测 |
 |---|---|
-| 崩溃/退出被捕获成可读错误，不静默成功 | `推理子进程已退出（code=1）。当次任务未完成，可直接重试…` |
-| 不把调用方挂住 | 在途请求 **8~11ms** 返回错误（阈值 60s） |
-| 主进程存活 | 全程存活，`process.uptime()` 正常增长 |
-| BrowserWindow 未被带崩 | 每一段 `!win.isDestroyed()` 均为真 |
-| 自动重启确实发生 | `restartCount` 随每次回收累加（2~3） |
+| B1 真的拿到 pid 并下了 kill | 通过。早先只等 400ms 时 `.pid` 还是空、kill 从未真的执行——已把等待改到 1.5s 并把"是否真杀"写成断言 |
+| B1 在途任务以可读错误失败、不静默成功 | `推理子进程已退出（code=1）…`，**68ms** 返回（阈值 60s） |
+| B1 主进程与 BrowserWindow 存活 | 均通过 |
+| A 注入 BiRefNet-lite@DirectML | `load 9053ms` **成功**，执行期抛 `DmlFusedNode_19_64`，被 `createMessageHandler` 捕获成可读错误（进程没死，形态 = caught-in-child） |
+| R 崩溃后服务仍可用 | 新进程上 u2netp **6626ms** 加载 + 推理成功，掩码 `len=102400 dims=1x1x320x320 out=1959` |
+| R 重启确实发生且跑在新进程上 | `restartCount=1`（由 B1 引发；A 按设计不产生重启） |
+| 整卡显存采样 | B1 后 1366 MiB → A 后 **7734 MiB**（逼近本机 8151）→ R 仍成功 |
 
-### 未通过：崩溃之后服务不能再跑（根因未定位）
+两条可用事实：① BiRefNet 一次失败加载就把整卡顶到 7.7GB，**§8-17 的显存压力条件几乎自然出现**；
+② 子进程退出后 `.pid` 会读成空，所以"pid 为空"不能当"进程没起来"的证据——
+判 kill 是否真发生必须在 kill 之前取 pid 并断言。
 
-| 现象 | 实测数字 |
-|---|---|
-| A 段 BiRefNet-lite@DirectML **会话创建不返回** | 120s / 240s 两轮均无应答，只能靠超时回收 |
-| A 中止后 R 段新建 u2netp 会话 | 不返回（≥98s，被探针看门狗截断） |
-| 跳过 A、只让子进程死一次（`CP_SKIP_A=1`）后 R | **同样不返回**：30s / 120s 均超时 |
-| R 改走 CPU 后端（`CP_R_BACKEND=cpu`） | **同样不返回** 120s → 与后端无关 |
-| 整卡显存 | A 前后恒定 **1465~1466 MiB** → 不是显存没回收 |
-| fork 计数 | `forks=2 pids=,43616`：**第一个子进程 pid 读不到、启动即 code=1**；第二个 pid 存活但完全不应答 |
-| 对照组 `npm run verify:ai-child`（同一次构建、单进程、不杀） | 一切正常：`loadMs=2156`、`inferMs=36`、7 个输出、exit code 0 |
+### 撤回本节先前写下的两条结论（都是被上面这个 bug 遮蔽出的假象）
 
-结论：**不是模型、不是 DirectML、不是显存**。症状是"同一个主进程里第二次 `utilityProcess.fork`
-出来的 aiChild 完全不应答"。对照组证明同一份 `aiChild.js` 单次 fork 是好的。
+1. ~~"崩溃之后服务不能再跑 / 同一主进程内第二次 `utilityProcess.fork` 完全不应答"~~
+   —— 不是二次 fork 的问题，是**所有**答复都没被结算；修好后 R 一次通过。
+2. ~~"BiRefNet@DirectML 的失败形态是会话创建挂死 120~240s，M0 记的'加载成功'不再成立"~~
+   —— **M0 的记述完全正确**：加载成功（本次 9.1s）、执行期抛 `DmlFusedNode_19_64`。
+   之前看到的"挂死"就是 reply 被丢导致的超时。结论方向不变：BiRefNet 在 DirectML 上不可用，
+   M1 不承诺通用抠图。仍然成立的新增实测：BiRefNet 真实输入张量名是 **`input_image`**
+   （旧探针误写 `input.1`）、CPU 侧读它的元数据要 **17.1s**。
 
-留给下一轮的定位入口（按嫌疑从大到小）：
-1. 第一个子进程为何"启动即 code=1 且 pid 为空"——探针的 fork 包装 `live.push(c)` 拿到的是
-   `UtilityProcess`，`.pid` 在退出后是否会被清空需先确认，别把探针的观测缺陷当成产品缺陷；
-2. `utilityProcess.fork` 在同一 app 生命周期内第二次调用是否需要显式 `{ stdio: 'pipe' }` 或端口；
-3. 若是产品问题，影响面是**所有真机崩溃恢复**（用户碰到一张坏图后 AI 功能会一直不可用直到重启应用），
-   必须在 M1 发布前定论，不能只记"待人工"。
+### 本轮两个真实产品修复与一条提醒
 
-### 顺手修掉的一个真实产品 bug（红→绿）
-
-探针第一轮暴露：`ChildRunner` 处理 `exit` 事件**没有代际隔离**——超时回收 child#1 后立刻拉起
-child#2，child#1 迟到的 `exit` 会走 `handleExit`，把 child#2 的在途请求一起 `failAll`，
-并把**仍然存活、占着显存的 child#2 从台账上抹掉**（等于泄漏一个会话）。
-新增用例「回收旧子进程后，它迟到的 exit 事件不得打死新子进程在途的请求」先红
-（`loadedModelId` 被清成 null），修 `electron/ai/runner.ts` 后转绿：
-每个子进程一个 `generation`，非当前代际的事件直接丢弃；`handleExit` / 超时回收 / `dispose`
-三处都作废代际，超时回收同时计一次重启（原先只在 exit 里计数，修完代际后会漏计）。
-
-### 对既有记述的两处更正
-
-1. **「BiRefNet-lite 加载能成功、一执行就 DmlFusedNode，别被加载成功骗」这句不再成立**：
-   本轮 `InferenceSession.create` 在 DirectML 上 120~240s 都不返回。结论方向不变
-   （BiRefNet 在 DirectML 上不可用、M1 不承诺通用抠图），但**失败形态是会话创建挂死，不是执行期抛错**。
-   顺带补两个实测值：CPU 读它的元数据 **17.1s**；真实输入张量名是 **`input_image`**（旧探针误写 `input.1`）。
-2. **生产默认加载上限 30s 装不下 224MB 级模型**（`DEFAULT_LOAD_TIMEOUT_MS = 30_000`）。
-   M1 只发 u2netp（4.4MB，2.2s）不受影响，但 M3 加任何百 MB 级模型前必须先把加载预算做成按模型体积的参数。
+- **载荷解包**（上面那个，影响"整个功能在装机版能不能跑"）。
+- **代际隔离**：超时回收 child#1 后立刻拉起 child#2 时，child#1 迟到的 `exit` 会走 `handleExit`，
+  把 child#2 的在途请求一起 `failAll`，并把仍存活、占着显存的 child#2 从台账抹掉
+  （等于泄漏一个会话）。改法：每个子进程一个 `generation`，非当前代际的事件直接丢弃；
+  `handleExit` / 超时回收 / `dispose` 三处都作废代际，超时回收同时计一次重启。
+- **加载预算**：BiRefNet 一次加载实测 9.1s，而 `DEFAULT_LOAD_TIMEOUT_MS = 30_000` 只剩 3 倍余量，
+  模型再大就不够。M1 只发 4.4MB 的 u2netp 不受影响；M3 加百 MB 级模型前要把加载上限做成按体积算的参数。
 
 ### 打包新增依赖（本轮改动带来的）
 

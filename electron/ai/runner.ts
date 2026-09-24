@@ -53,7 +53,7 @@ export interface UtilityProcessLike {
   fork(modulePath: string): {
     postMessage(message: unknown): void;
     kill(): void;
-    on(event: 'message', listener: (message: { data: unknown }) => void): void;
+    on(event: 'message', listener: (message: ChildReply) => void): void;
     on(event: 'exit', listener: (code: number | null) => void): void;
   };
 }
@@ -67,7 +67,10 @@ export function makeUtilityProcessSpawner(utilityProcess: UtilityProcessLike): S
         child.kill();
       },
       onMessage: (listener) => {
-        child.on('message', (message) => listener({ type: 'message', payload: message.data as never }));
+        // 别在这里读 message.data：父进程的 'message' 直接把消息本体交出来，
+        // 套 { data } 信封的是子进程那侧的 process.parentPort。读错层会让 reply.id
+        // 变成 undefined、在途请求永不结算，真机上表现为每次加载都等到超时。
+        child.on('message', (message) => listener({ type: 'message', payload: message }));
         child.on('exit', (code) => listener({ type: 'exit', code }));
       }
     };
