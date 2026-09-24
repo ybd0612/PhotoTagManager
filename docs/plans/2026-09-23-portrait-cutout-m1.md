@@ -238,16 +238,16 @@ Q16 失败可诊断性（错误码 + 查看日志入口）· Q17 同图多份暂
 ### 人工验收清单（一条命令一条观察 · 2026-09-24 整理）
 
 环境先说清楚，省得每条重复：安装包 `dist/PhotoTagManager-0.1.3-x64.exe`；
-**认包看字节**：本轮重建后 = **121,410,411**（含 CPU 开关、后端变化重建会话、打包收紧）；
-`121,556,711` 那份是 12:54 的旧包，**不含 §8-16 的开关**，别拿它验第 16 行；
+**认包看字节**：最新 = **121,409,167**（含 CPU 开关、后端变化重建会话、打包收紧、**预览界面返工**）；
+`121,410,411` 是返工前的包（对比还挤在底栏小框里），`121,556,711` 是 12:54 的旧包（**连 §8-16 开关都没有**）。
 暂存目录打包后为 `%APPDATA%\PhotoTagManager\ai-preview\`，dev 跑时为 `%APPDATA%\Electron\ai-preview\`
 （dev 的 `--user-data-dir` 实测就是 `AppData\Roaming\Electron`）。
 "全新环境"= 先删掉 `%APPDATA%\PhotoTagManager\models\` 与 `ai-preview\` 两个目录再启动。
 
-**不必装**：`dist/win-unpacked/PhotoTagManager.exe`（本轮重建 = 180,849,664 字节）双击即跑，
-和 asar 里验过的是同一份代码；`userData` 由 productName 决定，**与装机版同为
-`%APPDATA%\PhotoTagManager`**，进程名也是 `PhotoTagManager`，所以 §8-27 那条按进程名过滤的
-命令在它能用。只有要验「安装/卸载体验」本身时才需要跑那个 exe。
+**不必装**：`dist/win-unpacked/PhotoTagManager.exe` 双击即跑，和 asar 里验过的是同一份代码；
+**认最新用文件时间**（`ls -l dist/win-unpacked/PhotoTagManager.exe`，返工后是 15:33）。
+`userData` 由 productName 决定，**与装机版同为 `%APPDATA%\PhotoTagManager`**，进程名也是
+`PhotoTagManager`，所以 §8-27 那条按进程名过滤的命令在它能用。只有要验「安装/卸载体验」本身时才需要跑那个 exe。
 
 | §8 | 执行什么 | 只盯这一件事 | 结果 |
 |----|---------|-------------|------|
@@ -257,7 +257,7 @@ Q16 失败可诊断性（错误码 + 查看日志入口）· Q17 同图多份暂
 | 22 | dev 仓库里先抠一张让暂存命中；再把 `electron/ai/preprocess.ts:12` 的 `PIPELINE_VERSION = 1` 改成 `= 2`；`npm run dev` 重启；**同一张图**再点一次抠图 | 必须**重跑**（进度条走完、耗时是正常量级），不能秒出上次烘好的图。验完把常量改回 1 | ☐ |
 | 27 | 抠图进行中，在另一个 PowerShell 里执行：`Get-NetTCPConnection -State Establish,Idle,Bound \| Where-Object { (Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue).ProcessName -like 'PhotoTag*' }` | **先把尺子证干净**：这条按进程名过滤，dev 跑时进程叫 `Electron`，一条都不匹配 → 空表看着像"零出站"其实是没抓到。要么在发布产物上做（装机版或 `win-unpacked`，进程名都是 `PhotoTagManager`），要么把条件改成 `-like 'PhotoTag*' -or $_ -eq 'Electron'` 并确认表里确实出现了该进程的条目。自证之后再看：除**模型下载阶段**对 `hf-mirror.com:443` 的连接外，加载/推理/编码期间**一条出站都不该有**（模型已下载好的第二次抠图，整段应完全没有出站连接） | ☐ |
 | 28 | 往扫描目录放一张 RAW（.CR2/.NEF/.ARW）和一张 ≥4000 万像素的图，各点一次抠图 | RAW：给出中文可读原因（M1 未实装 RAW 解码分支，预期 `DECODE_FAILED` 的说明文案），**不是**"未知错误"、不是崩溃。超大图：正常出结果，且界面注明"已在 NxN 下处理" | ☐ |
-| 1/6/9 | 全新环境启动 → 直接看底栏；点「抠图」；进对比视图 | ① 按钮一上来就可点、非灰、没有"请先下载"字样；② 处理中按钮以**背景填充**表进度，文字仍可读、有「取消」，全程不置灰；③ 对比默认是按住模式：按住=原图、松开=结果，两图同位精确叠加不偏移，透明区落在**棋盘格**上（不得纯白/纯黑底）。三条各截一张图留档 | ☐ |
+| 1/6/9 | 全新环境启动 → 直接看底栏；点「抠图」；看大图区 | ① 按钮一上来就可点、非灰、没有"请先下载"字样；② 处理中按钮以**背景填充**表进度，文字仍可读、有「取消」，全程不置灰；③ 抠完**大图区直接变成抠好的图**（原位替换），按住底栏「按住看原图」才切回原图、松开立刻回来，切换过程中画面**不位移不缩放**，透明区落在**棋盘格**上（不得纯白/纯黑底）；④ **按 → 翻到下一张，对比视图与保存/不保存按钮必须整个消失**，不该在别的照片上挂着上一张的结果。四条各截一张图留档 | ☐ |
 
 #### §8-16 已裁定并实装（2026-09-24，用户选定「M1 内补显式 CPU 开关」）
 
@@ -516,3 +516,43 @@ asar.unpacked 内原生库仍是 win32/x64 五个文件，无其他平台残留
   要把包抽出来 grep 内容：`asar.extractAll` 到临时目录后，在 `out/main/index.js` 里查 `loadedBackend` 判据、
   在 `out/renderer/assets/index-*.js` 里查「CPU 慢速模式」与常驻提示文案，并确认 `out/main/chunks/`
   仍有 runner 分片。六条全 PASS 才算这个包可信。
+
+## 预览界面返工（2026-09-24 真机反馈，`6e204dd` + `b885229`）
+
+用户在 `dist/win-unpacked/PhotoTagManager.exe` 上跑出来的四条，都不是单测能照出来的：
+
+| 现象 | 根因 | 改法 |
+|---|---|---|
+| 下拉里文字"完全看不清" | 浮层硬编码 `background:#fff`，却挂在预览层那个 `color:white` 的容器里，继承来白字落白底（T11 就在） | 改用 MUI `Popover` 渲染到 Portal，配色全走主题（`background.paper` / `text.primary` / `divider` / `action.selected`） |
+| 菜单"飘在页面上、位置乱" | 绝对定位既没有 `position:relative` 的祖先可锚，又被底栏 `overflowX:auto` 裁掉 | Portal + `anchorEl` 锚在 ▾ 按钮下方右对齐 |
+| 底栏那颗按钮"简陋不现代" | 两个并排 `contained` 小按钮 | 合成一颗 `ButtonGroup` 胶囊，菜单行版式改两行（名称 / 体积与状态） |
+| "整个详情页乱了"、对比不在图上 | 对比是底栏里一个 320×240 的小框；且 `aiResult` 是全局的，**翻到下一张还在显示上一张的对比** | 结果**原位替换**大图区那张 `<img>` 的 src；`AiCompareView` 拆成 `AiCompareStage`（大图区）+ `AiCompareActions`（底栏）；按 `sourceAbsPath` 与当前照片对齐才出现 |
+
+交互语义按规格原样：默认看到抠好的图、按住底栏才切回原图、左右双栏为次要且注明掩码尺寸、
+只有保存 / 不保存、无「丢弃」、不替换原图、进行中不置灰。用户口述的"按住=新图"与 D15 相反，
+已当面确认为**按规格执行**，不是改判。棋盘格改画在 img 自身的 CSS 背景上——`object-contain`
+的 img 元素盒子等于绘制区，透明像素才透出底纹，也不会把底纹铺到照片以外。
+
+三条 UI 不变量各有一条断言继续守住：主按钮语义恒定不置灰、hover 不承载动作（按钮数恒为 2）、
+下拉可键盘导航。顺带把键盘用例做实——**两个模型才能真验方向键换行**，原来单模型清单下
+`ArrowDown/ArrowUp` 不改变 active，等于空跑。
+
+**验证证据**：渲染层 31 用例（`aiCompareView` 重写为 13 条，加 `aiUi` 与 `previewWiring`）全过；
+`npm test` 全量 **238 用例 / 22 文件**全过；`typecheck` exit 0；`build` → `dist` 均 exit 0；
+新包 `dist/PhotoTagManager-0.1.3-x64.exe` = **121,409,167 字节**。包内**内容**八条断言全 PASS：
+无 tsc 中间产物、`out/main/chunks/runner-*.js` 在册、主进程产物含 `loadedBackend` 判据、渲染产物含
+「原位对比」「左右双栏」「按住看原图」「CPU 慢速模式」与常驻提示、含新 `ai-compare-img`、
+**旧两层形态（`ai-checkerboard` 与「按住对比」文案）已消失**、无硬编码 `background:"#fff"`。
+
+**两条实现坑**：
+
+- MUI v5 的 `ToggleButton` / `ToggleButtonGroup` 用 `color="inherit"` 会去读 `palette.inherit.main`
+  → 渲染时直接抛 `Cannot read properties of undefined (reading 'main')`，整棵组件树挂掉。
+  深色底栏要显式写三态配色，别指望 `inherit`（`Button` 的 `inherit` 是支持的，只有 Toggle 系不行）。
+- `Modal`（Popover 的底层）挂载时会自己动一次焦点，把"打开即落在当前行"那次 `focus()` 冲掉；
+  要晚一帧再落位（`requestAnimationFrame` + 卸载时 `cancelAnimationFrame`）。jsdom 侧同理：
+  焦点断言必须包在 `waitFor` 里。
+
+**并发提示**：本轮期间另一场会话往 `master` 插了 `2fc1ea4`（隐藏目录统计，动了 `shared/types.ts`）。
+`git status` 的"干净"快照会被它打破，所以门槛是在它之后跑的（15:29 全量、15:33 出包），
+新包里含它——引用"这个包只含 M1 改动"时要带上这个限定。
