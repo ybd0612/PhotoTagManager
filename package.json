@@ -14,7 +14,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "dist": "electron-builder",
-    "verify:ai-child": "electron-vite build && electron scripts/ai-child-probe.cjs"
+    "verify:ai-child": "electron-vite build && electron scripts/ai-child-probe.cjs",
+    "verify:ai-crash": "electron-vite build && electron scripts/ai-crash-probe.cjs"
   },
   "build": {
     "appId": "com.ybd0612.phototagmanager",
@@ -25,6 +26,7 @@
     "files": [
       "out/**/*",
       "package.json",
+      "!out/main/crashHarness.js",
       "!node_modules/onnxruntime-node/bin/napi-v6/darwin/**",
       "!node_modules/onnxruntime-node/bin/napi-v6/linux/**",
       "!node_modules/onnxruntime-node/bin/napi-v6/win32/arm64/**"
