@@ -238,14 +238,14 @@ Q16 失败可诊断性（错误码 + 查看日志入口）· Q17 同图多份暂
 ### 人工验收清单（一条命令一条观察 · 2026-09-24 整理）
 
 环境先说清楚，省得每条重复：安装包 `dist/PhotoTagManager-0.1.3-x64.exe`；
-**认包看字节**：最新 = **121,409,167**（含 CPU 开关、后端变化重建会话、打包收紧、**预览界面返工**）；
-`121,410,411` 是返工前的包（对比还挤在底栏小框里），`121,556,711` 是 12:54 的旧包（**连 §8-16 开关都没有**）。
+**认包看字节**：最新 = **121,410,280**（16:07 重建：CPU 开关、后端变化重建会话、打包收紧、预览界面返工、**保存后自动刷新**）；
+`121,409,167` 是它前一版（**不含自动刷新**），`121,556,711` 是 12:54 的旧包（**连 §8-16 开关都没有**）。
 暂存目录打包后为 `%APPDATA%\PhotoTagManager\ai-preview\`，dev 跑时为 `%APPDATA%\Electron\ai-preview\`
 （dev 的 `--user-data-dir` 实测就是 `AppData\Roaming\Electron`）。
 "全新环境"= 先删掉 `%APPDATA%\PhotoTagManager\models\` 与 `ai-preview\` 两个目录再启动。
 
 **不必装**：`dist/win-unpacked/PhotoTagManager.exe` 双击即跑，和 asar 里验过的是同一份代码；
-**认最新用文件时间**（`ls -l dist/win-unpacked/PhotoTagManager.exe`，返工后是 15:33）。
+**认最新用文件时间**（`ls -l dist/win-unpacked/PhotoTagManager.exe`，最新是 16:07）。
 `userData` 由 productName 决定，**与装机版同为 `%APPDATA%\PhotoTagManager`**，进程名也是
 `PhotoTagManager`，所以 §8-27 那条按进程名过滤的命令在它能用。只有要验「安装/卸载体验」本身时才需要跑那个 exe。
 
@@ -577,7 +577,9 @@ asar.unpacked 内原生库仍是 win32/x64 五个文件，无其他平台残留
    截图看真像素再迭代；改完仍由用户眼验最终效果。
    结构候选：三条栏合为「一条动作条 + 元数据浮到图区角落」，文本对比统一成三级 token。
 
-**重建安装包被挡住**：用户当时正开着 `dist/win-unpacked/PhotoTagManager.exe`（5 个进程），
-`electron-builder` 清空 `dist/win-unpacked` 时报 `d3dcompiler_47.dll: Access is denied`，`dist` exit 1。
-所以**磁盘上当前那个包（121,409,167 字节 / win-unpacked mtime 15:33）不含第 1、2、3 项的改动**；
-要继续出包，先请用户退出该应用，再 `npm run build` → `npm run dist`（顺序不可省，见《安装包重建》）。
+**出包曾被占用挡住 → 已解除**：当时用户正开着 `dist/win-unpacked/PhotoTagManager.exe`，
+`electron-builder` 清空该目录时报 `d3dcompiler_47.dll: Access is denied`，`dist` exit 1（**exit 1 但日志末尾照样打印构建行**，别只看尾巴）。
+用户退出应用后 16:07 重跑 `npm run build` → `npm run dist` **均 exit 0**，新包 **121,410,280 字节**；
+抽包复核 **10 条内容断言全 PASS**，其中两条专盯本次改动：渲染产物含「正在刷新列表」、
+旧文案「重新扫描该目录后出现…」已不在包内。
+**固定前置检查**：以后每次出包前先确认应用已退出（`Get-Process PhotoTagManager` 计数为 0），再看 `dist` 的退出码。
