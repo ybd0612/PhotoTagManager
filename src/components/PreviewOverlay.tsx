@@ -19,6 +19,7 @@ import AddIcon from '@mui/icons-material/Add';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import { call, formatBytes, getApi, toFileUrl } from '../api';
+import { rescan } from '../hooks/useScan';
 import { useAppStore } from '../store/useAppStore';
 import { useAiStore } from '../store/useAiStore';
 import { AiActionSplitButton } from './AiActionSplitButton';
@@ -139,17 +140,18 @@ export function PreviewOverlay(): JSX.Element | null {
   };
 
   /**
-   * 保存成功后的可见性处理（§4.4 C2）：明确告诉用户去哪看、要不要重扫，
+   * 保存成功后的可见性处理（§4.4 C2 选方案①：主动刷新，不甩给用户重扫）。
    * 不允许静默——点了保存却找不到文件，用户第一反应是保存失败。
+   * 走 rescan() 而不是把新文件本地塞进列表：目录节点的 directCount / totalCount
+   * 是扫描算出来的，只改 imagesByDir 会让文件夹徽标与磁盘悄悄对不上。
    */
   const handleAiSaved = (saved: { targetName: string; renamed: boolean }): void => {
     setSnackbar(
       saved.renamed
-        ? '已保存为 ' +
-          saved.targetName +
-          '（同名已存在，序号顺延）；重新扫描该目录后出现在网格中'
-        : '已保存为 ' + saved.targetName + '；重新扫描该目录后出现在网格中'
+        ? '已保存为 ' + saved.targetName + '（同名已存在，序号顺延），正在刷新列表'
+        : '已保存为 ' + saved.targetName + '，正在刷新列表'
     );
+    void rescan();
   };
 
   const revealInExplorer = async (absPath: string): Promise<void> => {

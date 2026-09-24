@@ -13,6 +13,16 @@ function ok<T>(data: T): { ok: true; data: T } {
   return { ok: true, data };
 }
 
+// vi.mock 会被提到文件顶部，替身要用 vi.hoisted 才拿得到同一个引用
+const { rescanMock } = vi.hoisted(() => ({ rescanMock: vi.fn(async () => undefined) }));
+vi.mock('../../src/hooks/useScan', () => ({
+  useScanSubscriptions: () => undefined,
+  startScan: vi.fn(async () => undefined),
+  rescan: rescanMock,
+  cancelScan: vi.fn(async () => undefined),
+  autoScanAllRoots: vi.fn(async () => undefined)
+}));
+
 const api: Record<string, ReturnType<typeof vi.fn>> = {
   aiCatalog: vi.fn(),
   aiRun: vi.fn(),
@@ -118,10 +128,11 @@ describe('预览层 AI 接线', () => {
     expect(bar.contains(screen.getByTestId('ai-compare-root'))).toBe(true);
   });
 
-  it('保存后走 snackbar 明确告知可见性，不静默（§4.4 C2）', async () => {
+  it('保存后主动刷新当前目录并告知，不静默也不甩给用户重扫（§4.4 C2 选①）', async () => {
     useAiStore.setState({ result: done() });
     const { act } = await import('@testing-library/react');
     render(<PreviewOverlay />);
+    rescanMock.mockClear();
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /^保存$/ }));
     });
@@ -129,7 +140,8 @@ describe('预览层 AI 接线', () => {
     // Snackbar 挂在 AppLayout 上，接线契约是 store 里那条消息
     const text = useAppStore.getState().snackbar ?? '';
     expect(text).toContain('a.cutout.png');
-    // 必须说清"重新扫描后才出现在网格"或立刻刷新，不能静默（C2）
-    expect(text).toMatch(/重新扫描/);
+    expect(text).toMatch(/正在刷新/);
+    // 关键：真的发起刷新，而不是只写一句"请重新扫描"
+    expect(rescanMock).toHaveBeenCalledTimes(1);
   });
 });
