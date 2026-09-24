@@ -14,6 +14,8 @@ import type { CapabilitySpec } from '../../electron/ai/capabilityCatalog';
 
 class FakeRunner implements InferenceRunner {
   loadCalls: string[] = [];
+  /** 每次 load 请求实际带来的后端：backend 切换必须体现在这里（§8-16） */
+  loadBackends: Array<string | undefined> = [];
   inferCalls = 0;
   liveInfer = 0;
   maxLiveInfer = 0;
@@ -23,8 +25,9 @@ class FakeRunner implements InferenceRunner {
   loadedModelId: string | null = null;
   restartCount = 0;
 
-  async load(req: { model: { id: string } }): Promise<number> {
+  async load(req: { model: { id: string }; backend?: string }): Promise<number> {
     this.loadCalls.push(req.model.id);
+    this.loadBackends.push(req.backend);
     this.loadedModelId = req.model.id;
     return 5;
   }
@@ -90,6 +93,7 @@ let userData = '';
 let photoDir = '';
 let photoPath = '';
 let photoPath2 = '';
+let photoPath3 = '';
 let service: AiService;
 let runner: FakeRunner;
 let store: FakeStore;
@@ -113,8 +117,10 @@ beforeEach(async () => {
   photoDir = await mkdtemp(join(tmpdir(), 'ptm-photos-'));
   photoPath = join(photoDir, 'IMG_0001.jpg');
   photoPath2 = join(photoDir, 'IMG_0002.jpg');
+  photoPath3 = join(photoDir, 'IMG_0003.jpg');
   await writeFile(photoPath, await jpegOf(8, 4, 200));
   await writeFile(photoPath2, await jpegOf(6, 6, 90));
+  await writeFile(photoPath3, await jpegOf(10, 5, 140));
 
   runner = new FakeRunner();
   store = new FakeStore();
@@ -280,6 +286,30 @@ describe('ai/aiService —— 一次点击走完 下载→加载→推理→写�
     const again = await service.run({ absPath: photoPath, capabilityId: 'portrait-cutout' });
     expect(again.tempPath).toBe(first.tempPath);
     expect(first.tempPath.startsWith(previewDir())).toBe(true);
+  });
+
+  it('§8-16 未指定后端时显式按 dml 传给子进程，不依赖对方的默认值', async () => {
+    await store.markPresent();
+    await service.run({ absPath: photoPath, capabilityId: 'portrait-cutout' });
+    expect(runner.loadBackends).toEqual(['dml']);
+  });
+
+  it('§8-16 用户切到 CPU 必须重建会话：同后端不同图不重建，切后端必重建', async () => {
+    await store.markPresent();
+    await service.run({ absPath: photoPath, capabilityId: 'portrait-cutout' });
+    await service.run({ absPath: photoPath2, capabilityId: 'portrait-cutout' });
+    expect(runner.loadBackends).toEqual(['dml']); // 会话仍可复用
+
+    await service.run({ absPath: photoPath3, capabilityId: 'portrait-cutout', backend: 'cpu' });
+    expect(runner.loadBackends).toEqual(['dml', 'cpu']);
+
+    // 会话被外部回收（卸载 / 子进程崩溃）后，同后端也必须重建：
+    // 该判据与"模型 id 是否仍驻留"是 AND 关系，单拎后端判断会漏掉这条
+    runner.loadedModelId = null;
+    const touched = new Date(Date.now() + 60_000);
+    await utimes(photoPath, touched, touched);
+    await service.run({ absPath: photoPath, capabilityId: 'portrait-cutout', backend: 'cpu' });
+    expect(runner.loadBackends).toEqual(['dml', 'cpu', 'cpu']);
   });
 
   it('未知行为报 CAPABILITY_UNAVAILABLE', async () => {

@@ -197,6 +197,11 @@ export class AiService {
   private readonly finished = new Map<string, RunResult>();
   private readonly listeners = new Set<(event: AiEvent) => void>();
   private seq = 0;
+  /**
+   * 当前驻留会话是按哪个后端建的。用户显式切 CPU / 切回 GPU 时必须重建会话，
+   * 否则界面写着走 CPU、实际还在 GPU 会话上跑（§8-16 / D12 禁止无声降级）。
+   */
+  private loadedBackend: 'dml' | 'cpu' | null = null;
 
   constructor(deps: AiServiceDeps) {
     this.deps = deps;
@@ -586,9 +591,13 @@ export class AiService {
       throw new AiTaskError('MODEL_MISSING_ON_DISK', `清单说模型已就位，但磁盘上找不到 ${modelPath}`);
     }
 
-    if (this.deps.runner.loadedModelId !== model.id) {
+    // 后端变化也要重建会话：与"模型是否仍驻留"是 AND 关系，所以子进程崩溃或
+    // 被外部卸载（loadedModelId 变 null）后，同后端同样会走重建路径。
+    const backend: 'dml' | 'cpu' = req.backend ?? 'dml';
+    if (this.deps.runner.loadedModelId !== model.id || this.loadedBackend !== backend) {
       this.emit(taskId, 'load', 0);
-      await this.deps.runner.load({ modelPath, model, backend: req.backend });
+      await this.deps.runner.load({ modelPath, model, backend });
+      this.loadedBackend = backend;
     }
     this.throwIfCancelled(taskId);
 
