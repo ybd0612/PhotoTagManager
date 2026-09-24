@@ -22,7 +22,7 @@ import { call, formatBytes, getApi, toFileUrl } from '../api';
 import { useAppStore } from '../store/useAppStore';
 import { useAiStore } from '../store/useAiStore';
 import { AiActionSplitButton } from './AiActionSplitButton';
-import { AiCompareView } from './AiCompareView';
+import { AiCompareActions, AiCompareStage, useCompareResult } from './AiCompareView';
 import type { ImageInfo } from '../../shared/types';
 
 /**
@@ -30,7 +30,8 @@ import type { ImageInfo } from '../../shared/types';
  */
 export function PreviewOverlay(): JSX.Element | null {
   const preview = useAppStore((s) => s.preview);
-  const aiResult = useAiStore((s) => s.result);
+  // 结果只在它那张照片上是有效的；hook 要早于下面的提前 return，所以从 preview 上取路径
+  const compare = useCompareResult(preview?.image?.absPath);
   const tagCache = useAppStore((s) => s.tagCache);
   const closePreview = useAppStore((s) => s.closePreview);
   const previewStep = useAppStore((s) => s.previewStep);
@@ -308,6 +309,17 @@ export function PreviewOverlay(): JSX.Element | null {
               <Button color="inherit" onClick={closePreview}>关闭</Button>
             </Stack>
           </Stack>
+        ) : compare ? (
+          <AiCompareStage
+            key={image.absPath}
+            absPath={image.absPath}
+            alt={image.name}
+            onError={() => setImageError(true)}
+            viewStyle={{
+              transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`,
+              transition: 'transform 0.06s linear'
+            }}
+          />
         ) : (
           <img
             key={image.absPath}
@@ -333,11 +345,11 @@ export function PreviewOverlay(): JSX.Element | null {
         )}
       </Box>
 
-      {/* 底栏：AI 行为按钮 + 对比视图（无结果时 AiCompareView 自己返回 null） */}
+      {/* 底栏：AI 行为按钮 + 对比动作条（舞台在大图区；无结果时动作条自己返回 null） */}
       <Box className="shrink-0 px-4 pt-3" sx={{ borderTop: '1px solid rgba(255,255,255,0.12)' }}>
-        <Stack direction="row" spacing={2} alignItems="flex-start" data-testid="ai-bar">
+        <Stack direction="row" spacing={2} alignItems="center" data-testid="ai-bar">
           {absPath && <AiActionSplitButton absPath={absPath} />}
-          {aiResult && <AiCompareView onSaved={handleAiSaved} />}
+          <AiCompareActions absPath={image.absPath} onSaved={handleAiSaved} />
         </Stack>
       </Box>
       {/* 底栏：标签 + 信息 */}

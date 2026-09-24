@@ -1,48 +1,135 @@
 import { useState } from 'react';
+import type { CSSProperties } from 'react';
 import Button from '@mui/material/Button';
 import Stack from '@mui/material/Stack';
+import ToggleButton from '@mui/material/ToggleButton';
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Typography from '@mui/material/Typography';
 import { call, getApi, toFileUrl } from '../api';
-import { useAiStore } from '../store/useAiStore';
-import type { AiSaveResult } from '../../shared/types';
+import { useAiStore, type AiCompareMode } from '../store/useAiStore';
+import type { AiDonePayload, AiSaveResult } from '../../shared/types';
 
 /**
- * 抠完不是弹个"成功"就结束，而是进对比视图（§4.5）。
+ * 对比视图（§4.5 / D15）。**舞台在大图区、动作在底栏**，两者共享 store 里的
+ * `compareMode` / `holdingOriginal`。
  *
- * - **默认按住对比**：按住看原图、松开看结果，两张图同位同尺寸精确叠加。
- *   这样对齐精确、能直接看边缘质量，也不需要用户来回挪视线。
- * - **棋盘格底纹是硬性要求**：透明区若直接铺窗口会被渲染成白底或黑底，
- *   分不清"抠干净"还是"渲染错"（探针里就是这么差点被骗过去）。
- * - **分屏只当次要模式**：掩码是在低分辨率上算的，放大回原图必然比左边糊，
- *   并排看会让用户第一眼判定"程序坏了/效果变差"，所以切过去必须注明掩码尺寸。
- *   尺寸数字取自清单，不在这里写死。
- * - 动作只有两个：**保存** / **不保存**。D18 之后没有"丢弃"这个动作，
- *   不保存就是让文件留在暂存由清理策略回收。也**不提供替换原图**（AG3）。
+ * 三条实现取舍：
+ * - **结果原位替换大图区那张图**，同位同尺寸由构造保证（同一个 `<img>` 换 src），
+ *   不是叠两层再对齐——两层是这套界面之前"看着乱"的来源之一。
+ * - **棋盘格画在 img 自身的 CSS 背景上**：`object-contain` 的 img 元素盒子等于绘制区，
+ *   透明像素正好把背景透出来。既不用测量图片显示尺寸，也不会把底纹漏到照片以外。
+ * - **分屏只当次要模式**，且必须注明掩码尺寸（数值取自清单，不硬编码）：低分辨率掩码
+ *   放大回来必然偏软，不注明用户会判成"程序坏了"。
+ *
+ * 动作只有 **保存 / 不保存**：D18 之后"不保存就是丢弃"，没有丢弃按钮；
+ * 也永远不提供"替换原图"（AG3）。
  */
 
-type CompareMode = 'hold' | 'split';
-
 const CHECKER_SIZE = 16;
+const CHECKERBOARD = 'repeating-conic-gradient(#c9ced6 0% 25%, #ffffff 0% 50%)';
+const checkerBg: CSSProperties = {
+  backgroundImage: CHECKERBOARD,
+  backgroundSize: `${CHECKER_SIZE}px ${CHECKER_SIZE}px`
+};
 
-/** 两层 45° 重复渐变叠出棋盘格；写成内联样式以便样式断言能直接读到 */
-const CHECKERBOARD = [
-  `repeating-conic-gradient(#c9ced6 0% 25%, #ffffff 0% 50%)`,
-  `linear-gradient(45deg, rgba(0,0,0,0.04) 25%, transparent 25%)`
-].join(', ');
-
-export function AiCompareView({ onSaved }: { onSaved?: (r: AiSaveResult) => void } = {}) {
+/** 结果只属于它那张照片：翻到下一张不该继续显示上一张的对比 */
+export function useCompareResult(absPath: string | undefined): AiDonePayload | null {
   const result = useAiStore((s) => s.result);
-  const clearResult = useAiStore((s) => s.clearResult);
-  const [mode, setMode] = useState<CompareMode>('hold');
-  const [holding, setHolding] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  if (!result || !absPath) return null;
+  return result.sourceAbsPath === absPath ? result : null;
+}
 
+interface StageProps {
+  /** 当前预览的照片绝对路径；与结果的 sourceAbsPath 对不上时什么都不画 */
+  absPath: string;
+  alt: string;
+  onError: () => void;
+  /** 大图区的缩放/平移样式，由宿主传入，保证换图后缩放不跳 */
+  viewStyle?: CSSProperties;
+}
+
+export function AiCompareStage({ absPath, alt, onError, viewStyle }: StageProps) {
+  const result = useCompareResult(absPath);
+  const mode = useAiStore((s) => s.compareMode);
+  const holding = useAiStore((s) => s.holdingOriginal);
   if (!result) return null;
 
   const originalSrc = toFileUrl(result.sourceAbsPath);
   const resultSrc = toFileUrl(result.tempPath);
-  const showOriginal = mode === 'hold' && holding;
+
+  if (mode === 'split') {
+    return (
+      <>
+        <Stack
+          direction="row"
+          data-testid="ai-split-pair"
+          spacing={2}
+          sx={{ width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', minWidth: 0 }}
+        >
+          <img
+            data-testid="ai-original"
+            src={originalSrc}
+            alt="原图"
+            draggable={false}
+            onError={onError}
+            className="min-w-0 max-h-full w-1/2 object-contain"
+            style={viewStyle}
+          />
+          <img
+            data-testid="ai-result"
+            src={resultSrc}
+            alt="抠图结果"
+            draggable={false}
+            onError={onError}
+            className="min-w-0 max-h-full w-1/2 object-contain"
+            style={{ ...viewStyle, ...checkerBg }}
+          />
+        </Stack>
+        <Typography
+          data-testid="ai-mask-note"
+          variant="caption"
+          className="pointer-events-none absolute bottom-2 left-3"
+          sx={{ color: 'rgba(255,255,255,0.72)' }}
+        >
+          掩码在 {result.inputWidth}×{result.inputHeight} 下计算，右图放大后偏软是预期的
+        </Typography>
+      </>
+    );
+  }
+
+  // 默认：看到的就是抠好的图；按住底栏按钮才切回原图
+  return (
+    <img
+      data-testid="ai-compare-img"
+      src={holding ? originalSrc : resultSrc}
+      alt={holding ? '原图' : alt}
+      draggable={false}
+      onError={onError}
+      className="max-h-full max-w-full object-contain"
+      style={{ ...viewStyle, ...(holding ? {} : checkerBg) }}
+    />
+  );
+}
+
+export function AiCompareActions({
+  absPath,
+  onSaved
+}: {
+  absPath?: string;
+  onSaved?: (r: AiSaveResult) => void;
+}) {
+  const result = useCompareResult(absPath);
+  const mode = useAiStore((s) => s.compareMode);
+  const setCompareMode = useAiStore((s) => s.setCompareMode);
+  const setHoldingOriginal = useAiStore((s) => s.setHoldingOriginal);
+  const saveResult = useAiStore((s) => s.saveResult);
+  const clearResult = useAiStore((s) => s.clearResult);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  if (!result) return null;
+
+  const hold = (down: boolean) => setHoldingOriginal(down);
 
   const save = async () => {
     setSaving(true);
@@ -60,124 +147,63 @@ export function AiCompareView({ onSaved }: { onSaved?: (r: AiSaveResult) => void
   };
 
   return (
-    <Stack direction="row" spacing={2} alignItems="center" data-testid="ai-compare-root">
-      <div
-        data-testid="ai-compare-stage"
-        style={{ position: 'relative', width: 320, height: 240, overflow: 'hidden' }}
+    <Stack
+      direction="row"
+      spacing={1}
+      alignItems="center"
+      data-testid="ai-compare-root"
+      sx={{ flexWrap: 'wrap', rowGap: 1 }}
+    >
+      <ToggleButtonGroup
+        size="small"
+        exclusive
+        value={mode}
+        onChange={(_, next) => next && setCompareMode(next as AiCompareMode)}
+        // 深色底栏上不用主题 primary（indigo 压在近黑底上对比不足），三态配色显式给
+        sx={{
+          textTransform: 'none',
+          '& .MuiToggleButton-root': {
+            px: 1.5,
+            color: 'rgba(255,255,255,0.78)',
+            borderColor: 'rgba(255,255,255,0.28)',
+            '&:hover': { color: '#fff', bgcolor: 'rgba(255,255,255,0.10)' },
+            '&.Mui-selected': {
+              color: '#fff',
+              bgcolor: 'rgba(255,255,255,0.20)',
+              '&:hover': { bgcolor: 'rgba(255,255,255,0.26)' }
+            }
+          }
+        }}
       >
-        {/* 底纹层：永远在最下面，透明区露出棋盘格而不是纯白/纯黑 */}
-        <div
-          data-testid="ai-checkerboard"
-          style={{
-            position: 'absolute',
-            inset: 0,
-            backgroundImage: CHECKERBOARD,
-            backgroundSize: `${CHECKER_SIZE}px ${CHECKER_SIZE}px, ${CHECKER_SIZE}px ${CHECKER_SIZE}px`
-          }}
-        />
-        {mode === 'hold' ? (
-          <>
-            <img
-              data-testid="ai-original"
-              src={originalSrc}
-              alt="原图"
-              style={{
-                position: 'absolute',
-                inset: 0,
-                width: '100%',
-                height: '100%',
-                objectFit: 'contain',
-                opacity: holding ? 1 : 0
-              }}
-            />
-            <img
-              data-testid="ai-result"
-              src={resultSrc}
-              alt="抠图结果"
-              style={{
-                position: 'absolute',
-                inset: 0,
-                width: '100%',
-                height: '100%',
-                objectFit: 'contain',
-                opacity: holding ? 0 : 1
-              }}
-            />
-          </>
-        ) : (
-          <Stack direction="row" data-testid="ai-split-pair" sx={{ position: 'absolute', inset: 0 }}>
-            <img
-              data-testid="ai-original"
-              src={originalSrc}
-              alt="原图"
-              style={{ width: '50%', height: '100%', objectFit: 'contain', opacity: 1 }}
-            />
-            <img
-              data-testid="ai-result"
-              src={resultSrc}
-              alt="抠图结果"
-              style={{ width: '50%', height: '100%', objectFit: 'contain', opacity: 1 }}
-            />
-          </Stack>
-        )}
-        {mode === 'split' && (
-          <Typography
-            data-testid="ai-mask-note"
-            variant="caption"
-            sx={{ position: 'absolute', left: 8, bottom: 6, bgcolor: 'rgba(255,255,255,0.86)', px: 0.75 }}
-          >
-            掩码在 {result.inputWidth}×{result.inputHeight} 下计算，右图放大后偏软是预期的
-          </Typography>
-        )}
-      </div>
-
-      <Stack spacing={1}>
-        <Stack direction="row" spacing={1}>
-          <Button
-            size="small"
-            variant={mode === 'hold' ? 'outlined' : 'text'}
-            aria-pressed={mode === 'hold'}
-            onClick={() => setMode('hold')}
-          >
-            按住看原图
-          </Button>
-          <Button
-            size="small"
-            variant={mode === 'split' ? 'outlined' : 'text'}
-            aria-pressed={mode === 'split'}
-            onClick={() => setMode('split')}
-          >
-            分屏对比
-          </Button>
-        </Stack>
-        <div>
-          <Button
-            size="small"
-            disabled={mode !== 'hold'}
-            onMouseDown={() => mode === 'hold' && setHolding(true)}
-            onMouseUp={() => setHolding(false)}
-            onMouseLeave={() => setHolding(false)}
-            onTouchStart={() => mode === 'hold' && setHolding(true)}
-            onTouchEnd={() => setHolding(false)}
-          >
-            按住对比
-          </Button>
-        </div>
-        <Stack direction="row" spacing={1}>
-          <Button size="small" variant="contained" onClick={() => void save()} disabled={saving}>
-            {saving ? '保存中…' : '保存'}
-          </Button>
-          {/* 不保存 ≠ 删除：文件留在暂存由清理策略回收，所以没有「丢弃」按钮 */}
-          <Button size="small" onClick={() => clearResult()}>
-            不保存
-          </Button>
-        </Stack>
-        {saveError && (
-          <Typography data-testid="ai-compare-error" variant="caption" color="error">
-            {saveError}
-          </Typography>
-        )}
-      </Stack>
+        <ToggleButton value="hold">原位对比</ToggleButton>
+        <ToggleButton value="split">左右双栏</ToggleButton>
+      </ToggleButtonGroup>
+      <Button
+        size="small"
+        color="inherit"
+        variant="outlined"
+        disabled={mode !== 'hold'}
+        onMouseDown={() => hold(true)}
+        onMouseUp={() => hold(false)}
+        onMouseLeave={() => hold(false)}
+        onTouchStart={() => hold(true)}
+        onTouchEnd={() => hold(false)}
+        sx={{ textTransform: 'none', borderColor: 'rgba(255,255,255,0.45)' }}
+      >
+        按住看原图
+      </Button>
+      <Button size="small" variant="contained" disabled={saving} onClick={() => void save()} sx={{ textTransform: 'none' }}>
+        {saving ? '保存中…' : '保存'}
+      </Button>
+      {/* 不保存 ≠ 删除：文件留在暂存由清理策略回收，所以没有「丢弃」按钮 */}
+      <Button size="small" color="inherit" onClick={() => clearResult()} sx={{ textTransform: 'none' }}>
+        不保存
+      </Button>
+      {saveError && (
+        <Typography data-testid="ai-compare-error" variant="caption" sx={{ color: 'error.light' }}>
+          {saveError}
+        </Typography>
+      )}
     </Stack>
   );
 }

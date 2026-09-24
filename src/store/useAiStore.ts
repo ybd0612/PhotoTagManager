@@ -17,6 +17,12 @@ import type {
  * 再塞进 useAppStore 会让两个不相干的关注点互相牵制。
  */
 
+/** 对比模式：hold = 原位替换 + 按住看原图（默认）；split = 左右双栏（次要） */
+export type AiCompareMode = 'hold' | 'split';
+
+/** 结果离场或重新发起处理时的视图复位：下一张不该继承上一张的模式与按住态 */
+const COMPARE_RESET = { compareMode: 'hold' as AiCompareMode, holdingOriginal: false };
+
 /** 实测下载速率区间 0.39~1.27 MB/s，粗估取偏慢的一档，宁可报长不报短 */
 const CONSERVATIVE_RATE_BYTES_PER_SEC = 0.45 * 1024 * 1024;
 
@@ -58,6 +64,12 @@ interface AiState {
    * 所以它是渲染层的模式状态，每次 ai:run 都带上，不持久化——重启回 GPU。
    */
   backend: AiBackend;
+  /**
+   * 对比模式与按住态。舞台在大图区、动作在底栏，是两个组件共享同一份状态，
+   * 所以放这里而不是留在某个组件的 local state（放组件里就得把它们再合并回去）。
+   */
+  compareMode: AiCompareMode;
+  holdingOriginal: boolean;
   task: AiTask | null;
   result: AiDonePayload | null;
   error: AiErrorPayload | null;
@@ -70,6 +82,8 @@ interface AiState {
   /** 主按钮文案：恒定取清单里的行为名，不随内部状态变（D13） */
   primaryLabel: (capabilityId?: string) => string;
   setBackend: (backend: AiBackend) => void;
+  setCompareMode: (mode: AiCompareMode) => void;
+  setHoldingOriginal: (holding: boolean) => void;
   requestRun: (absPath: string, capabilityId?: string) => Promise<void>;
   startRun: (absPath: string, capabilityId?: string, downloadApproved?: boolean) => Promise<void>;
   approveDownload: () => Promise<void>;
@@ -86,6 +100,8 @@ export const useAiStore = create<AiState>((set, get) => ({
   catalog: null,
   stats: null,
   backend: 'dml',
+  compareMode: 'hold',
+  holdingOriginal: false,
   task: null,
   result: null,
   error: null,
@@ -147,6 +163,10 @@ export const useAiStore = create<AiState>((set, get) => ({
 
   setBackend: (backend) => set({ backend }),
 
+  setCompareMode: (compareMode) => set({ compareMode }),
+
+  setHoldingOriginal: (holdingOriginal) => set({ holdingOriginal }),
+
   requestRun: async (absPath, capabilityId) => {
     // 清单可能还没回来（首帧就点了）：先自愈，不能静默什么都不做
     await get().ensureCatalog();
@@ -170,7 +190,7 @@ export const useAiStore = create<AiState>((set, get) => ({
     const caps = get().usableCapabilities();
     const cap = capabilityId ? caps.find((c) => c.id === capabilityId) : caps[0];
     if (!cap) return;
-    set({ result: null, error: null });
+    set({ result: null, error: null, ...COMPARE_RESET });
     try {
       const ack = await call(
         getApi().aiRun({ absPath, capabilityId: cap.id, downloadApproved, backend: get().backend })
@@ -205,11 +225,11 @@ export const useAiStore = create<AiState>((set, get) => ({
     const result = get().result;
     if (!result) return null;
     const saved = await call(getApi().aiSave(result.taskId));
-    set({ result: null });
+    set({ result: null, ...COMPARE_RESET });
     return saved;
   },
 
-  clearResult: () => set({ result: null, error: null }),
+  clearResult: () => set({ result: null, error: null, ...COMPARE_RESET }),
 
   modelAction: async (modelId, action) => {
     const api = getApi();
