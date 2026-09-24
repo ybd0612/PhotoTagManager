@@ -433,3 +433,21 @@ main 多了一个入口后 rollup 开始代码分割：`out/main/index.js` 现�
 `require("./chunks/runner-<hash>.js")`（文件名带内容哈希，改一次 `runner.ts` 就会变，别按具体名字断言）。**`out/main/chunks/` 成了运行时必需**，
 `build.files` 的 `out/**/*` 需实测覆盖到它——收尾复核安装包时必须确认 asar 内含该目录。
 `out/main/crashHarness.js` 已加入 `build.files` 排除，不进产品包。
+
+复核结果（2026-09-24，`npm run dist` exit 0 + `npx asar list`）：
+
+```
+/out/main/aiChild.js  /out/main/index.js  /out/main/scanWorker.js
+/out/main/chunks/runner-<hash>.js          ← 代码分割后的运行时必需件，已在包内
+安装包 121,555,296 字节（115.98MB，较上一版 115.9MB 基本未变）
+```
+
+**顺带照出一个先前就存在的打包污染（范围外，只列不改）**：
+`files: ["out/**/*"]` 本意只收 electron-vite 产物，但 `npm run typecheck`（`tsc --build`）
+把 `out/tsc-node`、`out/tsc-web` 也写进同一个 `out/` 目录，于是它们整包进了 asar——
+实测 `out/tsc-node` 53 条 + `out/tsc-web` 41 条，其中 **27 条是编译后的测试文件**
+（`out/tsc-web/tests/ai/*.test.js` 等），另有 `*.tsbuildinfo` 与一个
+`out/tsc-web/zz-test-new.txt` 杂项。功能不受影响（`main` 仍指向 `out/main/index.js`），
+属于把测试与构建缓存发给用户的问题。建议改法（二选一，需另行授权）：
+把 `files` 收紧成 `out/main/**`、`out/preload/**`、`out/renderer/**`；
+或把 `tsconfig` 的 `outDir` 从 `out/tsc-*` 挪出 `out/`。
