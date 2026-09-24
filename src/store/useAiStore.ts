@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { call, getApi } from '../api';
 import type {
+  AiBackend,
   AiCapabilityView,
   AiCatalogResult,
   AiDonePayload,
@@ -52,6 +53,11 @@ interface AiState {
   catalog: AiCatalogResult | null;
   /** 设置页只读统计（模型占用 / 可用磁盘 / 整卡显存 / 暂存条目） */
   stats: AiStorageStats | null;
+  /**
+   * 用户显式选择的推理后端。默认 GPU；切 CPU 只能由人勾选（D12 禁止无声降级），
+   * 所以它是渲染层的模式状态，每次 ai:run 都带上，不持久化——重启回 GPU。
+   */
+  backend: AiBackend;
   task: AiTask | null;
   result: AiDonePayload | null;
   error: AiErrorPayload | null;
@@ -63,6 +69,7 @@ interface AiState {
   usableCapabilities: () => AiCapabilityView[];
   /** 主按钮文案：恒定取清单里的行为名，不随内部状态变（D13） */
   primaryLabel: (capabilityId?: string) => string;
+  setBackend: (backend: AiBackend) => void;
   requestRun: (absPath: string, capabilityId?: string) => Promise<void>;
   startRun: (absPath: string, capabilityId?: string, downloadApproved?: boolean) => Promise<void>;
   approveDownload: () => Promise<void>;
@@ -78,6 +85,7 @@ let subscribed = false;
 export const useAiStore = create<AiState>((set, get) => ({
   catalog: null,
   stats: null,
+  backend: 'dml',
   task: null,
   result: null,
   error: null,
@@ -137,6 +145,8 @@ export const useAiStore = create<AiState>((set, get) => ({
     return cap?.label ?? '抠图';
   },
 
+  setBackend: (backend) => set({ backend }),
+
   requestRun: async (absPath, capabilityId) => {
     // 清单可能还没回来（首帧就点了）：先自愈，不能静默什么都不做
     await get().ensureCatalog();
@@ -162,7 +172,9 @@ export const useAiStore = create<AiState>((set, get) => ({
     if (!cap) return;
     set({ result: null, error: null });
     try {
-      const ack = await call(getApi().aiRun({ absPath, capabilityId: cap.id, downloadApproved }));
+      const ack = await call(
+        getApi().aiRun({ absPath, capabilityId: cap.id, downloadApproved, backend: get().backend })
+      );
       set({ task: { taskId: ack.taskId, absPath, capabilityId: cap.id, phase: 'load', percent: 0 } });
     } catch (err) {
       set({ error: { taskId: '', code: 'RUN_FAILED', message: String(err) } });

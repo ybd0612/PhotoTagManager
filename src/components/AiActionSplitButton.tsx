@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Button from '@mui/material/Button';
+import Checkbox from '@mui/material/Checkbox';
 import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
 import DialogContentText from '@mui/material/DialogContentText';
+import FormControlLabel from '@mui/material/FormControlLabel';
 import Stack from '@mui/material/Stack';
+import Typography from '@mui/material/Typography';
 import { describeDownloadCost, useAiStore } from '../store/useAiStore';
 import type { AiCapabilityView, AiModelView } from '../../shared/types';
 
@@ -27,6 +30,11 @@ import type { AiCapabilityView, AiModelView } from '../../shared/types';
 /** 超过 5 个行为时后面的收进「更多」，布局按可扩展做（§4.1） */
 const MAX_VISIBLE_CAPABILITIES = 5;
 
+/** D12：CPU 只能由人显式勾选；勾选后这句代价说明常驻在底栏，不写成一次性提示 */
+const CPU_TOGGLE_LABEL = 'CPU 慢速模式（比 GPU 慢约一个数量级）';
+// 刻意不写"限 X 核"这种数字：核数由 inferenceChild 的线程常量决定，界面复述一遍就是第二处事实源
+const CPU_BACKEND_NOTICE = '当前走 CPU 慢速模式：比 GPU 慢约一个数量级，已限制线程数，不会占满全部核心';
+
 interface Props {
   absPath: string;
 }
@@ -41,6 +49,7 @@ export function AiActionSplitButton({ absPath }: Props) {
     [catalog]
   );
   const task = useAiStore((s) => s.task);
+  const backend = useAiStore((s) => s.backend);
   const pendingConfirm = useAiStore((s) => s.pendingConfirm);
   const init = useAiStore((s) => s.init);
   const requestRun = useAiStore((s) => s.requestRun);
@@ -76,6 +85,11 @@ export function AiActionSplitButton({ absPath }: Props) {
         <Button size="small" color="inherit" onClick={() => void cancelRun()} data-testid="ai-cancel">
           取消
         </Button>
+      )}
+      {backend === 'cpu' && (
+        <Typography variant="caption" data-testid="ai-backend-notice" sx={{ alignSelf: 'center', flexShrink: 0 }}>
+          {CPU_BACKEND_NOTICE}
+        </Typography>
       )}
       {pendingConfirm && (
         <Dialog open onClose={() => dismissConfirm()} aria-labelledby="ai-confirm-title">
@@ -157,6 +171,8 @@ function primaryActionOf(model: AiModelView): { label: string; action: 'download
 
 function ModelMenu({ cap, onClose }: { cap: AiCapabilityView; onClose: () => void }) {
   const modelAction = useAiStore((s) => s.modelAction);
+  const backend = useAiStore((s) => s.backend);
+  const setBackend = useAiStore((s) => s.setBackend);
   const [active, setActive] = useState(0);
   const itemRefs = useRef<Array<HTMLLIElement | null>>([]);
 
@@ -204,64 +220,77 @@ function ModelMenu({ cap, onClose }: { cap: AiCapabilityView; onClose: () => voi
     }
   };
 
+  // 后端是运行时选择，不挂在某个模型行上；D17 要求动作可点、能 Tab 到，所以用原生 checkbox
+  const backendToggle = (
+    <FormControlLabel
+      sx={{ px: 1.25, display: 'block' }}
+      control={
+        <Checkbox
+          size="small"
+          checked={backend === 'cpu'}
+          onChange={(event) => setBackend(event.target.checked ? 'cpu' : 'dml')}
+        />
+      }
+      label={<span style={{ fontSize: 13 }}>{CPU_TOGGLE_LABEL}</span>}
+    />
+  );
+
   return (
-    <ul
-      role="menu"
-      aria-label={`${cap.label} 的候选模型`}
-      onKeyDown={onKeyDown}
+    <div
       style={{
-        listStyle: 'none',
-        margin: 0,
-        padding: 0,
         position: 'absolute',
         zIndex: 10,
         background: '#fff',
         border: '1px solid rgba(0,0,0,0.12)',
         borderRadius: 4,
-        minWidth: 260
+        minWidth: 260,
+        padding: '4px 0'
       }}
     >
-      {models.map((model, index) => {
-        const primary = primaryActionOf(model);
-        return (
-          <li
-            key={model.id}
-            role="menuitem"
-            ref={(el) => {
-              itemRefs.current[index] = el;
-            }}
-            // 只让当前行可被 Tab 落到，其余靠方向键换行
-            tabIndex={index === active ? 0 : -1}
-            onFocus={() => setActive(index)}
-            style={{ padding: '6px 10px', background: index === active ? 'rgba(25,118,210,0.08)' : undefined }}
-          >
-            <span>
-              {model.displayName} · {describeDownloadCost(model.sizeBytes).split('，')[0]} ·{' '}
-              {model.status === 'present' ? (model.loaded ? '已加载' : '已下载') : '未下载'}
-            </span>
-            <Stack direction="row" spacing={0.5} sx={{ ml: 1, display: 'inline' }}>
-              <Button
-                size="small"
-                onClick={() => void modelAction(model.id, primary.action).then(onClose)}
-                data-testid={`model-action-${primary.label}`}
-              >
-                {primary.label}
-              </Button>
-              {model.status === 'present' && !model.loaded && (
-                <Button size="small" onClick={() => void modelAction(model.id, 'unload')}>
-                  卸载
+      <ul role="menu" aria-label={`${cap.label} 的候选模型`} onKeyDown={onKeyDown} style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+        {models.map((model, index) => {
+          const primary = primaryActionOf(model);
+          return (
+            <li
+              key={model.id}
+              role="menuitem"
+              ref={(el) => {
+                itemRefs.current[index] = el;
+              }}
+              // 只让当前行可被 Tab 落到，其余靠方向键换行
+              tabIndex={index === active ? 0 : -1}
+              onFocus={() => setActive(index)}
+              style={{ padding: '6px 10px', background: index === active ? 'rgba(25,118,210,0.08)' : undefined }}
+            >
+              <span>
+                {model.displayName} · {describeDownloadCost(model.sizeBytes).split('，')[0]} ·{' '}
+                {model.status === 'present' ? (model.loaded ? '已加载' : '已下载') : '未下载'}
+              </span>
+              <Stack direction="row" spacing={0.5} sx={{ ml: 1, display: 'inline' }}>
+                <Button
+                  size="small"
+                  onClick={() => void modelAction(model.id, primary.action).then(onClose)}
+                  data-testid={`model-action-${primary.label}`}
+                >
+                  {primary.label}
                 </Button>
-              )}
-              {!model.isDefault && (
-                <Button size="small" onClick={() => void modelAction(model.id, 'set-default')}>
-                  设为默认
-                </Button>
-              )}
-            </Stack>
-          </li>
-        );
-      })}
-    </ul>
+                {model.status === 'present' && !model.loaded && (
+                  <Button size="small" onClick={() => void modelAction(model.id, 'unload')}>
+                    卸载
+                  </Button>
+                )}
+                {!model.isDefault && (
+                  <Button size="small" onClick={() => void modelAction(model.id, 'set-default')}>
+                    设为默认
+                  </Button>
+                )}
+              </Stack>
+            </li>
+          );
+        })}
+      </ul>
+      {backendToggle}
+    </div>
   );
 }
 

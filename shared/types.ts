@@ -150,14 +150,17 @@ export interface AiCatalogResult {
   capabilities: AiCapabilityView[];
 }
 
+/** 用户显式选择的推理后端：默认走 GPU（DirectML），CPU 是慢速兜底、只能由人勾选 */
+export type AiBackend = 'dml' | 'cpu';
+
 export interface AiRunRequest {
   absPath: string;
   capabilityId: string;
   modelId?: string;
   /** 首次下载的代价告知已由界面确认（AG2）。已下载时不需要 */
   downloadApproved?: boolean;
-  /** 显式选 CPU 慢速模式（D12：必须用户显式勾选，不允许无声降级） */
-  backend?: 'dml' | 'cpu';
+  /** 显式选 CPU 慢速模式（D12：必须用户显式勾选，不允许无声降级）。变化时主进程必须重建会话 */
+  backend?: AiBackend;
 }
 
 /** ai:run 立刻回 taskId；进度与结果一律走事件（一次点击内部走完下载与加载） */

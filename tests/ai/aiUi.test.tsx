@@ -53,7 +53,8 @@ function seedCatalog(cap: AiCapabilityView): void {
     task: null,
     result: null,
     error: null,
-    pendingConfirm: null
+    pendingConfirm: null,
+    backend: 'dml'
   });
 }
 
@@ -120,7 +121,14 @@ beforeEach(async () => {
   api.aiModelDelete.mockReset().mockResolvedValue(ok({ modelId: 'u2netp', status: 'absent' }));
   api.aiModelUnload.mockReset().mockResolvedValue(ok({ modelId: 'u2netp', status: 'present' }));
   api.aiModelSetDefault.mockReset().mockResolvedValue(ok(catalogFixture));
-  useAiStore.setState({ catalog: null, task: null, result: null, error: null, pendingConfirm: null });
+  useAiStore.setState({
+    catalog: null,
+    task: null,
+    result: null,
+    error: null,
+    pendingConfirm: null,
+    backend: 'dml'
+  });
   // 先订阅事件再拉清单：每条用例都从"清单已加载 + 事件已接上"出发
   useAiStore.getState().init();
   await useAiStore.getState().ensureCatalog();
@@ -222,6 +230,24 @@ describe('ai/useAiStore —— 状态机', () => {
     expect(useAiStore.getState().result).toBeNull();
   });
 
+  it('§8-16 默认按 GPU 发请求；用户显式勾选 CPU 后每次请求都带着它', async () => {
+    await useAiStore.getState().startRun('C:/photos/a.jpg');
+    expect(api.aiRun).toHaveBeenLastCalledWith(expect.objectContaining({ backend: 'dml' }));
+    useAiStore.getState().setBackend('cpu');
+    await useAiStore.getState().startRun('C:/photos/b.jpg');
+    expect(api.aiRun).toHaveBeenLastCalledWith(
+      expect.objectContaining({ absPath: 'C:/photos/b.jpg', backend: 'cpu' })
+    );
+  });
+
+  it('§8-16 首次下载的代价确认走完之后仍带着 CPU 选择，不因弹窗丢失', async () => {
+    seedCatalog(capWith({}, { status: 'absent' }));
+    useAiStore.getState().setBackend('cpu');
+    await useAiStore.getState().requestRun('C:/photos/a.jpg');
+    await useAiStore.getState().approveDownload();
+    expect(api.aiRun).toHaveBeenCalledWith(expect.objectContaining({ downloadApproved: true, backend: 'cpu' }));
+  });
+
   it('代价文案用实测速率算粗估，且只有这一处一次性询问，不做实时剩余时间外推', () => {
     const text = describeDownloadCost(4_574_861);
     expect(text).toContain('4.4MB');
@@ -294,6 +320,39 @@ describe('AiActionSplitButton —— 组合按钮', () => {
     fireEvent.mouseOver(wrap);
     expect(screen.queryByRole('menu')).toBeNull();
     expect(within(wrap).queryAllByRole('button')).toHaveLength(2);
+  });
+
+  it('§8-16 下拉里的 CPU 开关可点可达，勾选后界面常驻说明代价', () => {
+    render(<AiActionSplitButton absPath="C:/photos/a.jpg" />);
+    expect(screen.queryByTestId('ai-backend-notice')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /选择模型/ }));
+
+    const toggle = screen.getByRole('checkbox', { name: /CPU/ });
+    fireEvent.click(toggle);
+    expect(useAiStore.getState().backend).toBe('cpu');
+    const notice = screen.getByTestId('ai-backend-notice');
+    expect(notice.textContent).toMatch(/CPU/);
+    expect(notice.textContent).toMatch(/慢/);
+
+    // 提示必须跟着实际后端走：关掉就消失，不能常驻当装饰文案
+    fireEvent.click(screen.getByRole('checkbox', { name: /CPU/ }));
+    expect(useAiStore.getState().backend).toBe('dml');
+    expect(screen.queryByTestId('ai-backend-notice')).toBeNull();
+  });
+
+  it('§8-16 CPU 模式下主按钮语义恒定仍是「抠图」，且点它发的是 CPU 请求（D13）', async () => {
+    render(<AiActionSplitButton absPath="C:/photos/a.jpg" />);
+    fireEvent.click(screen.getByRole('button', { name: /选择模型/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /CPU/ }));
+
+    const primary = screen.getByRole('button', { name: /^抠图$/ }) as HTMLButtonElement;
+    expect(primary.disabled).toBe(false);
+    expect(primary.textContent).toContain('抠图');
+    expect(primary.textContent).not.toMatch(/CPU/);
+    await act(async () => {
+      fireEvent.click(primary);
+    });
+    expect(api.aiRun).toHaveBeenCalledWith(expect.objectContaining({ backend: 'cpu' }));
   });
 
   it('⑤ 首次运行弹代价确认，取消则不发请求', async () => {
