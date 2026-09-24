@@ -23,7 +23,7 @@ export interface FolderNode {
   name: string; // 目录名
   directCount: number; // 直接包含的图片数
   totalCount: number; // 递归包含的图片总数（含全部后代）
-  hidden: boolean; // 是否在隐藏集（渲染时剪枝）
+  hidden: boolean; // 是否在隐藏集（树渲染剪枝 + 父级递归汇总剪枝；显式选中该目录时仍出图）
   childrenLoaded: boolean; // 懒加载标记：false 时 children 为空，展开时再填充
   children: FolderNode[]; // 子目录（按名称排序）
 }

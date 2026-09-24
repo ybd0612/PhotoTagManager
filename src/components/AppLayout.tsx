@@ -28,8 +28,9 @@ import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import SettingsIcon from '@mui/icons-material/Settings';
 import { call, getApi } from '../api';
-import { useAppStore } from '../store/useAppStore';
+import { rootKey, useAppStore } from '../store/useAppStore';
 import { cancelScan, rescan, startScan } from '../hooks/useScan';
+import { collectDirAndDescendants } from '../utils/folders';
 import { FolderTree } from './FolderTree';
 import { TagFilterBar } from './TagFilterBar';
 import { ThumbnailGrid } from './ThumbnailGrid';
@@ -52,6 +53,7 @@ export function AppLayout(): JSX.Element {
   const scanStats = useAppStore((s) => s.scanStats);
   const scanStatsByRoot = useAppStore((s) => s.scanStatsByRoot);
   const imagesByDir = useAppStore((s) => s.imagesByDir);
+  const tree = useAppStore((s) => s.tree);
   const selectedImages = useAppStore((s) => s.selectedImages);
   const snackbar = useAppStore((s) => s.snackbar);
   const setSnackbar = useAppStore((s) => s.setSnackbar);
@@ -79,16 +81,15 @@ export function AppLayout(): JSX.Element {
     return normalized.split('/').filter(Boolean).pop() ?? '根目录';
   }, [selectedRoot, selectedDir]);
 
-  // 当前选中根的图片总数（按 imagesByDir 复合 key 前缀统计）
+  // 当前选中根的可见图片数（隐藏目录及其子树不计，与网格同口径）
   const currentRootImageCount = useMemo(() => {
     if (!selectedRootId) return 0;
-    const prefix = `${selectedRootId}\u0000`;
     let total = 0;
-    for (const [key, arr] of imagesByDir) {
-      if (key.startsWith(prefix)) total += arr.length;
+    for (const dir of collectDirAndDescendants(tree, '')) {
+      total += imagesByDir.get(rootKey(selectedRootId, dir))?.length ?? 0;
     }
     return total;
-  }, [selectedRootId, imagesByDir]);
+  }, [selectedRootId, imagesByDir, tree]);
 
   // 当前选中根的扫描统计
   const currentRootScanState = selectedRootId ? (scanStateByRoot.get(selectedRootId) ?? 'idle') : 'idle';

@@ -443,6 +443,7 @@ sequenceDiagram
 - **类型放置**：一切跨进程类型放 `shared/types.ts`，禁止在主/渲染各自重复定义；`shared/` 内文件不得 import electron。
 - **路径约定**：业务代码一律 `absPath`（绝对）与 `relPath`（相对根目录，`/` 分隔）成对出现；持久化只存 `relPath`（D2）。
 - **目录树渲染规则**：`totalCount > 0` 才显示；`hiddenSet` 中节点及其子树剪枝；「取消隐藏」只清除该目录自身记录。
+- **隐藏的作用域**：剪枝同时落在目录树渲染与 `src/utils/folders.ts` 的 `collectDirAndDescendants`（缩略图网格取图、筛选条上下文计数、图片统计共用），隐藏子树的图片不参与父级上卷；显式选中隐藏目录时仍出图。全局 `tagCache`/`tagCounts` 与扫描后的标签预读不受隐藏影响（Q8）。
 - **缩略图缓存**：`userData/thumbnails/{sha1(absPath:mtimeMs:size)}.jpg`；mtime/size 变化即视为新文件。
 - **标签读取策略**：扫描阶段**不读 XMP**；点击目录/预览时才按需读取并写入 `tagCache`（Q7 性能要求）。
 - **乐观更新**：标签增删先改本地 store，IPC 失败回滚 + Snackbar 提示（Q3 立即写回）。

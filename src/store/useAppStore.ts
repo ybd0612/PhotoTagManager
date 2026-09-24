@@ -389,7 +389,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     const treesByRoot = new Map(get().treesByRoot);
     treesByRoot.set(rootId, rebuildRootChildren(rootId));
     const tree = get().selectedRootId === rootId ? (treesByRoot.get(rootId) ?? []) : get().tree;
-    set({ hiddenSet, treesByRoot, tree });
+    // 隐藏当前浏览目录或其祖先：该节点已从树上消失，选中态复位到根目录（避免停在不可达的空选中）
+    const { selectedDir } = get();
+    const hidesSelection =
+      relPath !== '' &&
+      selectedDir !== null &&
+      (selectedDir === relPath || selectedDir.startsWith(`${relPath}/`));
+    set({
+      hiddenSet,
+      treesByRoot,
+      tree,
+      ...(hidesSelection ? { selectedDir: '', selectedImages: new Set<string>() } : {})
+    });
   },
 
   unhideFolderLocal: (rootId, relPath) => {
