@@ -556,3 +556,28 @@ asar.unpacked 内原生库仍是 win32/x64 五个文件，无其他平台残留
 **并发提示**：本轮期间另一场会话往 `master` 插了 `2fc1ea4`（隐藏目录统计，动了 `shared/types.ts`）。
 `git status` 的"干净"快照会被它打破，所以门槛是在它之后跑的（15:29 全量、15:33 出包），
 新包里含它——引用"这个包只含 M1 改动"时要带上这个限定。
+
+## 本轮收口时的在途项（2026-09-24 第三次反馈，等下一轮接续）
+
+用户真机试用后反馈"抠图效果很好"，另提三件事，已当面取到决策：
+
+1. **已完成 `ed85272`**：保存成功后**主动刷新当前目录**（规格 §4.4 C2 定案走①），
+   复用已测的根 `rescan()`；`previewWiring` 用例改为断言"真的发起了刷新"（mock `useScan`），
+   因为只断言文案的话写一句"请重新扫描"也能过。验证：4 用例 + `typecheck` exit 0。
+2. **待做：图片删除**。决策已定 —— **移到系统回收站**（Electron `shell.trashItem`）+ **一次确认框**
+   + **网格支持多选批量删** + 详情页同样入口。实施面：新 IPC `file:trash`（走"三处一次改齐"：
+   `shared/types.ts` / `electron/ipc.ts` / `electron/preload.ts` + `src/api.ts`）、
+   store 里移除 + 目录计数处理（同样**不要**只改 `imagesByDir`，与 C2 同一个理由）、
+   右键菜单复用 `FolderTree.tsx` 已有的 `onContextMenu` + `Menu` 锚点模式。
+3. **待做：预览详情页排版重做**。诊断结论（结构性，不是配色）：大图下面叠了**三条横向抽屉**
+   ——AI 条（`PreviewOverlay.tsx:349`）、标签条（`:356`）、条内还有 `Divider` + 元数据行（`:395`），
+   外加顶栏一行塞「绝对路径 + 文件名 + n/N + 4 个图标」，文字全是手写 rgba 的 0.55/0.7/0.8 三级 caption。
+   方向（已选）：**先搭截图回路自己边看边改**——起 dev server 或把 `out/renderer` 静态起服务，
+   用浏览器注入 `window.api` 假实现（要按 `mergeScanBatch` / `onScanDone` 的事件形状喂数据）渲染出预览层，
+   截图看真像素再迭代；改完仍由用户眼验最终效果。
+   结构候选：三条栏合为「一条动作条 + 元数据浮到图区角落」，文本对比统一成三级 token。
+
+**重建安装包被挡住**：用户当时正开着 `dist/win-unpacked/PhotoTagManager.exe`（5 个进程），
+`electron-builder` 清空 `dist/win-unpacked` 时报 `d3dcompiler_47.dll: Access is denied`，`dist` exit 1。
+所以**磁盘上当前那个包（121,409,167 字节 / win-unpacked mtime 15:33）不含第 1、2、3 项的改动**；
+要继续出包，先请用户退出该应用，再 `npm run build` → `npm run dist`（顺序不可省，见《安装包重建》）。
