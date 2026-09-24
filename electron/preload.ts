@@ -53,6 +53,8 @@ const api: PhotoTagApi = {
   openExternal: (url: string) => ipcRenderer.invoke('shell:open-external', url),
   // 在资源管理器中定位文件
   revealFileInExplorer: (absPath: string) => ipcRenderer.invoke('file:reveal-in-explorer', absPath),
+  // 移到系统回收站（可恢复）
+  trashFiles: (absPaths: string[]) => ipcRenderer.invoke('file:trash', absPaths),
   // 复制文件到剪贴板
   copyFileToClipboard: (absPath: string) => ipcRenderer.invoke('clipboard:copy-file', absPath),
   // 标签

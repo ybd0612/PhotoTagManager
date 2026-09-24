@@ -15,6 +15,8 @@ import type {
  * - 复合 key = `${rootId}\u0000${relPath}`，避免不同根同 relPath 冲突。
  */
 
+import { planImageRemoval } from './removeImages';
+
 export type ScanState = 'idle' | 'scanning' | 'done' | 'error';
 
 export interface PreviewState {
@@ -75,6 +77,8 @@ interface AppState {
   selectDir(relPath: string): void;
   toggleSelectImage(id: string): void;
   clearSelection(): void;
+  /** 文件已被移到回收站：把内存里的账目对齐（列表 / 目录计数 / 选中 / 标签 / 预览） */
+  removeImagesLocal(absPaths: string[]): void;
   // 标签筛选
   toggleFilterTag(tag: string): void;
   setFilterMode(mode: 'AND' | 'OR'): void;
@@ -467,6 +471,32 @@ export const useAppStore = create<AppState>((set, get) => ({
       list.findIndex((img) => img.absPath === image.absPath)
     );
     set({ preview: { image: list[index] ?? image, index, list } });
+  },
+
+  removeImagesLocal: (absPaths) => {
+    const s = get();
+    const patch = planImageRemoval(
+      {
+        imagesByDir: s.imagesByDir,
+        selectedImages: s.selectedImages,
+        tagCache: s.tagCache,
+        preview: s.preview,
+        selectedRootId: s.selectedRootId
+      },
+      absPaths,
+      (key) => nodeMap.get(key)
+    );
+    if (!patch) return;
+    const treesByRoot = new Map(s.treesByRoot);
+    for (const rootId of patch.touchedRootIds) treesByRoot.set(rootId, rebuildRootChildren(rootId));
+    set({
+      imagesByDir: patch.imagesByDir,
+      selectedImages: patch.selectedImages,
+      ...(patch.tagCache ? { tagCache: patch.tagCache, tagCounts: recomputeTagCounts(patch.tagCache) } : {}),
+      preview: patch.preview,
+      treesByRoot,
+      tree: s.selectedRootId ? treesByRoot.get(s.selectedRootId) ?? [] : s.tree
+    });
   },
 
   closePreview: () => set({ preview: null }),

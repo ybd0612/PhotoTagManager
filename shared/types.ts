@@ -233,8 +233,16 @@ export interface AiModelOpResult {
   reason?: string;
 }
 
+/** 移到回收站的结果：逐条给失败原因，部分失败不允许静默 */
+export interface TrashResult {
+  trashed: string[];
+  failed: Array<{ absPath: string; reason: string }>;
+}
+
 /** preload 暴露到 window.api 的白名单接口（electron/preload.ts 与 src/api.ts 严格一致） */
 export interface PhotoTagApi {
+  // 移到系统回收站（可恢复）；主进程只放行落在已添加根目录内的路径
+  trashFiles(absPaths: string[]): Promise<IpcResult<TrashResult>>;
   // 目录选择
   pickDirectory(): Promise<IpcResult<string | null>>;
   // 多根目录（R10：多根 + 别名）

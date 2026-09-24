@@ -38,6 +38,7 @@ function createMockApi(): PhotoTagApi {
     openFolderInExplorer: vi.fn(async () => ({ ok: true as const, data: undefined })),
     openExternal: vi.fn(async () => ({ ok: true as const, data: undefined })),
     revealFileInExplorer: vi.fn(async () => ({ ok: true as const, data: undefined })),
+    trashFiles: vi.fn(async () => ({ ok: true as const, data: { trashed: [] as string[], failed: [] } })),
     copyFileToClipboard: vi.fn(async () => ({ ok: true as const, data: undefined })),
     readImageTags: vi.fn(async () => ({
       ok: true as const,

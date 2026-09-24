@@ -20,6 +20,9 @@ import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import { call, formatBytes, getApi, toFileUrl } from '../api';
 import { rescan } from '../hooks/useScan';
+import { useTrashImages } from '../hooks/useTrashImages';
+import Menu from '@mui/material/Menu';
+import MenuItem from '@mui/material/MenuItem';
 import { useAppStore } from '../store/useAppStore';
 import { useAiStore } from '../store/useAiStore';
 import { AiActionSplitButton } from './AiActionSplitButton';
@@ -39,6 +42,8 @@ export function PreviewOverlay(): JSX.Element | null {
   const setTagsForPath = useAppStore((s) => s.setTagsForPath);
   const setSnackbar = useAppStore((s) => s.setSnackbar);
 
+  const [imageMenu, setImageMenu] = useState<{ x: number; y: number } | null>(null);
+  const { askTrash, dialog: trashDialog } = useTrashImages();
   const [info, setInfo] = useState<ImageInfo | null>(null);
   const [infoLoading, setInfoLoading] = useState(false);
   const [infoError, setInfoError] = useState(false);
@@ -285,10 +290,15 @@ export function PreviewOverlay(): JSX.Element | null {
 
       {/* 大图区：滚轮缩放（光标为中心）+ 拖动平移（长图），双击重置 */}
       <Box
+        data-testid="preview-stage"
         className={`relative flex min-h-0 flex-1 select-none items-center justify-center overflow-hidden p-4 ${
           zoom !== 1 ? 'cursor-grab active:cursor-grabbing' : ''
         }`}
         sx={{ touchAction: 'none' }}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setImageMenu({ x: e.clientX, y: e.clientY });
+        }}
         onMouseDown={(e) => {
           if (zoomRef.current === 1) return;
           dragRef.current = {
@@ -354,6 +364,24 @@ export function PreviewOverlay(): JSX.Element | null {
           <AiCompareActions absPath={image.absPath} onSaved={handleAiSaved} />
         </Stack>
       </Box>
+      <Menu
+        open={imageMenu !== null}
+        onClose={() => setImageMenu(null)}
+        anchorReference="anchorPosition"
+        anchorPosition={imageMenu ? { top: imageMenu.y, left: imageMenu.x } : undefined}
+      >
+        <MenuItem
+          data-testid="preview-menu-trash"
+          onClick={() => {
+            const target = image.absPath;
+            setImageMenu(null);
+            askTrash([target]);
+          }}
+        >
+          移到回收站
+        </MenuItem>
+      </Menu>
+      {trashDialog}
       {/* 底栏：标签 + 信息 */}
       <Box className="shrink-0 px-4 py-3" sx={{ borderTop: '1px solid rgba(255,255,255,0.12)' }}>
         <Stack direction="row" spacing={1} alignItems="center" className="mb-2 flex-wrap">

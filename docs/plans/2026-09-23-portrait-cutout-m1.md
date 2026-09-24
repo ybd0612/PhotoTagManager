@@ -564,11 +564,15 @@ asar.unpacked 内原生库仍是 win32/x64 五个文件，无其他平台残留
 1. **已完成 `ed85272`**：保存成功后**主动刷新当前目录**（规格 §4.4 C2 定案走①），
    复用已测的根 `rescan()`；`previewWiring` 用例改为断言"真的发起了刷新"（mock `useScan`），
    因为只断言文案的话写一句"请重新扫描"也能过。验证：4 用例 + `typecheck` exit 0。
-2. **待做：图片删除**。决策已定 —— **移到系统回收站**（Electron `shell.trashItem`）+ **一次确认框**
-   + **网格支持多选批量删** + 详情页同样入口。实施面：新 IPC `file:trash`（走"三处一次改齐"：
-   `shared/types.ts` / `electron/ipc.ts` / `electron/preload.ts` + `src/api.ts`）、
-   store 里移除 + 目录计数处理（同样**不要**只改 `imagesByDir`，与 C2 同一个理由）、
-   右键菜单复用 `FolderTree.tsx` 已有的 `onContextMenu` + `Menu` 锚点模式。
+2. **已完成：图片删除**（PRD 新增 R29）。实现：`file:trash` 通道逐条走 `shell.trashItem`，
+   先过 `shared/pathGuard.isInsideRoot`（只放行已添加根目录内的路径，越界的记失败、根本不碰 shell）；
+   确认框与执行抽成共用的 `useTrashImages`，网格右键（多选时对整个选中集，口径取 `selectedImages` +
+   `imagesByDir` 全量而非当前筛选）与详情页右键共用一份；账目对齐抽成纯函数 `planImageRemoval`
+   （列表 / 目录 `directCount`+各级 `totalCount` / 选中集 / 标签计数 / 预览五处一起改）。
+   **两条取证记录**：① 我第一版在测试里用了 store 中并不存在的键 `selectedIds`，那条"选中集同步"断言
+   因此是**假绿**（自己造键自己验），靠预览用例报 `input.selectedIds is not iterable` 才照出来，真名 `selectedImages`；
+   ② `tests/app.test.tsx` 那份完整 `PhotoTagApi` 桩漏了新通道，被 `typecheck` 直接拦下——三处同步有类型兜底，
+   这次兜住了。证据：`tests/ipcTrash.test.ts` 4 条 + `tests/trashImages.test.ts` 10 条 + 预览接线 3 条，全量 **255 用例 / 24 文件**通过。
 3. **待做：预览详情页排版重做**。诊断结论（结构性，不是配色）：大图下面叠了**三条横向抽屉**
    ——AI 条（`PreviewOverlay.tsx:349`）、标签条（`:356`）、条内还有 `Divider` + 元数据行（`:395`），
    外加顶栏一行塞「绝对路径 + 文件名 + n/N + 4 个图标」，文字全是手写 rgba 的 0.55/0.7/0.8 三级 caption。

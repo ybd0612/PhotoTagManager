@@ -5,6 +5,7 @@ import { FixedSizeGrid } from 'react-window';
 import { rootKey, useAppStore } from '../store/useAppStore';
 import { useThumbnails } from '../hooks/useThumbnails';
 import { rescan } from '../hooks/useScan';
+import { useTrashImages } from '../hooks/useTrashImages';
 import { call, getApi, toFileUrl } from '../api';
 import { collectDirAndDescendants } from '../utils/folders';
 import type { ImageFile } from '../../shared/types';
@@ -76,7 +77,8 @@ export function ThumbnailGrid(): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [range, setRange] = useState<GridRange | null>(null);
-  const [contextMenu, setContextMenu] = useState<{ mouseX: number; mouseY: number; image: ImageFile } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ mouseX: number; mouseY: number; image: ImageFile; paths: string[] } | null>(null);
+  const { askTrash, dialog: trashDialog } = useTrashImages();
   const [imageErrors, setImageErrors] = useState<Set<string>>(new Set());
   const [retryNonce, setRetryNonce] = useState<Map<string, number>>(new Map());
 
@@ -139,8 +141,22 @@ export function ThumbnailGrid(): JSX.Element {
     setPreview(image, filtered);
   };
 
+  /**
+   * 右键时决定这次动手的范围：右键的那张若在多选集内 → 整个选中集（与批量打标同口径，
+   * 从 imagesByDir 取，不受当前筛选影响）；否则只动这一张。
+   */
+  const pathsFor = (image: ImageFile): string[] => {
+    const { selectedImages, imagesByDir } = useAppStore.getState();
+    if (!selectedImages.has(image.id)) return [image.absPath];
+    const selected: string[] = [];
+    for (const arr of imagesByDir.values()) {
+      for (const img of arr) if (selectedImages.has(img.id)) selected.push(img.absPath);
+    }
+    return selected.length > 0 ? selected : [image.absPath];
+  };
+
   const openContextMenu = (image: ImageFile, mouseX: number, mouseY: number): void => {
-    setContextMenu({ mouseX, mouseY, image });
+    setContextMenu({ mouseX, mouseY, image, paths: pathsFor(image) });
   };
 
   const handleContextMenu = (event: MouseEvent, image: ImageFile): void => {
@@ -314,7 +330,18 @@ export function ThumbnailGrid(): JSX.Element {
         anchorPosition={contextMenu ? { top: contextMenu.mouseY, left: contextMenu.mouseX } : undefined}
       >
         <MenuItem autoFocus onClick={() => void handleRevealInExplorer()}>在资源管理器中打开</MenuItem>
+        <MenuItem
+          data-testid="menu-trash"
+          onClick={() => {
+            const paths = contextMenu?.paths ?? [];
+            setContextMenu(null);
+            askTrash(paths);
+          }}
+        >
+          移到回收站{contextMenu && contextMenu.paths.length > 1 ? `（${contextMenu.paths.length} 张）` : ''}
+        </MenuItem>
       </Menu>
+      {trashDialog}
     </div>
   );
 }

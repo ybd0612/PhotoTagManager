@@ -1,5 +1,6 @@
 import { app, clipboard, dialog, ipcMain, shell, type BrowserWindow } from 'electron';
-import type { AiGpuMemory, AiRunAck, AiRunRequest, IpcResult, TagWriteRequest, UpdateStatus } from '../shared/types';
+import type { AiGpuMemory, AiRunAck, AiRunRequest, IpcResult, TagWriteRequest, TrashResult, UpdateStatus } from '../shared/types';
+import { isInsideRoot } from '../shared/pathGuard';
 import type { ScanService } from './services/scanService';
 import type { XmpService } from './services/xmpService';
 import type { ThumbnailService } from './services/thumbnailService';
@@ -154,6 +155,30 @@ export function registerIpc(deps: IpcDeps): void {
   handle('file:reveal-in-explorer', async (absPath: string): Promise<void> => {
     if (!absPath) throw new Error('absPath 不能为空');
     shell.showItemInFolder(absPath);
+  });
+
+  /**
+   * 移到系统回收站（可从回收站找回，不做物理删除）。
+   * 路径来自渲染进程，所以先过守卫：只允许动已添加根目录里的文件，
+   * 越界的逐条记失败原因而不是悄悄跳过。单条失败不影响其余。
+   */
+  handle('file:trash', async (absPaths: string[]): Promise<TrashResult> => {
+    const roots = (await deps.roots.list()).map((r) => r.path);
+    const trashed: string[] = [];
+    const failed: TrashResult['failed'] = [];
+    for (const absPath of absPaths ?? []) {
+      if (!isInsideRoot(absPath, roots)) {
+        failed.push({ absPath, reason: '不在任何已添加的目录内，已拒绝' });
+        continue;
+      }
+      try {
+        await shell.trashItem(absPath);
+        trashed.push(absPath);
+      } catch (err) {
+        failed.push({ absPath, reason: err instanceof Error ? err.message : String(err) });
+      }
+    }
+    return { trashed, failed };
   });
 
   // 复制文件到剪贴板（FileNameW 格式，Windows 资源管理器可直接粘贴）

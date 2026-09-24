@@ -2,10 +2,10 @@
 // T14 · 接线：预览底栏必须真的挂上组合按钮与对比视图。
 // 组件各自的用例过了不代表挂载对了——这一条盯的是"接没接上"。
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within, act } from '@testing-library/react';
 
 import { PreviewOverlay } from '../../src/components/PreviewOverlay';
-import { useAppStore } from '../../src/store/useAppStore';
+import { rootKey, useAppStore } from '../../src/store/useAppStore';
 import { useAiStore } from '../../src/store/useAiStore';
 import type { AiDonePayload } from '../../shared/types';
 
@@ -42,6 +42,7 @@ const api: Record<string, ReturnType<typeof vi.fn>> = {
   readBulkTags: vi.fn(async () => ok([])),
   getThumbnail: vi.fn(async () => ok(null)),
   revealFileInExplorer: vi.fn(async () => ok(undefined)),
+  trashFiles: vi.fn(async () => ok({ trashed: [], failed: [] })),
   copyFileToClipboard: vi.fn(async () => ok(undefined)),
   openFolderInExplorer: vi.fn(async () => ok(undefined))
 };
@@ -63,6 +64,19 @@ function done(over: Partial<AiDonePayload> = {}): AiDonePayload {
     ...over
   };
 }
+
+/** 字段完整的图片：删除类断言要求它真的在 imagesByDir 账上，否则移除会空过 */
+const STAGE_IMAGE = {
+  id: 'a1',
+  absPath: 'C:/photos/a.jpg',
+  relPath: 'a.jpg',
+  name: 'a.jpg',
+  ext: '.jpg',
+  size: 100,
+  mtimeMs: 1,
+  dirRelPath: '',
+  tags: []
+};
 
 beforeEach(async () => {
   vi.stubGlobal('api', api);
@@ -98,11 +112,9 @@ beforeEach(async () => {
     ok({ savedPath: 'C:/photos/a.cutout.png', targetName: 'a.cutout.png', renamed: false, tagsWritten: [] })
   );
   useAppStore.setState({
-    preview: {
-      image: { absPath: 'C:/photos/a.jpg', rootId: 'r1', relPath: 'a.jpg', name: 'a.jpg', size: 100, mtimeMs: 1 },
-      index: 0,
-      list: []
-    }
+    selectedRootId: 'r1',
+    imagesByDir: new Map([[rootKey('r1', ''), [STAGE_IMAGE]]]),
+    preview: { image: STAGE_IMAGE, index: 0, list: [STAGE_IMAGE] as never[] }
   } as never);
   useAiStore.setState({ catalog: null, result: null, task: null, error: null, pendingConfirm: null });
 });
@@ -143,5 +155,52 @@ describe('预览层 AI 接线', () => {
     expect(text).toMatch(/正在刷新/);
     // 关键：真的发起刷新，而不是只写一句"请重新扫描"
     expect(rescanMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('预览层 · 移到回收站', () => {
+  it('大图区右键出菜单，确认后发出删除请求并把这张从账上划掉', async () => {
+    api.trashFiles.mockReset().mockResolvedValue(ok({ trashed: ['C:/photos/a.jpg'], failed: [] }));
+    render(<PreviewOverlay />);
+    fireEvent.contextMenu(screen.getByTestId('preview-stage'));
+    fireEvent.click(await screen.findByTestId('preview-menu-trash'));
+    const dialog = await screen.findByRole('dialog', { name: /移到回收站/ });
+    expect(dialog.textContent).toContain('回收站');
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole('button', { name: /^移到回收站/ }));
+    });
+    expect(api.trashFiles).toHaveBeenCalledWith(['C:/photos/a.jpg']);
+    const s = useAppStore.getState();
+    expect(s.preview).toBeNull();
+    expect(s.imagesByDir.get(rootKey('r1', '')) ?? []).toEqual([]);
+    expect(s.snackbar ?? '').toContain('回收站');
+  });
+
+  it('确认框里点取消：一个请求都不发，账目不动', async () => {
+    api.trashFiles.mockReset();
+    render(<PreviewOverlay />);
+    fireEvent.contextMenu(screen.getByTestId('preview-stage'));
+    fireEvent.click(await screen.findByTestId('preview-menu-trash'));
+    const dialog = await screen.findByRole('dialog', { name: /移到回收站/ });
+    fireEvent.click(within(dialog).getByRole('button', { name: /取消/ }));
+    expect(api.trashFiles).not.toHaveBeenCalled();
+    expect(useAppStore.getState().preview).not.toBeNull();
+    expect(useAppStore.getState().imagesByDir.get(rootKey('r1', ''))).toHaveLength(1);
+  });
+
+  it('没删成（被占用等）：原因说给人听，那张仍留在预览与列表里', async () => {
+    api.trashFiles.mockReset().mockResolvedValue(
+      ok({ trashed: [], failed: [{ absPath: 'C:/photos/a.jpg', reason: '文件正被其他程序使用' }] })
+    );
+    render(<PreviewOverlay />);
+    fireEvent.contextMenu(screen.getByTestId('preview-stage'));
+    fireEvent.click(await screen.findByTestId('preview-menu-trash'));
+    const dialog = await screen.findByRole('dialog', { name: /移到回收站/ });
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole('button', { name: /^移到回收站/ }));
+    });
+    expect(useAppStore.getState().preview).not.toBeNull();
+    expect(useAppStore.getState().imagesByDir.get(rootKey('r1', ''))).toHaveLength(1);
+    expect(useAppStore.getState().snackbar ?? '').toContain('文件正被其他程序使用');
   });
 });
