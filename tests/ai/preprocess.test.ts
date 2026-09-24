@@ -198,4 +198,4 @@ describe('ai/preprocess —— 输入形态闸门（§6 的 GIF/多帧与 RAW �
     expect((meta.pages ?? 1)).toBeGreaterThan(1);
     await expect(preprocessImage(gif, specWith(4, 4))).rejects.toThrow(/多帧|动图/);
   });
-};
+});

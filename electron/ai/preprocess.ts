@@ -26,28 +26,33 @@ export interface UprightRgb {
  * 不吃标记。依赖默认行为等于把方向正确性押在依赖库的默认值上，属回归高发点。
  */
 export async function loadUprightRgb(absPath: string): Promise<UprightRgb> {
-  // 先读元数据：既拿方向也拿帧数，多帧输入必须在解码前就被挡下来
-  let meta: sharp.Metadata;
+  // 先读元数据：既拿帧数也拿方向。多帧输入必须在解码之前就被挡下来。
+  // 这里不写 sharp.Metadata 之类的命名空间类型，避免 import 形态变化时编译不过。
+  let pages: number | undefined;
   try {
-    meta = await sharp(absPath).metadata();
+    pages = (await sharp(absPath).metadata()).pages;
   } catch (err) {
     throw new Error(`无法解码该图片（RAW/HEIC 或文件损坏）：${decodeReason(err)}`);
   }
-  assertSingleFrame(meta);
+  assertSingleFrame({ pages });
 
   let data: Buffer;
-  let info: sharp.OutputInfo;
+  let width: number;
+  let height: number;
+  let channels: number;
   try {
     const raw = await sharp(absPath).rotate().removeAlpha().raw().toBuffer({ resolveWithObject: true });
     data = raw.data;
-    info = raw.info;
+    width = raw.info.width;
+    height = raw.info.height;
+    channels = raw.info.channels;
   } catch (err) {
     throw new Error(`无法解码该图片（RAW/HEIC 或文件损坏）：${decodeReason(err)}`);
   }
-  if (info.channels !== 3) {
-    throw new Error(`解码后不是三通道 RGB（实际 ${info.channels} 通道），无法送入模型`);
+  if (channels !== 3) {
+    throw new Error(`解码后不是三通道 RGB（实际 ${channels} 通道），无法送入模型`);
   }
-  return { data, width: info.width, height: info.height, channels: 3 };
+  return { data, width, height, channels: 3 };
 }
 
 function decodeReason(err: unknown): string {
@@ -60,7 +65,7 @@ function decodeReason(err: unknown): string {
  * 明确拒绝而不是静默取首帧：多帧 GIF 的抠图产物形态没有共识，
  * 悄悄按首帧处理会产出一张"看起来成功"但与用户预期无关的图。
  */
-export function assertSingleFrame(meta: { pages?: number }): void {
+export function assertSingleFrame(meta: { pages?: number; width?: number; height?: number }): void {
   if ((meta.pages ?? 1) > 1) {
     throw new Error('不支持多帧/动图输入（如 GIF）：M1 只处理单帧图片');
   }
