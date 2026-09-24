@@ -587,3 +587,30 @@ asar.unpacked 内原生库仍是 win32/x64 五个文件，无其他平台残留
 抽包复核 **10 条内容断言全 PASS**，其中两条专盯本次改动：渲染产物含「正在刷新列表」、
 旧文案「重新扫描该目录后出现…」已不在包内。
 **固定前置检查**：以后每次出包前先确认应用已退出（`Get-Process PhotoTagManager` 计数为 0），再看 `dist` 的退出码。
+
+## 详情页重排：截图回路的实测结论（2026-09-24，未开工）
+
+**回路能做到什么**：`./dist/win-unpacked/PhotoTagManager.exe --remote-debugging-port=9222` 起真实应用后，
+Node 直连 CDP（`ws` + `Runtime.evaluate` / `Page.bringToFront` / `Browser.setWindowBounds`）**可以**在运行中的
+应用里执行 JS、点卡片开预览、读真实布局。**但拿不到像素**：`Page.captureScreenshot` 三种姿势
+（默认 / `fromSurface:false` / `captureBeyondViewport:true`）在窗口不可见时全部 12s 超时——
+Electron 126 在没有合成帧时不出图。脚本留在 `C:/Users/ybd06/temp/ptm-check/cdp-shot.cjs`
+（每条命令都带超时，不会把会话挂死；这条是被实测过的写法，别再退回无超时的版本）。
+
+**从真实运行里量到的数**（1264×781 窗口，缩略图正常加载 naturalWidth 320→显示 175）：
+
+```
+顶栏        48px
+大图区     587px  = 视口 75%   ← preview-stage
+AI 动作条   44px  + borderTop 1px
+标签+信息条 102px  + borderTop 1px（内部还有一条 Divider）
+```
+
+所以照片下方实际占了 **146px / 19%** 在两条栏上，其中 **102px 那条是"标签 chips + 输入框 + 分隔线 + 元数据"**，
+是最大的一块，也是我这几轮完全没动过的既有结构。重排的靶子因此是明确的：
+**把 44 + 102 两条压成一条 ~56px 的动作条，标签与元数据改为图上浮层或折叠**，
+文字对比统一成三级 token（现在散落 `rgba(255,255,255,0.55/0.7/0.8)` 手写值）。
+
+**下一步需要的一步人工**：把那个带 9222 端口的应用窗口**从最小化恢复并点到前台**，
+我立刻重跑 `node cdp-shot.cjs` 取两张图（网格 + 预览层），然后按真像素迭代；
+拿不到可见窗口时就只能照上面的数排布，审美仍要用户眼验。
