@@ -140,7 +140,9 @@ describe('ai/SettingsDialog —— 应用级总入口', () => {
     expect(pane.querySelectorAll('input[type=range], input[type=checkbox], input:not([type=range])')).toHaveLength(0);
   });
 
-  it('④ 顶栏有「设置」入口，点开能进 AI 分区', async () => {
+  // 全量并发跑时这条最慢：测试体内动态 import AppLayout 再渲染整个布局，
+  // 同场还有 DirectML 集成测试抢 CPU —— 单跑必过、全量稳定 5.2s 撞默认 5s 超时
+  it('④ 顶栏有「设置」入口，点开能进 AI 分区', { timeout: 20_000 }, async () => {
     const { AppLayout } = await import('../../src/components/AppLayout');
     render(<AppLayout />);
     fireEvent.click(await screen.findByRole('button', { name: /设置/ }));

@@ -1,6 +1,22 @@
 import { app, clipboard, dialog, ipcMain, shell, type BrowserWindow } from 'electron';
-import type { AiGpuMemory, AiRunAck, AiRunRequest, IpcResult, TagWriteRequest, TrashResult, UpdateStatus } from '../shared/types';
+import { promises as fsp } from 'fs';
+import { dirname } from 'path';
+import type {
+  AiGpuMemory,
+  AiRunAck,
+  AiRunRequest,
+  IpcResult,
+  SortDir,
+  SortKey,
+  TagWriteRequest,
+  ThumbSize,
+  TrashResult,
+  UiPrefs,
+  UpdateStatus
+} from '../shared/types';
+import { DEFAULT_UI_PREFS } from '../shared/types';
 import { isInsideRoot } from '../shared/pathGuard';
+import { settingsFile } from './ai/paths';
 import type { ScanService } from './services/scanService';
 import type { XmpService } from './services/xmpService';
 import type { ThumbnailService } from './services/thumbnailService';
@@ -179,6 +195,47 @@ export function registerIpc(deps: IpcDeps): void {
       }
     }
     return { trashed, failed };
+  });
+
+  /**
+   * 视图偏好（排序、缩略图档位）：与 AI 设置同文件、不同键（settings.json 的 ui 段）。
+   * 三个字段都是枚举，写入前按白名单校验——存进一个拼错的值会让界面筛出空列表。
+   */
+  const SORT_KEYS: SortKey[] = ['name', 'time', 'size'];
+  const SORT_DIRS: SortDir[] = ['asc', 'desc'];
+  const THUMB_SIZES: ThumbSize[] = ['small', 'medium', 'large'];
+  const readUiPrefs = async (): Promise<UiPrefs | null> => {
+    try {
+      const raw = JSON.parse(await fsp.readFile(settingsFile(), 'utf8')) as { ui?: UiPrefs };
+      return raw.ui ? { ...DEFAULT_UI_PREFS, ...raw.ui } : null;
+    } catch {
+      return null; // 文件不存在或坏了都按"没有偏好"处理
+    }
+  };
+
+  handle('prefs:get', async (): Promise<UiPrefs> => (await readUiPrefs()) ?? { ...DEFAULT_UI_PREFS });
+
+  handle('prefs:set', async (patch: Partial<UiPrefs>): Promise<UiPrefs> => {
+    const base = (await readUiPrefs()) ?? { ...DEFAULT_UI_PREFS };
+    const p = patch ?? {};
+    const next: UiPrefs = {
+      sortKey: SORT_KEYS.includes(p.sortKey as SortKey) ? (p.sortKey as SortKey) : base.sortKey,
+      sortDir: SORT_DIRS.includes(p.sortDir as SortDir) ? (p.sortDir as SortDir) : base.sortDir,
+      thumbSize: THUMB_SIZES.includes(p.thumbSize as ThumbSize) ? (p.thumbSize as ThumbSize) : base.thumbSize
+    };
+    let all: Record<string, unknown> = {};
+    const file = settingsFile();
+    try {
+      all = JSON.parse(await fsp.readFile(file, 'utf8')) as Record<string, unknown>;
+    } catch {
+      all = {};
+    }
+    all.ui = next;
+    await fsp.mkdir(dirname(file), { recursive: true });
+    const tmp = `${file}.tmp`;
+    await fsp.writeFile(tmp, JSON.stringify(all, null, 2));
+    await fsp.rename(tmp, file);
+    return next;
   });
 
   // 复制文件到剪贴板（FileNameW 格式，Windows 资源管理器可直接粘贴）

@@ -55,6 +55,9 @@ const api: PhotoTagApi = {
   revealFileInExplorer: (absPath: string) => ipcRenderer.invoke('file:reveal-in-explorer', absPath),
   // 移到系统回收站（可恢复）
   trashFiles: (absPaths: string[]) => ipcRenderer.invoke('file:trash', absPaths),
+  // 视图偏好（排序、缩略图档位）读写
+  getPrefs: () => ipcRenderer.invoke('prefs:get'),
+  setPrefs: (patch: Record<string, unknown>) => ipcRenderer.invoke('prefs:set', patch),
   // 复制文件到剪贴板
   copyFileToClipboard: (absPath: string) => ipcRenderer.invoke('clipboard:copy-file', absPath),
   // 标签

@@ -1,21 +1,28 @@
 import { useMemo, useState } from 'react';
 import {
+  Box,
   Button,
   Chip,
+  IconButton,
+  InputAdornment,
   ListItemText,
   Menu,
   MenuItem,
   Paper,
   Stack,
+  TextField,
   ToggleButton,
   ToggleButtonGroup,
   Tooltip,
   Typography
 } from '@mui/material';
+import CloseIcon from '@mui/icons-material/Close';
 import FilterAltIcon from '@mui/icons-material/FilterAlt';
 import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
+import SearchIcon from '@mui/icons-material/Search';
 import { rootKey, useAppStore } from '../store/useAppStore';
 import { collectDirAndDescendants } from '../utils/folders';
+import type { SortKey, ThumbSize } from '../../shared/types';
 
 /**
  * 标签筛选条（R08，多根/目录上下文）：两行布局。
@@ -33,6 +40,13 @@ export function TagFilterBar(): JSX.Element {
   const toggleFilterTag = useAppStore((s) => s.toggleFilterTag);
   const setFilterMode = useAppStore((s) => s.setFilterMode);
   const clearFilter = useAppStore((s) => s.clearFilter);
+  const nameQuery = useAppStore((s) => s.nameQuery);
+  const setNameQuery = useAppStore((s) => s.setNameQuery);
+  const sortKey = useAppStore((s) => s.sortKey);
+  const sortDir = useAppStore((s) => s.sortDir);
+  const setSort = useAppStore((s) => s.setSort);
+  const thumbSize = useAppStore((s) => s.thumbSize);
+  const setThumbSize = useAppStore((s) => s.setThumbSize);
 
   const [anchor, setAnchor] = useState<null | HTMLElement>(null);
 
@@ -74,6 +88,70 @@ export function TagFilterBar(): JSX.Element {
 
   return (
     <Paper className="shrink-0 rounded-none border-b border-slate-200 px-3 py-2">
+      {/* 找图工具行：文件名搜索 + 排序 + 缩略图档位（偏好持久化到 settings.json） */}
+      <Stack direction="row" alignItems="center" spacing={1} className="flex-wrap pb-2">
+        <TextField
+          size="small"
+          value={nameQuery}
+          onChange={(e) => setNameQuery(e.target.value)}
+          placeholder="搜索文件名"
+          aria-label="搜索文件名"
+          sx={{ width: 220 }}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon fontSize="small" />
+              </InputAdornment>
+            ),
+            endAdornment: nameQuery ? (
+              <InputAdornment position="end">
+                <IconButton size="small" aria-label="清空搜索" onClick={() => setNameQuery('')}>
+                  <CloseIcon fontSize="small" />
+                </IconButton>
+              </InputAdornment>
+            ) : null
+          }}
+        />
+        <Typography variant="caption" color="text.secondary" className="shrink-0">
+          排序
+        </Typography>
+        <ToggleButtonGroup
+          exclusive
+          size="small"
+          value={sortKey}
+          onChange={(_e, value: SortKey | null) => value && setSort(value)}
+        >
+          <ToggleButton value="name" sx={{ px: 1.25, py: 0.25 }}>名称</ToggleButton>
+          <ToggleButton value="time" sx={{ px: 1.25, py: 0.25 }}>时间</ToggleButton>
+          <ToggleButton value="size" sx={{ px: 1.25, py: 0.25 }}>大小</ToggleButton>
+        </ToggleButtonGroup>
+        <Tooltip title={sortDir === 'asc' ? '当前升序，点击改降序' : '当前降序，点击改升序'}>
+          <Button
+            size="small"
+            color="inherit"
+            aria-label="切换排序方向"
+            onClick={() => setSort(sortKey)}
+            sx={{ minWidth: 0, px: 1 }}
+          >
+            {sortDir === 'asc' ? '↑' : '↓'}
+          </Button>
+        </Tooltip>
+        <Box sx={{ flex: 1 }} />
+        <Typography variant="caption" color="text.secondary" className="shrink-0">
+          缩略图
+        </Typography>
+        <ToggleButtonGroup
+          exclusive
+          size="small"
+          value={thumbSize}
+          onChange={(_e, value: ThumbSize | null) => value && setThumbSize(value)}
+        >
+          <ToggleButton value="small" sx={{ px: 1.25, py: 0.25 }}>小</ToggleButton>
+          <ToggleButton value="medium" sx={{ px: 1.25, py: 0.25 }}>中</ToggleButton>
+          <ToggleButton value="large" sx={{ px: 1.25, py: 0.25 }}>大</ToggleButton>
+        </ToggleButtonGroup>
+      </Stack>
+
       {/* 第一行：已选筛选 + 模式 + 高级筛选 */}
       <Stack direction="row" alignItems="center" spacing={1} className="flex-wrap">
         <FilterAltIcon fontSize="small" sx={{ color: 'text.secondary' }} />

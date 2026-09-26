@@ -57,6 +57,8 @@ export default function App(): JSX.Element {
   // 启动加载持久化根列表（R10）；选中第一个根并自动扫描全部根（优先选中根，其余串行后台扫）
   useEffect(() => {
     let cancelled = false;
+    // 视图偏好与根列表互不依赖：偏好读不到只影响默认排序/档位，不该挡住根加载
+    void useAppStore.getState().loadUiPrefs();
     void getApi()
       .listRoots()
       .then((result) => {

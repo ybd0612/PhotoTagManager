@@ -8,6 +8,7 @@ import { rescan } from '../hooks/useScan';
 import { useTrashImages } from '../hooks/useTrashImages';
 import { call, getApi, toFileUrl } from '../api';
 import { collectDirAndDescendants } from '../utils/folders';
+import { matchName, ROW_RATIO, sortImages, THUMB_SIZES } from '../utils/viewFilters';
 import type { ImageFile } from '../../shared/types';
 
 /**
@@ -15,8 +16,6 @@ import type { ImageFile } from '../../shared/types';
  * 支持 Ctrl/⌘ 多选、点击预览；标签角标右下角展示。
  */
 
-const COL_WIDTH = 168;
-const ROW_HEIGHT = 148;
 const GAP = 12;
 
 const PLACEHOLDER = `data:image/svg+xml;utf8,${encodeURIComponent(
@@ -56,6 +55,10 @@ export function ThumbnailGrid(): JSX.Element {
   const selectedImages = useAppStore((s) => s.selectedImages);
   const toggleSelectImage = useAppStore((s) => s.toggleSelectImage);
   const setPreview = useAppStore((s) => s.setPreview);
+  const nameQuery = useAppStore((s) => s.nameQuery);
+  const sortKey = useAppStore((s) => s.sortKey);
+  const sortDir = useAppStore((s) => s.sortDir);
+  const thumbSize = useAppStore((s) => s.thumbSize);
 
   // 递归汇总：选中目录 + 全部后代目录的图片（选根目录 = 全盘图片），按当前根分桶
   const images = useMemo(() => {
@@ -66,12 +69,14 @@ export function ThumbnailGrid(): JSX.Element {
       const arr = imagesByDir.get(rootKey(selectedRootId, d));
       if (arr) list.push(...arr);
     }
-    return list.sort((a, b) => a.relPath.localeCompare(b.relPath, 'zh-Hans-CN'));
+    // 这里不排序：排序是视图偏好，交给下面的 sortImages，否则"名称降序"永远翻不过来
+    return list;
   }, [selectedRootId, selectedDir, tree, imagesByDir]);
   const rootScanned = selectedRootId !== null && scannedRoots.has(selectedRootId);
+  // 三段管道：标签筛选 → 文件名搜索 → 排序
   const filtered = useMemo(
-    () => applyTagFilter(images, tagFilter.tags, tagFilter.mode, tagCache),
-    [images, tagFilter.tags, tagFilter.mode, tagCache]
+    () => sortImages(matchName(applyTagFilter(images, tagFilter.tags, tagFilter.mode, tagCache), nameQuery), sortKey, sortDir),
+    [images, tagFilter.tags, tagFilter.mode, tagCache, nameQuery, sortKey, sortDir]
   );
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -110,9 +115,11 @@ export function ThumbnailGrid(): JSX.Element {
     return () => ro.disconnect();
   }, []);
 
-  // 列数按固定最小列宽计算；列宽自适应填满容器，避免右侧留白
-  const cols = Math.max(1, Math.floor((size.width + GAP) / (COL_WIDTH + GAP)));
-  const colWidth = Math.max(COL_WIDTH, Math.floor((size.width - (cols - 1) * GAP) / cols));
+  // 列宽基准来自偏好档位；列宽再自适应填满容器，避免右侧留白。行高按 168×148 的比例跟随
+  const baseColWidth = THUMB_SIZES[thumbSize];
+  const cols = Math.max(1, Math.floor((size.width + GAP) / (baseColWidth + GAP)));
+  const colWidth = Math.max(baseColWidth, Math.floor((size.width - (cols - 1) * GAP) / cols));
+  const rowHeightPx = Math.round(colWidth * ROW_RATIO);
   const rowCount = Math.ceil(filtered.length / cols);
 
   // 可视区 absPath（仅请求视口内缩略图/标签）
@@ -188,7 +195,9 @@ export function ThumbnailGrid(): JSX.Element {
         ? '该目录尚未扫描'
         : images.length === 0
           ? '该目录暂无图片'
-          : '没有符合当前标签筛选的图片';
+          : nameQuery.trim()
+            ? `没有文件名含「${nameQuery.trim()}」的图片${tagFilter.tags.length > 0 ? '（同时受标签筛选）' : ''}`
+            : '没有符合当前标签筛选的图片';
     return (
       <div ref={containerRef} className="flex h-full w-full items-center justify-center">
         <Stack alignItems="center" spacing={1} role="status" aria-live="polite">
@@ -263,35 +272,40 @@ export function ThumbnailGrid(): JSX.Element {
               }}
             />
           )}
+          {/* 标签角标：常驻左上，平时就能看出这张图归在哪一组标签下 */}
+          {tags.length > 0 && (
+            <Box className="pointer-events-none absolute left-1.5 top-1.5 flex max-w-[78%] flex-wrap justify-start gap-0.5">
+              {tags.slice(0, 2).map((tag) => (
+                <Chip
+                  key={tag}
+                  label={tag}
+                  size="small"
+                  sx={{ height: 17, fontSize: 10, bgcolor: 'rgba(255,255,255,0.88)', color: 'slate.800' }}
+                />
+              ))}
+              {tags.length > 2 && (
+                <Chip
+                  label={`+${tags.length - 2}`}
+                  size="small"
+                  sx={{ height: 17, fontSize: 10, bgcolor: 'rgba(255,255,255,0.88)', color: 'slate.600' }}
+                />
+              )}
+            </Box>
+          )}
+          {/* 文件名：只在鼠标悬停或键盘聚焦时浮现，平时把画面完整让给图片 */}
           <Box
-            className="absolute bottom-0 left-0 right-0 flex items-end justify-between gap-1 px-1.5 py-1"
+            className="absolute bottom-0 left-0 right-0 flex items-end px-1.5 py-1"
             sx={{
               pointerEvents: 'none',
-              background: 'linear-gradient(transparent, rgba(15,23,42,0.82))'
+              background: 'linear-gradient(transparent, rgba(15,23,42,0.82))',
+              opacity: 0,
+              transition: 'opacity .12s ease',
+              '.MuiCard-root:hover &, .MuiCard-root:focus-visible &, .MuiCard-root:focus-within &': { opacity: 1 }
             }}
           >
-            <Typography noWrap variant="caption" sx={{ minWidth: 0, flex: 1, color: 'white', textShadow: '0 1px 2px rgba(0,0,0,.7)' }} title={image.name}>
+            <Typography noWrap variant="caption" sx={{ minWidth: 0, color: 'white', textShadow: '0 1px 2px rgba(0,0,0,.7)' }} title={image.name}>
               {image.name}
             </Typography>
-            {tags.length > 0 && (
-              <Box className="flex shrink-0 flex-wrap justify-end gap-0.5">
-                {tags.slice(0, 3).map((tag) => (
-                  <Chip
-                    key={tag}
-                    label={tag}
-                    size="small"
-                    sx={{ height: 16, fontSize: 10, bgcolor: 'rgba(15,23,42,0.72)', color: 'white' }}
-                  />
-                ))}
-                {tags.length > 3 && (
-                  <Chip
-                    label={`+${tags.length - 3}`}
-                    size="small"
-                    sx={{ height: 16, fontSize: 10, bgcolor: 'rgba(15,23,42,0.72)', color: 'white' }}
-                  />
-                )}
-              </Box>
-            )}
           </Box>
         </Card>
       </div>
@@ -308,7 +322,7 @@ export function ThumbnailGrid(): JSX.Element {
           columnWidth={colWidth}
           height={size.height}
           rowCount={rowCount}
-          rowHeight={ROW_HEIGHT}
+          rowHeight={rowHeightPx}
           width={size.width}
           overscanRowCount={2}
           onItemsRendered={({ visibleRowStartIndex, visibleRowStopIndex, visibleColumnStartIndex, visibleColumnStopIndex }) => {

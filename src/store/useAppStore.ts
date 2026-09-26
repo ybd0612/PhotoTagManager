@@ -1,12 +1,27 @@
 import { create } from 'zustand';
+import { call, getApi } from '../api';
+import { DEFAULT_UI_PREFS } from '../../shared/types';
 import type {
   FolderNode,
   ImageFile,
   RootEntry,
   ScanBatch,
   ScanStats,
-  TagInfo
+  SortDir,
+  SortKey,
+  TagInfo,
+  ThumbSize,
+  UiPrefs
 } from '../../shared/types';
+
+/** 偏好落盘失败只影响下次启动的默认值，不该打断当前交互 */
+function persistPrefs(patch: Partial<UiPrefs>): void {
+  try {
+    void call(getApi().setPrefs(patch)).catch(() => undefined);
+  } catch {
+    // 测试环境没有 window.api 时忽略
+  }
+}
 
 /**
  * 全局内存模型（ARCHITECTURE §3.2，多根 R10）。
@@ -49,6 +64,17 @@ interface AppState {
   tagFilter: TagFilterState;
   selectedDir: string | null; // 当前根内相对路径
   selectedImages: Set<string>;
+  /** 文件名搜索串（批次1）：只过滤当前目录视图，不动扫描数据 */
+  nameQuery: string;
+  /** 视图偏好：排序与缩略图档位，启动时从 settings.json 读回 */
+  sortKey: SortKey;
+  sortDir: SortDir;
+  thumbSize: ThumbSize;
+  setNameQuery(query: string): void;
+  /** 同一个键再点一次 = 翻转方向；换键 = 该键的默认方向 asc */
+  setSort(key: SortKey): void;
+  setThumbSize(size: ThumbSize): void;
+  loadUiPrefs(): Promise<void>;
   tagCache: Map<string, string[]>;
   tagCounts: Map<string, number>;
   tagEpoch: number;
@@ -183,6 +209,33 @@ export const useAppStore = create<AppState>((set, get) => ({
   tagFilter: { tags: [], mode: 'AND' },
   selectedDir: null,
   selectedImages: new Set(),
+  nameQuery: '',
+  sortKey: DEFAULT_UI_PREFS.sortKey,
+  sortDir: DEFAULT_UI_PREFS.sortDir,
+  thumbSize: DEFAULT_UI_PREFS.thumbSize,
+
+  setNameQuery: (nameQuery) => set({ nameQuery }),
+
+  setSort: (key) => {
+    const s = get();
+    const sortDir: SortDir = s.sortKey === key ? (s.sortDir === 'asc' ? 'desc' : 'asc') : 'asc';
+    set({ sortKey: key, sortDir });
+    persistPrefs({ sortKey: key, sortDir });
+  },
+
+  setThumbSize: (thumbSize) => {
+    set({ thumbSize });
+    persistPrefs({ thumbSize });
+  },
+
+  loadUiPrefs: async () => {
+    try {
+      const prefs = await call(getApi().getPrefs());
+      set({ sortKey: prefs.sortKey, sortDir: prefs.sortDir, thumbSize: prefs.thumbSize });
+    } catch {
+      // 读不到偏好就用默认值，不能因此卡住启动
+    }
+  },
   tagCache: new Map(),
   tagCounts: new Map(),
   tagEpoch: 0,
