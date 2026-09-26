@@ -614,3 +614,19 @@ AI 动作条   44px  + borderTop 1px
 **下一步需要的一步人工**：把那个带 9222 端口的应用窗口**从最小化恢复并点到前台**，
 我立刻重跑 `node cdp-shot.cjs` 取两张图（网格 + 预览层），然后按真像素迭代；
 拿不到可见窗口时就只能照上面的数排布，审美仍要用户眼验。
+
+### 模型下拉再收紧（用户真图反馈"弹得太大、盖住按钮"）
+
+改：`anchorOrigin` 从 bottom/right 改成 **top/left + transformOrigin bottom/left**，即**从 ▾ 向上开、向右展开**
+——底栏本来就贴着窗口下沿，往下开必然压住触发按钮自己；宽度 330 → **268**，圆角 1.5、投影 6 → 3；
+模型行由"名称 + 次行"两行压成**单行**（`U²-Netp  4.4MB · 已下载 · 默认` + 右侧紧凑动作按钮），
+行高 `minHeight 34`；CPU 勾选行同步收窄（图标 16px、标签降到 caption）。
+`typecheck` exit 0，`aiUi` + `previewWiring` **34 用例全过**，`npm run build` exit 0。
+
+**未验到像素的原因（记下来省得再踩）**：想截真图只能打 `dist/win-unpacked/PhotoTagManager.exe`，
+因为 **dev 实例的 userData 是 `%APPDATA%\Electron`（空的，没有根目录）**——我这次用
+`npx electron . --user-data-dir=%APPDATA%\PhotoTagManager --remote-debugging-port=9223` 试过，
+CDP 通了、窗口也置前了，但截图是"添加根目录"空态：该 flag 没能把 roots.json 带过来。
+所以 CDP 回路只对打包产物有效，而出包要先退出应用。
+**待用户退出应用后**：`npm run build` → `npm run dist` → `focus` → `node cdp-menu.cjs 9222` 一次验两处
+（下拉尺寸/方向 + 上一轮那处元数据右对齐撑开件）。当前磁盘包 121,409,408 **不含**这两处。

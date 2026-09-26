@@ -237,15 +237,16 @@ function ModelMenu({
   // 后端是运行时选择，不挂在某个模型行上；D17 要求动作可点、能 Tab 到，所以用原生 checkbox
   const backendToggle = (
     <FormControlLabel
-      sx={{ px: 1.5, py: 0.5, display: 'block' }}
+      sx={{ px: 0.75, display: 'flex', alignItems: 'center', minHeight: 30 }}
       control={
         <Checkbox
           size="small"
+          sx={{ p: 0.5, '& .MuiSvgIcon-root': { fontSize: 16 } }}
           checked={backend === 'cpu'}
           onChange={(event) => setBackend(event.target.checked ? 'cpu' : 'dml')}
         />
       }
-      label={<Typography variant="body2">{CPU_TOGGLE_LABEL}</Typography>}
+      label={<Typography variant="caption">{CPU_TOGGLE_LABEL}</Typography>}
     />
   );
 
@@ -254,20 +255,23 @@ function ModelMenu({
       open
       anchorEl={anchorEl}
       onClose={onClose}
-      anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-      transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+      anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
+      transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+      marginThreshold={8}
       disableAutoFocus
       disableRestoreFocus
       disableScrollLock
       PaperProps={{
         // 主题色而不是硬编码 #fff：深色预览层里继承的白字落到白底上就是一片看不见
         sx: {
-          minWidth: 330,
+          minWidth: 268,
+          maxWidth: 'calc(100vw - 16px)',
           bgcolor: 'background.paper',
           color: 'text.primary',
           border: 1,
           borderColor: 'divider',
-          boxShadow: 6
+          borderRadius: 1.5,
+          boxShadow: 3
         }
       }}
     >
@@ -286,40 +290,39 @@ function ModelMenu({
               tabIndex={index === active ? 0 : -1}
               onFocus={() => setActive(index)}
               sx={{
-                px: 1.5,
-                py: 0.75,
+                px: 1,
+                py: 0.25,
+                minHeight: 34,
                 display: 'flex',
                 alignItems: 'center',
-                gap: 1.5,
+                gap: 0.75,
                 bgcolor: index === active ? 'action.selected' : 'transparent'
               }}
             >
-              <Box sx={{ minWidth: 0, flex: 1 }}>
-                <Typography variant="body2" noWrap>
-                  {model.displayName}
-                </Typography>
-                <Typography variant="caption" color="text.secondary" noWrap>
+              <Typography variant="body2" noWrap sx={{ minWidth: 0, flex: 1, fontSize: '0.82rem' }}>
+                {model.displayName}
+                <Box component="span" sx={{ color: 'text.secondary', ml: 0.75 }}>
                   {describeDownloadCost(model.sizeBytes).split('，')[0]} ·{' '}
                   {model.status === 'present' ? (model.loaded ? '已加载' : '已下载') : '未下载'}
                   {model.isDefault ? ' · 默认' : ''}
-                </Typography>
-              </Box>
+                </Box>
+              </Typography>
               <Stack direction="row" spacing={0.5}>
                 <Button
                   size="small"
                   onClick={() => void modelAction(model.id, primary.action).then(onClose)}
                   data-testid={`model-action-${primary.label}`}
-                  sx={{ textTransform: 'none' }}
+                  sx={{ textTransform: 'none', minWidth: 0, px: 0.75, fontSize: '0.78rem' }}
                 >
                   {primary.label}
                 </Button>
                 {model.status === 'present' && !model.loaded && (
-                  <Button size="small" sx={{ textTransform: 'none' }} onClick={() => void modelAction(model.id, 'unload')}>
+                  <Button size="small" sx={{ textTransform: 'none', minWidth: 0, px: 0.75, fontSize: '0.78rem' }} onClick={() => void modelAction(model.id, 'unload')}>
                     卸载
                   </Button>
                 )}
                 {!model.isDefault && (
-                  <Button size="small" sx={{ textTransform: 'none' }} onClick={() => void modelAction(model.id, 'set-default')}>
+                  <Button size="small" sx={{ textTransform: 'none', minWidth: 0, px: 0.75, fontSize: '0.78rem' }} onClick={() => void modelAction(model.id, 'set-default')}>
                     设为默认
                   </Button>
                 )}
