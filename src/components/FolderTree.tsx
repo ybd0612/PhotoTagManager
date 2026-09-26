@@ -30,6 +30,7 @@ export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.E
   const roots = useAppStore((s) => s.roots);
   const treesByRoot = useAppStore((s) => s.treesByRoot);
   const hiddenSet = useAppStore((s) => s.hiddenSet);
+  const imagesByDir = useAppStore((s) => s.imagesByDir);
   const selectedRootId = useAppStore((s) => s.selectedRootId);
   const selectedDir = useAppStore((s) => s.selectedDir);
   const scannedRoots = useAppStore((s) => s.scannedRoots);
@@ -46,9 +47,26 @@ export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.E
 
   const rootById = useMemo(() => new Map(roots.map((root) => [root.id, root])), [roots]);
 
+  /** 根目录直属图片不属于任何子目录节点，得单独按根数一遍给根行计数 */
+  const rootDirectCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const root of roots) counts.set(root.id, imagesByDir.get(rootKey(root.id, ''))?.length ?? 0);
+    return counts;
+  }, [roots, imagesByDir]);
+
   const rows = useMemo(
-    () => buildTreeRows({ roots, treesByRoot, hiddenSet, expanded, selectedRootId, selectedDir, showHidden }),
-    [roots, treesByRoot, hiddenSet, expanded, selectedRootId, selectedDir, showHidden]
+    () =>
+      buildTreeRows({
+        roots,
+        treesByRoot,
+        hiddenSet,
+        rootDirectCounts,
+        expanded,
+        selectedRootId,
+        selectedDir,
+        showHidden
+      }),
+    [roots, treesByRoot, hiddenSet, rootDirectCounts, expanded, selectedRootId, selectedDir, showHidden]
   );
   /** 跨根的隐藏目录清单，标签带根别名前缀免得分不清属于哪个根 */
   const hiddenEntries = useMemo(
@@ -371,7 +389,7 @@ function TreeRowItem({ row, scanned, scanning, onExpand, onSelect, onContextMenu
       {(!row.isRoot || scanned) && (
         <Chip
           size="small"
-          label={row.totalCount}
+          label={row.totalCount.toLocaleString()}
           variant="outlined"
           sx={{ height: 18, fontSize: 11, '& .MuiChip-label': { px: 0.6 } }}
         />

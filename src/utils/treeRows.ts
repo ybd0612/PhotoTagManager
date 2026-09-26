@@ -16,7 +16,7 @@ export interface TreeRow {
   name: string;
   depth: number;
   isRoot: boolean;
-  /** 根行 = 可见顶层目录汇总；目录行 = 该子树总数 */
+  /** 根行 = 可见顶层目录之和 + 根目录直属图片；目录行 = 该子树总数 */
   totalCount: number;
   hasChildren: boolean;
   expanded: boolean;
@@ -31,6 +31,8 @@ export interface BuildTreeRowsInput {
   roots: RootEntry[];
   treesByRoot: Map<string, FolderNode[]>;
   hiddenSet: Set<string>;
+  /** rootId → 直接放在该根目录里的图片数（不属于任何子目录 FolderNode，只能由调用方给） */
+  rootDirectCounts: Map<string, number>;
   /** 未登记的根行默认「选中根展开、其余折叠」；目录行默认折叠 */
   expanded: Record<string, boolean>;
   selectedRootId: string | null;
@@ -79,7 +81,7 @@ export function buildTreeRows(input: BuildTreeRowsInput): TreeRow[] {
       name: root.alias,
       depth: 0,
       isRoot: true,
-      totalCount: children.reduce((sum, child) => sum + child.totalCount, 0),
+      totalCount: children.reduce((sum, child) => sum + child.totalCount, 0) + (input.rootDirectCounts.get(root.id) ?? 0),
       hasChildren: children.length > 0,
       expanded,
       hidden: false,

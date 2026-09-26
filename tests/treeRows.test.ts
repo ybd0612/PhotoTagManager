@@ -37,6 +37,7 @@ function rows(overrides: Partial<Parameters<typeof buildTreeRows>[0]> = {}) {
     roots,
     treesByRoot,
     hiddenSet: new Set(),
+    rootDirectCounts: new Map(),
     expanded: {},
     selectedRootId: 'r1',
     selectedDir: '',
@@ -105,12 +106,31 @@ describe('buildTreeRows 合并树结构', () => {
     expect(list.find((r) => r.isRoot && r.rootId === 'r1')).toMatchObject({ rootSelected: true });
   });
 
-  it('根行汇总只算可见顶层；唯一子目录隐藏后根不再有展开箭头', () => {
+  it('根行汇总 = 可见顶层目录之和 + 直接放在根里的图片（平铺根不再显示 0）', () => {
+    // 真机场景：某根 3,392 张图片全在根目录本身、无子目录，旧口径会显示 0 张
+    const flat = buildTreeRows({
+      roots,
+      treesByRoot: new Map([['r1', []], ['r2', []]]),
+      hiddenSet: new Set(),
+      expanded: {},
+      selectedRootId: 'r1',
+      selectedDir: '',
+      showHidden: false,
+      rootDirectCounts: new Map([['r1', 3392]])
+    });
+    expect(flat[0]).toMatchObject({ totalCount: 3392, hasChildren: false });
     expect(rows().find((r) => r.rootId === 'r1')?.totalCount).toBe(3);
+    expect(
+      rows({ rootDirectCounts: new Map([['r1', 2]]) }).find((r) => r.rootId === 'r1')?.totalCount
+    ).toBe(5);
+  });
+
+  it('唯一子目录隐藏后根不再有展开箭头', () => {
     const onlyHidden = buildTreeRows({
       roots,
       treesByRoot: new Map([['r1', [node('a')]], ['r2', []]]),
       hiddenSet: new Set([rootKey('r1', 'a')]),
+      rootDirectCounts: new Map(),
       expanded: {},
       selectedRootId: 'r1',
       selectedDir: '',
