@@ -1,59 +1,88 @@
 import { useMemo, useState } from 'react';
 import { Box, Chip, Divider, IconButton, ListItemText, Menu, MenuItem, Stack, Tooltip, Typography } from '@mui/material';
+import AddIcon from '@mui/icons-material/Add';
+import CheckIcon from '@mui/icons-material/Check';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import DriveFileRenameOutlineIcon from '@mui/icons-material/DriveFileRenameOutline';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import FolderIcon from '@mui/icons-material/Folder';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
-import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
-import VisibilityIcon from '@mui/icons-material/Visibility';
+import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import { call, getApi } from '../api';
-import { useAppStore } from '../store/useAppStore';
-import { rescan } from '../hooks/useScan';
-import type { FolderNode } from '../../shared/types';
+import { rootKey, useAppStore } from '../store/useAppStore';
+import { startScan } from '../hooks/useScan';
+import { buildTreeRows, type TreeRow } from '../utils/treeRows';
+import type { RootActions } from '../hooks/useRootActions';
 
 /**
- * 目录树（R03/R04/R05，多根 R10）：
- * - 展示当前选中根的目录树（store.tree 已按选中根分桶）
- * - 仅渲染 totalCount>0 的节点（扫描阶段已过滤）
- * - hiddenSet 按 rootId 剪枝；「显示已隐藏」开关下以 👁 图标弱化展示隐藏节点
- * - 右键菜单：隐藏文件夹 / 取消隐藏 / 重新扫描
+ * 左栏单棵树（批次2 G5，R03/R04/R05 + 多根 R10）：
+ * - 根作为顶层节点，子目录缩进在所属根下；同名根与同名子目录不再分处两块面板
+ * - 展开态与隐藏集一律以 rootKey(rootId, relPath) 为键，按根分桶不互串
+ * - 隐藏集收进行尾单个图标：数量在 tooltip，开关与逐项恢复在弹出菜单里
+ * - 右键菜单：在资源管理器中打开 / 隐藏 / 取消隐藏 / 重新扫描（都针对该行所属根）；
+ *   根行额外给改别名与删除，作为 hover 图标之外的同等入口
  */
-export function FolderTree(): JSX.Element {
-  const selectedRootId = useAppStore((s) => s.selectedRootId);
+export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.Element {
   const roots = useAppStore((s) => s.roots);
-  const tree = useAppStore((s) => s.tree);
+  const treesByRoot = useAppStore((s) => s.treesByRoot);
   const hiddenSet = useAppStore((s) => s.hiddenSet);
+  const selectedRootId = useAppStore((s) => s.selectedRootId);
   const selectedDir = useAppStore((s) => s.selectedDir);
+  const scannedRoots = useAppStore((s) => s.scannedRoots);
+  const scanStateByRoot = useAppStore((s) => s.scanStateByRoot);
   const selectDir = useAppStore((s) => s.selectDir);
   const hideFolderLocal = useAppStore((s) => s.hideFolderLocal);
   const unhideFolderLocal = useAppStore((s) => s.unhideFolderLocal);
   const setSnackbar = useAppStore((s) => s.setSnackbar);
 
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({ '': true });
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [showHidden, setShowHidden] = useState(false);
-  const [menu, setMenu] = useState<{ relPath: string; mouseX: number; mouseY: number } | null>(null);
-  // 「已隐藏 N」按钮的菜单锚点（用于恢复隐藏目录）
+  const [menu, setMenu] = useState<{ rootId: string; relPath: string; isRoot: boolean; mouseX: number; mouseY: number } | null>(null);
   const [hiddenAnchor, setHiddenAnchor] = useState<null | HTMLElement>(null);
 
-  const currentRoot = roots.find((r) => r.id === selectedRootId) ?? null;
-  const rootName = currentRoot?.alias || '根目录';
-  const rootId = selectedRootId ?? '';
+  const rootById = useMemo(() => new Map(roots.map((root) => [root.id, root])), [roots]);
 
-  // 当前根已隐藏目录的 relPath 列表（hiddenSet key = `${rootId}\u0000${relPath}`，按前缀过滤）
-  const hiddenRelPaths = useMemo(() => {
-    const prefix = `${rootId}\u0000`;
-    return [...hiddenSet]
-      .filter((key) => key.startsWith(prefix))
-      .map((key) => key.slice(prefix.length))
-      .sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
-  }, [hiddenSet, rootId]);
+  const rows = useMemo(
+    () => buildTreeRows({ roots, treesByRoot, hiddenSet, expanded, selectedRootId, selectedDir, showHidden }),
+    [roots, treesByRoot, hiddenSet, expanded, selectedRootId, selectedDir, showHidden]
+  );
+  /** 跨根的隐藏目录清单，标签带根别名前缀免得分不清属于哪个根 */
+  const hiddenEntries = useMemo(
+    () =>
+      [...hiddenSet]
+        .map((key) => {
+          const splitAt = key.indexOf('\u0000');
+          const rootId = key.slice(0, splitAt);
+          const relPath = key.slice(splitAt + 1);
+          return { rootId, relPath, label: `${rootById.get(rootId)?.alias ?? rootId} / ${relPath}` };
+        })
+        .filter((entry) => entry.relPath !== '')
+        .sort((a, b) => a.label.localeCompare(b.label, 'zh-Hans-CN')),
+    [hiddenSet, rootById]
+  );
 
-  const toggleExpand = (relPath: string): void => {
-    setExpanded((prev) => ({ ...prev, [relPath]: !prev[relPath] }));
+  const toggleExpand = (key: string): void => {
+    setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const handleHide = async (relPath: string): Promise<void> => {
+  const handleSelectRow = async (row: TreeRow): Promise<void> => {
+    const root = rootById.get(row.rootId);
+    if (!root) return;
+    if (row.isRoot) {
+      // 已选中的根再点一次 = 回到根本身；换根交给 selectRoot（含懒扫描）
+      if (row.rootId === selectedRootId) selectDir('');
+      else await rootActions.selectRoot(root);
+      return;
+    }
+    if (row.rootId !== selectedRootId) await rootActions.selectRoot(root);
+    selectDir(row.relPath);
+  };
+
+  const handleHide = async (rootId: string, relPath: string): Promise<void> => {
     try {
       await call(getApi().hideFolder(rootId, relPath));
       hideFolderLocal(rootId, relPath);
@@ -62,7 +91,7 @@ export function FolderTree(): JSX.Element {
     }
   };
 
-  const handleUnhide = async (relPath: string): Promise<void> => {
+  const handleUnhide = async (rootId: string, relPath: string): Promise<void> => {
     try {
       await call(getApi().unhideFolder(rootId, relPath));
       unhideFolderLocal(rootId, relPath);
@@ -71,20 +100,11 @@ export function FolderTree(): JSX.Element {
     }
   };
 
-  const handleMenuAction = (action: 'open' | 'hide' | 'unhide' | 'rescan'): void => {
-    const target = menu;
-    setMenu(null);
-    if (!target) return;
-    if (action === 'open') void handleOpenInExplorer(target.relPath);
-    else if (action === 'hide') void handleHide(target.relPath);
-    else if (action === 'unhide') void handleUnhide(target.relPath);
-    else void rescan();
-  };
-
-  /** 在资源管理器中打开目录（根节点 relPath='' 即根路径；子目录拼接相对路径） */
-  const handleOpenInExplorer = async (relPath: string): Promise<void> => {
-    if (!currentRoot) return;
-    const rootPath = currentRoot.path.replace(/[\\/]+$/, '');
+  /** 在资源管理器中打开目录（根行 relPath='' 即根路径；子目录拼接相对路径） */
+  const handleOpenInExplorer = async (rootId: string, relPath: string): Promise<void> => {
+    const root = rootById.get(rootId);
+    if (!root) return;
+    const rootPath = root.path.replace(/[\\/]+$/, '');
     const absPath = relPath ? `${rootPath}\\${relPath.replace(/\//g, '\\')}` : rootPath;
     try {
       await call(getApi().openFolderInExplorer(absPath));
@@ -93,97 +113,107 @@ export function FolderTree(): JSX.Element {
     }
   };
 
+  const handleMenuAction = (action: 'open' | 'hide' | 'unhide' | 'rescan' | 'rename' | 'remove'): void => {
+    const target = menu;
+    setMenu(null);
+    if (!target) return;
+    const root = rootById.get(target.rootId);
+    if (!root) return;
+    if (action === 'open') void handleOpenInExplorer(target.rootId, target.relPath);
+    else if (action === 'hide') void handleHide(target.rootId, target.relPath);
+    else if (action === 'unhide') void handleUnhide(target.rootId, target.relPath);
+    else if (action === 'rename') rootActions.openRename(root);
+    else if (action === 'remove') rootActions.openRemove(root);
+    // 树上点到哪个根就重扫哪个根，不必先把选中切过去
+    else void startScan(root);
+  };
   return (
     <Box className="flex h-full flex-col">
       <Stack
         direction="row"
         alignItems="center"
         justifyContent="space-between"
-        className="shrink-0 border-b border-slate-100 px-3 py-2"
+        className="shrink-0 border-b border-slate-100 px-2 py-1.5"
       >
-        <Stack direction="row" alignItems="center" spacing={1} className="min-w-0">
-          <Typography variant="subtitle2" color="text.secondary" className="shrink-0">
-            目录
-          </Typography>
-          {/* 隐藏目录恢复入口：点击弹出该根全部已隐藏目录 */}
-          <Chip
-            size="small"
-            label={`已隐藏 ${hiddenRelPaths.length}`}
-            color="warning"
-            variant="outlined"
-            onClick={(e) => setHiddenAnchor(e.currentTarget)}
-            sx={{ height: 22, fontSize: 12 }}
-          />
-        </Stack>
-        <Tooltip title={showHidden ? '隐藏已隐藏目录' : '显示已隐藏目录'}>
-          <IconButton
-            size="small"
-            aria-label={showHidden ? '隐藏已隐藏目录' : '显示已隐藏目录'}
-            onClick={() => setShowHidden((v) => !v)}
+        <Typography variant="subtitle2" color="text.secondary" className="pl-1">
+          目录（{roots.length}）
+        </Typography>
+        <Stack direction="row" alignItems="center" spacing={0.25}>
+          <Tooltip
+            title={
+              hiddenEntries.length === 0
+                ? '没有已隐藏目录'
+                : `已隐藏 ${hiddenEntries.length} 个目录${showHidden ? '（已在树中显示）' : ''}，点击管理`
+            }
           >
-            {showHidden ? <VisibilityIcon fontSize="small" /> : <VisibilityOffIcon fontSize="small" />}
-          </IconButton>
-        </Tooltip>
+            <IconButton
+              size="small"
+              color={showHidden ? 'primary' : 'default'}
+              aria-label={`已隐藏 ${hiddenEntries.length} 个目录，点击管理`}
+              onClick={(e) => setHiddenAnchor(e.currentTarget)}
+            >
+              {showHidden ? <VisibilityIcon fontSize="small" /> : <VisibilityOffIcon fontSize="small" />}
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="添加根目录">
+            <IconButton size="small" aria-label="添加根目录" onClick={() => void rootActions.addRoot()}>
+              <AddIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        </Stack>
       </Stack>
 
-      <Box className="min-h-0 flex-1 overflow-auto py-1" role="tree" aria-label={`${rootName}目录树`}>
-        {/* 根节点（当前根，显示别名） */}
-        <FolderRow
-          name={rootName}
-          relPath=""
-          totalCount={tree.reduce((sum, n) => sum + n.totalCount, 0)}
-          depth={0}
-          expanded={expanded[''] ?? true}
-          hasChildren={tree.length > 0}
-          selected={selectedDir === ''}
-          hidden={false}
-          isRoot
-          onToggle={() => toggleExpand('')}
-          onSelect={() => selectDir('')}
-          onContextMenu={(e) => {
-            e.preventDefault();
-            setMenu({ relPath: '', mouseX: e.clientX, mouseY: e.clientY });
-          }}
-        />
-        {expanded[''] !== false &&
-          tree.map((node) => (
-            <TreeNode
-              key={node.relPath}
-              node={node}
-              depth={1}
-              hiddenByAncestor={false}
-              expanded={expanded}
-              showHidden={showHidden}
-              hiddenSet={hiddenSet}
-              rootId={rootId}
-              selectedDir={selectedDir}
-              onToggle={toggleExpand}
-              onSelect={selectDir}
-              onContextMenu={(relPath, e) => {
-                e.preventDefault();
-                setMenu({ relPath, mouseX: e.clientX, mouseY: e.clientY });
-              }}
-            />
-          ))}
+      <Box className="min-h-0 flex-1 overflow-auto py-1" role="tree" aria-label="图库目录树">
+        {rows.length === 0 && (
+          <Typography variant="body2" color="text.secondary" className="px-3 py-2">
+            还没有根目录，点上方 + 添加
+          </Typography>
+        )}
+        {rows.map((row) => (
+          <TreeRowItem
+            key={row.key}
+            row={row}
+            scanned={scannedRoots.has(row.rootId)}
+            scanning={scanStateByRoot.get(row.rootId) === 'scanning'}
+            onExpand={() => toggleExpand(row.key)}
+            onSelect={() => void handleSelectRow(row)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setMenu({ rootId: row.rootId, relPath: row.relPath, isRoot: row.isRoot, mouseX: e.clientX, mouseY: e.clientY });
+            }}
+            onRename={() => {
+              const root = rootById.get(row.rootId);
+              if (root) rootActions.openRename(root);
+            }}
+            onRemove={() => {
+              const root = rootById.get(row.rootId);
+              if (root) rootActions.openRemove(root);
+            }}
+          />
+        ))}
       </Box>
-
-      {/* 「已隐藏 N」菜单：列出该根所有已隐藏目录，逐项恢复 */}
+      {/* 隐藏集管理：一个图标进、一个菜单出（显示开关 + 逐项恢复） */}
       <Menu
         anchorEl={hiddenAnchor}
         open={Boolean(hiddenAnchor)}
         onClose={() => setHiddenAnchor(null)}
-        PaperProps={{ sx: { maxHeight: 360, width: 280 } }}
+        PaperProps={{ sx: { maxHeight: 360, width: 300 } }}
       >
-        {hiddenRelPaths.length === 0 && <MenuItem disabled>暂无已隐藏目录</MenuItem>}
-        {hiddenRelPaths.map((relPath) => (
+        <MenuItem onClick={() => setShowHidden((v) => !v)}>
+          <ListItemText primary="在树中显示已隐藏目录" />
+          {showHidden && <CheckIcon fontSize="small" />}
+        </MenuItem>
+        <Divider />
+        {hiddenEntries.length === 0 && <MenuItem disabled>暂无已隐藏目录</MenuItem>}
+        {hiddenEntries.map((entry) => (
           <MenuItem
-            key={relPath}
+            key={entry.label}
             onClick={() => {
               setHiddenAnchor(null);
-              void handleUnhide(relPath);
+              void handleUnhide(entry.rootId, entry.relPath);
             }}
           >
-            <ListItemText primary={relPath} />
+            <ListItemText primary={entry.label} />
             <Chip size="small" label="恢复" color="primary" />
           </MenuItem>
         ))}
@@ -204,7 +234,7 @@ export function FolderTree(): JSX.Element {
           隐藏文件夹
         </MenuItem>
         <MenuItem
-          disabled={menu === null || !hiddenSet.has(`${rootId}\u0000${menu.relPath}`)}
+          disabled={menu === null || !hiddenSet.has(rootKey(menu.rootId, menu.relPath))}
           onClick={() => handleMenuAction('unhide')}
         >
           取消隐藏
@@ -214,155 +244,138 @@ export function FolderTree(): JSX.Element {
           <RefreshIcon fontSize="small" sx={{ mr: 1 }} />
           重新扫描
         </MenuItem>
+        {/* 根行专属：改名与删除不只挂在 hover 上，键盘用户从菜单同样能触发 */}
+        <MenuItem disabled={menu?.isRoot !== true} onClick={() => handleMenuAction('rename')}>
+          改别名
+        </MenuItem>
+        <MenuItem disabled={menu?.isRoot !== true} color="error" onClick={() => handleMenuAction('remove')}>
+          删除根目录
+        </MenuItem>
       </Menu>
     </Box>
   );
 }
 
-interface TreeNodeProps {
-  node: FolderNode;
-  depth: number;
-  hiddenByAncestor: boolean;
-  expanded: Record<string, boolean>;
-  showHidden: boolean;
-  hiddenSet: Set<string>;
-  rootId: string;
-  selectedDir: string | null;
-  onToggle: (relPath: string) => void;
-  onSelect: (relPath: string) => void;
-  onContextMenu: (relPath: string, e: React.MouseEvent) => void;
-}
-
-function TreeNode(props: TreeNodeProps): JSX.Element | null {
-  const { node, depth, hiddenByAncestor, rootId } = props;
-  const isHidden = node.hidden || props.hiddenSet.has(`${rootId}\u0000${node.relPath}`);
-
-  // 剪枝：祖先隐藏 或 自身隐藏（且未开启显示隐藏）
-  if (hiddenByAncestor || (isHidden && !props.showHidden)) return null;
-
-  const isExpanded = props.expanded[node.relPath] === true;
-  const visibleChildren = node.children.filter(
-    (c) => props.showHidden || !props.hiddenSet.has(`${rootId}\u0000${c.relPath}`)
-  );
-  const hasChildren = visibleChildren.length > 0;
-
-  return (
-    <>
-      <FolderRow
-        name={node.name}
-        relPath={node.relPath}
-        totalCount={node.totalCount}
-        depth={depth}
-        expanded={isExpanded}
-        hasChildren={hasChildren}
-        selected={props.selectedDir === node.relPath}
-        hidden={isHidden}
-        isRoot={false}
-        onToggle={() => props.onToggle(node.relPath)}
-        onSelect={() => props.onSelect(node.relPath)}
-        onContextMenu={(e) => props.onContextMenu(node.relPath, e)}
-      />
-      {isExpanded &&
-        visibleChildren.map((child) => (
-          <TreeNode
-            key={child.relPath}
-            {...props}
-            node={child}
-            depth={depth + 1}
-            hiddenByAncestor={false}
-          />
-        ))}
-    </>
-  );
-}
-
-interface FolderRowProps {
-  name: string;
-  relPath: string;
-  totalCount: number;
-  depth: number;
-  expanded: boolean;
-  hasChildren: boolean;
-  selected: boolean;
-  hidden: boolean;
-  isRoot: boolean;
-  onToggle: () => void;
+interface TreeRowItemProps {
+  row: TreeRow;
+  scanned: boolean;
+  scanning: boolean;
+  onExpand: () => void;
   onSelect: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
+  onRename: () => void;
+  onRemove: () => void;
 }
 
-function FolderRow({
-  name,
-  totalCount,
-  depth,
-  expanded,
-  hasChildren,
-  selected,
-  hidden,
-  onToggle,
-  onSelect,
-  onContextMenu
-}: FolderRowProps): JSX.Element {
+/** 树里的一行：根行显示别名 + 扫描状态 + 改名/删除，目录行只有名字与计数 */
+function TreeRowItem({ row, scanned, scanning, onExpand, onSelect, onContextMenu, onRename, onRemove }: TreeRowItemProps): JSX.Element {
+  const ariaLabel = row.isRoot
+    ? scanned
+      ? `根目录 ${row.name}，共 ${row.totalCount} 张图片`
+      : `根目录 ${row.name}，未扫描`
+    : `${row.name}，${row.totalCount} 张图片`;
   return (
     <Box
-      className="group flex cursor-pointer items-center gap-1 rounded-md py-1 pr-2"
-      style={{ paddingLeft: 8 + depth * 16 }}
+      className="group flex cursor-pointer items-center gap-1 rounded-md py-1 pr-1.5"
+      style={{ paddingLeft: 6 + row.depth * 14 }}
       role="treeitem"
       tabIndex={0}
-      aria-label={`${name}，${totalCount} 张图片`}
-      aria-selected={selected}
-      aria-expanded={hasChildren ? expanded : undefined}
+      aria-label={ariaLabel}
+      aria-selected={row.selected}
+      aria-expanded={row.hasChildren ? row.expanded : undefined}
       onClick={onSelect}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
           onSelect();
-        } else if (hasChildren && event.key === 'ArrowRight' && !expanded) {
+        } else if (row.hasChildren && event.key === 'ArrowRight' && !row.expanded) {
           event.preventDefault();
-          onToggle();
-        } else if (hasChildren && event.key === 'ArrowLeft' && expanded) {
+          onExpand();
+        } else if (row.hasChildren && event.key === 'ArrowLeft' && row.expanded) {
           event.preventDefault();
-          onToggle();
+          onExpand();
         }
       }}
       onContextMenu={onContextMenu}
       sx={
-        selected
+        row.selected
           ? { bgcolor: 'primary.light', color: 'primary.contrastText' }
           : {
               '&:hover': { bgcolor: 'action.hover' },
               '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main' },
-              ...(hidden ? { opacity: 0.55 } : {})
+              ...(row.rootSelected ? { bgcolor: 'action.selected' } : {}),
+              ...(row.hidden ? { opacity: 0.55 } : {})
             }
       }
     >
-      {hasChildren ? (
+      {row.hasChildren ? (
         <IconButton
           size="small"
           className="p-0.5"
-          aria-label={expanded ? `收起${name}` : `展开${name}`}
-          aria-expanded={expanded}
-          onClick={(e) => { e.stopPropagation(); onToggle(); }}
+          aria-label={row.expanded ? `收起${row.name}` : `展开${row.name}`}
+          aria-expanded={row.expanded}
+          onClick={(e) => {
+            e.stopPropagation();
+            onExpand();
+          }}
         >
-          {expanded ? <ExpandMoreIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
+          {row.expanded ? <ExpandMoreIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
         </IconButton>
       ) : (
         <Box className="w-6 shrink-0" />
       )}
-      {hidden ? (
+      {row.isRoot ? (
+        <PhotoLibraryIcon fontSize="small" className="shrink-0" />
+      ) : row.hidden ? (
         <VisibilityOffIcon fontSize="small" className="shrink-0" />
       ) : (
         <FolderIcon fontSize="small" className="shrink-0" />
       )}
-      <Typography noWrap variant="body2" className="min-w-0 flex-1" title={name}>
-        {name}
-      </Typography>
-      <Chip
-        size="small"
-        label={totalCount}
-        variant="outlined"
-        sx={{ height: 18, fontSize: 11, '& .MuiChip-label': { px: 0.6 } }}
-      />
+      <Box className="min-w-0 flex-1">
+        <Typography noWrap variant="body2" sx={row.isRoot ? { fontWeight: 600 } : undefined} title={row.name}>
+          {row.name}
+        </Typography>
+        {row.isRoot && !scanned && !scanning && (
+          <Typography noWrap variant="caption" sx={{ opacity: 0.65, display: 'block' }} title={ariaLabel}>
+            尚未扫描
+          </Typography>
+        )}
+      </Box>
+      {scanning && <Box className="h-2 w-2 shrink-0 animate-pulse self-center rounded-full bg-amber-400" />}
+      {row.isRoot && (
+        <>
+          <IconButton
+            size="small"
+            className="!p-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+            aria-label={`修改根目录别名：${row.name}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRename();
+            }}
+          >
+            <DriveFileRenameOutlineIcon fontSize="small" />
+          </IconButton>
+          <IconButton
+            size="small"
+            className="!p-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+            aria-label={`删除根目录：${row.name}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove();
+            }}
+          >
+            <DeleteOutlineIcon fontSize="small" />
+          </IconButton>
+        </>
+      )}
+      {(!row.isRoot || scanned) && (
+        <Chip
+          size="small"
+          label={row.totalCount}
+          variant="outlined"
+          sx={{ height: 18, fontSize: 11, '& .MuiChip-label': { px: 0.6 } }}
+        />
+      )}
     </Box>
   );
 }

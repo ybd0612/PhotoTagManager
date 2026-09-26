@@ -2,18 +2,15 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Box,
   Button,
-  Chip,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogContentText,
-  DialogTitle,
+  Divider,
   IconButton,
   LinearProgress,
+  ListItemIcon,
+  Menu,
+  MenuItem,
   Paper,
   Snackbar,
   Stack,
-  TextField,
   Tooltip,
   Typography
 } from '@mui/material';
@@ -21,16 +18,17 @@ import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import StopCircleIcon from '@mui/icons-material/StopCircle';
 import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary';
-import AddIcon from '@mui/icons-material/Add';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import DriveFileRenameOutlineIcon from '@mui/icons-material/DriveFileRenameOutline';
-import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
 import SettingsIcon from '@mui/icons-material/Settings';
 import { call, getApi } from '../api';
-import { rootKey, useAppStore } from '../store/useAppStore';
-import { cancelScan, rescan, startScan } from '../hooks/useScan';
+import { useAppStore } from '../store/useAppStore';
+import { cancelScan, rescan } from '../hooks/useScan';
+import { useRootActions } from '../hooks/useRootActions';
 import { collectDirAndDescendants } from '../utils/folders';
+import { countImagesInDirs } from '../utils/treeRows';
+import { scanProgressPercent, scanStatusLabel } from '../utils/scanStatus';
 import { FolderTree } from './FolderTree';
 import { TagFilterBar } from './TagFilterBar';
 import { ThumbnailGrid } from './ThumbnailGrid';
@@ -38,19 +36,18 @@ import { PreviewOverlay } from './PreviewOverlay';
 import { UpdateDialog } from './UpdateDialog';
 import { AboutDialog } from './AboutDialog';
 import { SettingsDialog } from './settings/SettingsDialog';
-import type { RootEntry, UpdateStatus } from '../../shared/types';
+import type { UpdateStatus } from '../../shared/types';
 
 /**
  * 三栏布局容器 + 顶部工具栏 + 底部状态栏（PRD §3.3 线框图，多根 R10）。
- * 左侧顶部为根目录列表（别名/添加/改名/删除/切换，懒扫描），下方为当前根的目录树。
+ * 批次2 起：左栏是一棵「根 + 子目录」合并树（G5），顶栏只留主操作与设置、
+ * 检查更新与关于收进溢出菜单（G6），状态栏扫描文案只播一次（G7）。
  */
 export function AppLayout(): JSX.Element {
   const roots = useAppStore((s) => s.roots);
   const selectedRootId = useAppStore((s) => s.selectedRootId);
   const selectedDir = useAppStore((s) => s.selectedDir);
-  const scannedRoots = useAppStore((s) => s.scannedRoots);
   const scanStateByRoot = useAppStore((s) => s.scanStateByRoot);
-  const scanStats = useAppStore((s) => s.scanStats);
   const scanStatsByRoot = useAppStore((s) => s.scanStatsByRoot);
   const imagesByDir = useAppStore((s) => s.imagesByDir);
   const tree = useAppStore((s) => s.tree);
@@ -58,13 +55,12 @@ export function AppLayout(): JSX.Element {
   const snackbar = useAppStore((s) => s.snackbar);
   const setSnackbar = useAppStore((s) => s.setSnackbar);
 
-  const [renameTarget, setRenameTarget] = useState<RootEntry | null>(null);
-  const [renameValue, setRenameValue] = useState('');
-  const [removeTarget, setRemoveTarget] = useState<RootEntry | null>(null);
+  const { actions: rootActions, dialogs: rootDialogs } = useRootActions();
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
   const [aboutDialogOpen, setAboutDialogOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ state: 'idle' });
+  const [moreAnchor, setMoreAnchor] = useState<null | HTMLElement>(null);
 
   const selectedRoot = roots.find((r) => r.id === selectedRootId) ?? null;
 
@@ -81,86 +77,30 @@ export function AppLayout(): JSX.Element {
     return normalized.split('/').filter(Boolean).pop() ?? '根目录';
   }, [selectedRoot, selectedDir]);
 
-  // 当前选中根的可见图片数（隐藏目录及其子树不计，与网格同口径）
-  const currentRootImageCount = useMemo(() => {
-    if (!selectedRootId) return 0;
-    let total = 0;
-    for (const dir of collectDirAndDescendants(tree, '')) {
-      total += imagesByDir.get(rootKey(selectedRootId, dir))?.length ?? 0;
-    }
-    return total;
-  }, [selectedRootId, imagesByDir, tree]);
-
-  // 当前选中根的扫描统计
-  const currentRootScanState = selectedRootId ? (scanStateByRoot.get(selectedRootId) ?? 'idle') : 'idle';
-  const currentRootScanStats = selectedRootId ? (scanStatsByRoot.get(selectedRootId) ?? null) : null;
-  const scanProgress = currentRootScanStats
-    ? currentRootScanStats.done
-      ? 100
-      : currentRootScanStats.totalFiles > 0
-        ? Math.min(99, Math.round((currentRootScanStats.scannedFiles / currentRootScanStats.totalFiles) * 100))
-        : 0
-    : 0;
-
-  /** 添加根目录：选目录 → 持久化 → 选中 → 懒扫描（新根必未扫） */
-  const handleAddRoot = useCallback(async () => {
-    try {
-      const path = await call(getApi().pickDirectory());
-      if (!path) return;
-      const entry = await call(getApi().addRoot(path));
-      const store = useAppStore.getState();
-      const existed = store.roots.some((root) => root.id === entry.id);
-      store.addRootLocal(entry);
-      store.selectRoot(entry.id);
-      if (!existed || !store.scannedRoots.has(entry.id)) await startScan(entry);
-    } catch (error) {
-      setSnackbar(`添加根目录失败：${error instanceof Error ? error.message : String(error)}`);
-    }
-  }, [setSnackbar]);
-
-  /** 切换根：未扫过的根自动触发扫描（懒扫描） */
-  const handleSelectRoot = useCallback(
-    async (root: RootEntry) => {
-      const store = useAppStore.getState();
-      store.selectRoot(root.id);
-      if (!store.scannedRoots.has(root.id)) {
-        await startScan(root);
-      }
+  /** 按目录集合累计可见图片数（隐藏子树已被 collectDirAndDescendants 剪掉） */
+  const imageCountOf = useCallback(
+    (dir: string) => {
+      if (!selectedRootId) return 0;
+      return countImagesInDirs(imagesByDir, selectedRootId, collectDirAndDescendants(tree, dir));
     },
-    []
+    [selectedRootId, imagesByDir, tree]
   );
 
-  const handleRenameConfirm = useCallback(async () => {
-    const target = renameTarget;
-    setRenameTarget(null);
-    if (!target || !renameValue.trim()) return;
-    try {
-      const entry = await call(getApi().renameRoot(target.id, renameValue.trim()));
-      if (entry) useAppStore.getState().renameRootLocal(target.id, entry.alias);
-    } catch (error) {
-      setSnackbar(`改名失败：${error instanceof Error ? error.message : String(error)}`);
-    }
-  }, [renameTarget, renameValue, setSnackbar]);
+  // 当前目录（含子树）张数给目录条，本根总数给状态栏，两个数不再同名不同义
+  const currentDirImageCount = imageCountOf(selectedDir ?? '');
+  const currentRootImageCount = imageCountOf('');
 
-  const handleRemoveConfirm = useCallback(async () => {
-    const target = removeTarget;
-    setRemoveTarget(null);
-    if (!target) return;
-    try {
-      await call(getApi().removeRoot(target.id));
-      useAppStore.getState().removeRootLocal(target.id);
-    } catch (error) {
-      setSnackbar(`删除根目录失败：${error instanceof Error ? error.message : String(error)}`);
-    }
-  }, [removeTarget, setSnackbar]);
-
+  const currentRootScanState = selectedRootId ? (scanStateByRoot.get(selectedRootId) ?? 'idle') : 'idle';
+  const currentRootScanStats = selectedRootId ? (scanStatsByRoot.get(selectedRootId) ?? null) : null;
+  const scanProgress = scanProgressPercent(currentRootScanStats);
+  const statusLabel = scanStatusLabel(currentRootScanState, currentRootScanStats);
   const handleRescan = useCallback(() => {
     void rescan();
-  }, [rescan]);
+  }, []);
 
   const handleCancel = useCallback(() => {
     void cancelScan();
-  }, [cancelScan]);
+  }, []);
 
   // 启动静默检查更新：仅发现新版本（available）时才弹出提示框
   useEffect(() => {
@@ -185,7 +125,7 @@ export function AppLayout(): JSX.Element {
   }, []);
 
   /** 手动检查更新：先打开对话框展示状态，再触发检查 */
-  const handleCheckUpdate = useCallback(async () => {
+  const handleCheckUpdate = useCallback(async (): Promise<void> => {
     setUpdateDialogOpen(true);
     try {
       await call(getApi().checkUpdate());
@@ -196,7 +136,6 @@ export function AppLayout(): JSX.Element {
 
   const scanning = currentRootScanState === 'scanning';
   const hasRoot = roots.length > 0 && selectedRootId !== null;
-
   return (
     <Box className="flex h-full flex-col bg-slate-50">
       {/* 顶部工具栏 */}
@@ -204,9 +143,9 @@ export function AppLayout(): JSX.Element {
         component="header"
         className="flex h-14 shrink-0 items-center justify-between rounded-none border-b border-slate-200 px-4"
       >
-        <Stack direction="row" spacing={1.5} alignItems="center">
-          <PhotoLibraryIcon color="primary" />
-          <Typography variant="h6" sx={{ fontWeight: 700 }}>
+        <Stack direction="row" spacing={1.5} alignItems="center" className="min-w-0">
+          <PhotoLibraryIcon color="primary" className="shrink-0" />
+          <Typography variant="h6" sx={{ fontWeight: 700 }} className="shrink-0">
             <Box component="span">
               照片标签管家
               <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.75 }}>
@@ -226,111 +165,55 @@ export function AppLayout(): JSX.Element {
                   component="div"
                   sx={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis' }}
                 >
-                  {selectedDirLabel} · <Box component="span" sx={{ fontWeight: 400, color: 'text.secondary' }}>{selectedDirAbs ?? selectedRoot.path}</Box>
+                  {selectedDirLabel} ·{' '}
+                  <Box component="span" sx={{ fontWeight: 400, color: 'text.secondary' }}>
+                    {selectedDirAbs ?? selectedRoot.path}
+                  </Box>
                 </Typography>
               </Box>
             </Tooltip>
           )}
         </Stack>
 
-        <Stack direction="row" spacing={1}>
-          <Button
-            variant="contained"
-            startIcon={<FolderOpenIcon />}
-            onClick={() => void handleAddRoot()}
-          >
+        {/* 主操作在左、次操作在右，中间分隔线划开视觉权重（G6） */}
+        <Stack direction="row" spacing={1} alignItems="center" className="shrink-0">
+          <Button variant="contained" startIcon={<FolderOpenIcon />} onClick={() => void rootActions.addRoot()}>
             添加根目录
           </Button>
-          <Button
-            variant="outlined"
-            startIcon={<RefreshIcon />}
-            disabled={!hasRoot || scanning}
-            onClick={handleRescan}
-          >
+          <Button variant="outlined" startIcon={<RefreshIcon />} disabled={!hasRoot || scanning} onClick={handleRescan}>
             重新扫描
           </Button>
           {scanning && (
-            <Button
-              variant="text"
-              color="error"
-              startIcon={<StopCircleIcon />}
-              onClick={handleCancel}
-            >
+            <Button variant="text" color="error" startIcon={<StopCircleIcon />} onClick={handleCancel}>
               取消
             </Button>
           )}
-          <Tooltip title="检查更新">
-            <IconButton onClick={() => void handleCheckUpdate()} aria-label="检查更新">
-              <SystemUpdateAltIcon />
-            </IconButton>
-          </Tooltip>
+          <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
           <Tooltip title="设置">
             <IconButton onClick={() => setSettingsOpen(true)} aria-label="设置">
               <SettingsIcon />
             </IconButton>
           </Tooltip>
-          <Tooltip title="关于照片标签管家">
-            <IconButton onClick={() => setAboutDialogOpen(true)} aria-label="关于照片标签管家">
-              <InfoOutlinedIcon />
+          <Tooltip title="更多操作">
+            <IconButton onClick={(e) => setMoreAnchor(e.currentTarget)} aria-label="更多操作" aria-haspopup="menu">
+              <MoreVertIcon />
             </IconButton>
           </Tooltip>
         </Stack>
       </Paper>
-
-      {/* 主体三栏 */}
+      {/* 主体：左单棵树 + 右网格 */}
       {!hasRoot ? (
-        <EmptyState onPick={() => void handleAddRoot()} />
+        <EmptyState onPick={() => void rootActions.addRoot()} />
       ) : (
         <Box className="flex min-h-0 flex-1">
-          {/* 左：根目录列表 + 当前根目录树 */}
           <Paper className="flex w-[280px] shrink-0 flex-col overflow-hidden rounded-none border-r border-slate-200">
-            {/* 根目录列表（R10） */}
-            <Box className="shrink-0 border-b border-slate-100">
-              <Stack
-                direction="row"
-                alignItems="center"
-                justifyContent="space-between"
-                className="px-3 py-2"
-              >
-                <Typography variant="subtitle2" color="text.secondary">
-                  根目录（{roots.length}）
-                </Typography>
-                <Tooltip title="添加根目录">
-                  <IconButton size="small" aria-label="添加根目录" onClick={() => void handleAddRoot()}>
-                    <AddIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
-              </Stack>
-              <Box className="max-h-44 overflow-auto px-1 pb-1">
-                {roots.map((root) => (
-                  <RootRow
-                    key={root.id}
-                    root={root}
-                    selected={root.id === selectedRootId}
-                    scanning={scanning && root.id === selectedRootId}
-                    scanned={scannedRoots.has(root.id)}
-                    onSelect={() => void handleSelectRoot(root)}
-                    onRename={() => {
-                      setRenameValue(root.alias);
-                      setRenameTarget(root);
-                    }}
-                    onRemove={() => setRemoveTarget(root)}
-                  />
-                ))}
-              </Box>
-            </Box>
-
-            {/* 当前根的目录树 */}
-            <Box className="min-h-0 flex-1">
-              <FolderTree />
-            </Box>
+            <FolderTree rootActions={rootActions} />
           </Paper>
 
-          {/* 右：标签筛选条 + 缩略图网格 */}
           <Box className="flex min-w-0 flex-1 flex-col">
             <Paper className="flex shrink-0 items-center gap-2 rounded-none border-b border-slate-100 px-3 py-1" elevation={0}>
               <Typography variant="caption" color="text.secondary" noWrap title={selectedDirAbs ?? undefined}>
-                当前目录：{selectedDirLabel} · {currentRootImageCount.toLocaleString()} 张图片
+                当前目录：{selectedDirLabel} · {currentDirImageCount.toLocaleString()} 张图片
               </Typography>
             </Paper>
             <TagFilterBar />
@@ -341,40 +224,55 @@ export function AppLayout(): JSX.Element {
         </Box>
       )}
 
-      {/* 底部状态栏（统计按当前选中根） */}
+      {/* 底部状态栏：浏览统计在左，扫描状态只播一次（G7） */}
       <Paper className="flex h-7 shrink-0 items-center justify-between rounded-none border-t border-slate-200 px-3">
-        <Typography variant="caption" color="text.secondary">
+        <Typography variant="caption" color="text.secondary" noWrap>
           共 {currentRootImageCount.toLocaleString()} 张
           <span className="mx-2 text-slate-300">|</span>
           已选 {selectedImages.size} 张
-          <span className="mx-2 text-slate-300">|</span>
-          已扫描 {currentRootScanStats?.scannedFiles.toLocaleString() ?? 0} 个文件
         </Typography>
         <Stack direction="row" spacing={1} alignItems="center">
-          {scanning && (
-            <Stack role="status" aria-live="polite" direction="row" spacing={1} alignItems="center">
-              <Typography variant="caption" color="text.secondary">
-                正在扫描… {scanProgress}%
+          {statusLabel && (
+            <Stack
+              direction="row"
+              spacing={1}
+              alignItems="center"
+              role="status"
+              aria-live="polite"
+              aria-busy={scanning}
+            >
+              <Typography
+                variant="caption"
+                sx={{
+                  color:
+                    currentRootScanState === 'error'
+                      ? 'error.main'
+                      : currentRootScanState === 'done'
+                        ? 'success.main'
+                        : 'text.secondary'
+                }}
+              >
+                {statusLabel}
               </Typography>
-              <Box className="w-32">
-                <LinearProgress variant="determinate" value={scanProgress} sx={{ height: 4 }} aria-label={`扫描进度 ${scanProgress}%`} />
-              </Box>
-            </Stack>
-          )}
-          {currentRootScanState === 'done' && (
-            <Typography role="status" aria-live="polite" variant="caption" sx={{ color: 'success.main' }}>
-              扫描已完成（100%）
-            </Typography>
-          )}
-          {currentRootScanState === 'error' && (
-            <Stack role="alert" direction="row" spacing={1} alignItems="center">
-              <Typography variant="caption" color="error">扫描失败，请重试</Typography>
-              <Button size="small" color="error" onClick={handleRescan}>重试</Button>
+              {scanning && (
+                <Box className="w-32">
+                  <LinearProgress
+                    variant="determinate"
+                    value={scanProgress}
+                    sx={{ height: 4 }}
+                    aria-label={`扫描进度 ${scanProgress}%`}
+                  />
+                </Box>
+              )}
+              {currentRootScanState === 'error' && (
+                <Button size="small" color="error" onClick={handleRescan}>
+                  重试
+                </Button>
+              )}
             </Stack>
           )}
         </Stack>
       </Paper>
-
       {/* 预览覆盖层 */}
       <PreviewOverlay />
 
@@ -391,57 +289,29 @@ export function AppLayout(): JSX.Element {
         </Paper>
       )}
 
-      {/* 更新状态对话框 */}
       <UpdateDialog open={updateDialogOpen} onClose={() => setUpdateDialogOpen(false)} />
-
       {/* 应用级设置总入口（D16） */}
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
-
-      {/* 关于对话框 */}
       <AboutDialog open={aboutDialogOpen} onClose={() => setAboutDialogOpen(false)} />
+      {rootDialogs}
 
-      {/* 改别名对话框 */}
-      <Dialog open={renameTarget !== null} onClose={() => setRenameTarget(null)} fullWidth maxWidth="xs">
-        <DialogTitle>修改根目录别名</DialogTitle>
-        <DialogContent>
-          <TextField
-            autoFocus
-            fullWidth
-            size="small"
-            label="别名"
-            value={renameValue}
-            onChange={(e) => setRenameValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') void handleRenameConfirm();
-            }}
-            sx={{ mt: 1 }}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setRenameTarget(null)}>取消</Button>
-          <Button variant="contained" onClick={() => void handleRenameConfirm()}>
-            保存
-          </Button>
-        </DialogActions>
-      </Dialog>
+      {/* 次操作收纳处：检查更新与关于不再裸占顶栏（G6） */}
+      <Menu
+        anchorEl={moreAnchor}
+        open={moreAnchor !== null}
+        onClose={() => setMoreAnchor(null)}
+        PaperProps={{ sx: { minWidth: 196 } }}
+      >
+        <MenuItem onClick={() => { setMoreAnchor(null); void handleCheckUpdate(); }}>
+          <ListItemIcon><SystemUpdateAltIcon fontSize="small" /></ListItemIcon>
+          检查更新
+        </MenuItem>
+        <MenuItem onClick={() => { setMoreAnchor(null); setAboutDialogOpen(true); }}>
+          <ListItemIcon><InfoOutlinedIcon fontSize="small" /></ListItemIcon>
+          关于照片标签管家
+        </MenuItem>
+      </Menu>
 
-      {/* 删除根目录确认对话框 */}
-      <Dialog open={removeTarget !== null} onClose={() => setRemoveTarget(null)} fullWidth maxWidth="xs">
-        <DialogTitle>删除根目录？</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            删除「{removeTarget?.alias}」（{removeTarget?.path}）？仅移除列表与扫描数据，不会删除磁盘文件。
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setRemoveTarget(null)}>取消</Button>
-          <Button color="error" variant="contained" onClick={() => void handleRemoveConfirm()}>
-            删除
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* 全局提示 */}
       <Snackbar
         open={snackbar !== null}
         autoHideDuration={3000}
@@ -449,88 +319,6 @@ export function AppLayout(): JSX.Element {
         message={snackbar ?? ''}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       />
-    </Box>
-  );
-}
-
-interface RootRowProps {
-  root: RootEntry;
-  selected: boolean;
-  scanning: boolean;
-  scanned: boolean;
-  onSelect: () => void;
-  onRename: () => void;
-  onRemove: () => void;
-}
-
-/** 根目录行：别名 + 路径；hover 显示改名/删除；未扫描的根显示"未扫描"标记 */
-function RootRow({ root, selected, scanning, scanned, onSelect, onRename, onRemove }: RootRowProps): JSX.Element {
-  return (
-    <Box
-      className="group flex cursor-pointer items-center gap-1 rounded-md px-2 py-1"
-      role="button"
-      tabIndex={0}
-      aria-label={`选择根目录：${root.alias}`}
-      aria-selected={selected}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          onSelect();
-        }
-      }}
-      onClick={onSelect}
-      sx={
-        selected
-          ? { bgcolor: 'primary.light', color: 'primary.contrastText' }
-          : { '&:hover': { bgcolor: 'action.hover' }, '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main' } }
-      }
-    >
-      <PhotoLibraryIcon fontSize="small" className="shrink-0" />
-      <Box className="min-w-0 flex-1">
-        <Typography noWrap variant="body2" className="flex items-center gap-1">
-          {root.alias}
-          {scanning && (
-            <Box component="span" className="ml-1 inline-block h-2 w-2 shrink-0 animate-pulse rounded-full bg-amber-400" />
-          )}
-        </Typography>
-        <Typography
-          noWrap
-          variant="caption"
-          sx={{ opacity: 0.7, display: 'block' }}
-          title={root.path}
-        >
-          {root.path}
-        </Typography>
-      </Box>
-      {!scanned && !scanning && (
-        <Typography variant="caption" sx={{ opacity: 0.6, mr: 0.5 }}>
-          未扫描
-        </Typography>
-      )}
-      <IconButton
-        size="small"
-        className="!p-0.5 opacity-0 group-hover:opacity-100"
-        onClick={(e) => {
-          e.stopPropagation();
-          onRename();
-        }}
-        title="改别名"
-        aria-label={`修改根目录别名：${root.alias}`}
-      >
-        <DriveFileRenameOutlineIcon fontSize="small" />
-      </IconButton>
-      <IconButton
-        size="small"
-        className="!p-0.5 opacity-0 group-hover:opacity-100"
-        onClick={(e) => {
-          e.stopPropagation();
-          onRemove();
-        }}
-        title="删除"
-        aria-label={`删除根目录：${root.alias}`}
-      >
-        <DeleteOutlineIcon fontSize="small" />
-      </IconButton>
     </Box>
   );
 }
