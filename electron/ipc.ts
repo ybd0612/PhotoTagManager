@@ -184,7 +184,7 @@ export function registerIpc(deps: IpcDeps): void {
     const failed: TrashResult['failed'] = [];
     for (const absPath of absPaths ?? []) {
       if (!isInsideRoot(absPath, roots)) {
-        failed.push({ absPath, reason: '不在任何已添加的目录内，已拒绝' });
+        failed.push({ absPath, reason: '不在任何已添加的根目录内，已拒绝（不会进入系统回收站）' });
         continue;
       }
       try {
@@ -344,7 +344,7 @@ export function registerIpc(deps: IpcDeps): void {
   // 模型管理（D17：唯一入口是组合按钮的下拉，设置页不重复提供这些操作）
   handle('ai:model-download', async (modelId: string): Promise<unknown> => {
     const target = deps.ai.service.findModelSpec(modelId);
-    if (!target) throw new Error(`清单里没有模型 ${modelId}`);
+    if (!target) throw new Error(`找不到这个模型：${modelId}`);
     await deps.ai.store.download(target.spec);
     return { modelId, status: await deps.ai.store.status(modelId) };
   });
@@ -356,13 +356,13 @@ export function registerIpc(deps: IpcDeps): void {
     return {
       modelId,
       status: await deps.ai.store.status(modelId),
-      reason: loaded ? '删除前已自动卸载该模型' : undefined
+      reason: loaded ? '已先卸载再删除' : undefined
     };
   });
 
   handle('ai:model-unload', async (modelId: string): Promise<unknown> => {
     if (deps.ai.runner.loadedModelId !== modelId) {
-      return { modelId, status: await deps.ai.store.status(modelId), reason: '该模型本来未加载' };
+      return { modelId, status: await deps.ai.store.status(modelId), reason: '该模型未加载，无需卸载' };
     }
     await deps.ai.runner.unload();
     return { modelId, status: await deps.ai.store.status(modelId), unloaded: true };

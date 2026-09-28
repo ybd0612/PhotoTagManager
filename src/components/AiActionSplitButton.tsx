@@ -13,6 +13,7 @@ import Popover from '@mui/material/Popover';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import { describeDownloadCost, useAiStore } from '../store/useAiStore';
+import { downloadConsent } from '../utils/strings';
 import type { AiCapabilityView, AiModelView } from '../../shared/types';
 
 /**
@@ -99,7 +100,7 @@ export function AiActionSplitButton({ absPath }: Props) {
         <Dialog open onClose={() => dismissConfirm()} aria-labelledby="ai-confirm-title">
           <DialogContent>
             <DialogContentText id="ai-confirm-title">
-              首次使用需下载 {describeDownloadCost(pendingConfirm.sizeBytes)}，全程在本机处理，不上传照片内容。
+            {downloadConsent(describeDownloadCost(pendingConfirm.sizeBytes))}
             </DialogContentText>
           </DialogContent>
           <DialogActions>

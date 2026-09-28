@@ -154,7 +154,7 @@ export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.E
         className="shrink-0 border-b border-slate-100 px-2 py-1.5"
       >
         <Typography variant="subtitle2" color="text.secondary" className="pl-1">
-          目录（{roots.length}）
+          图库 · {roots.length} 个根目录
         </Typography>
         <Stack direction="row" alignItems="center" spacing={0.25}>
           <Tooltip
@@ -184,7 +184,7 @@ export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.E
       <Box className="min-h-0 flex-1 overflow-auto py-1" role="tree" aria-label="图库目录树">
         {rows.length === 0 && (
           <Typography variant="body2" color="text.secondary" className="px-3 py-2">
-            还没有根目录，点上方 + 添加
+            还没有根目录，点上方「添加根目录」
           </Typography>
         )}
         {rows.map((row) => (

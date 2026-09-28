@@ -235,7 +235,7 @@ describe('批次2 G7 状态栏', () => {
       .getAllByText(/扫描/)
       .filter((el) => /已扫描|扫描已完成/.test(el.textContent ?? ''));
     expect(lines).toHaveLength(1);
-    expect(lines[0].textContent).toBe('已扫描 40 个文件');
+    expect(lines[0].textContent).toBe('已扫描 40 个文件（含非图片）');
   });
 
   it('目录条显示当前目录张数，状态栏显示本根总数', () => {

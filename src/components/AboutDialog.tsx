@@ -37,7 +37,7 @@ export function AboutDialog({ open, onClose }: AboutDialogProps): JSX.Element {
         <Stack spacing={2}>
           <Box>
             <Typography variant="h6" gutterBottom>
-              照片标签管家
+              照片标签管家 PhotoTagManager
             </Typography>
             <Typography variant="body2" color="text.secondary">
               一款面向 Windows 的本地图片标签管理工具，帮助你整理、标记和快速查找照片。
@@ -49,6 +49,9 @@ export function AboutDialog({ open, onClose }: AboutDialogProps): JSX.Element {
               产品信息
             </Typography>
             <Typography variant="body2">当前版本：{packageJson.version}</Typography>
+            <Typography variant="body2" color="text.secondary">
+              程序名：PhotoTagManager（安装目录、进程与配置文件夹同名）
+            </Typography>
             <Typography variant="body2">
               开源地址：{' '}
               <Link
@@ -85,13 +88,13 @@ export function AboutDialog({ open, onClose }: AboutDialogProps): JSX.Element {
                 <ListItemText primary="1. 添加一个或多个图片根目录，可为每个目录设置便于识别的别名。" />
               </ListItem>
               <ListItem disableGutters>
-                <ListItemText primary="2. 选择根目录后启动扫描，等待图片索引完成。" />
+                <ListItemText primary="2. 选择根目录后启动扫描，等待扫描完成。" />
               </ListItem>
               <ListItem disableGutters>
                 <ListItemText primary="3. 使用标签管理和筛选功能整理照片，点击缩略图可预览。" />
               </ListItem>
               <ListItem disableGutters>
-                <ListItemText primary="4. 可从图片操作中打开资源管理器并定位到原文件。" />
+                <ListItemText primary="4. 右键图片，或在放大图里点「在资源管理器中定位」即可打开所在文件夹。" />
               </ListItem>
             </List>
           </Box>

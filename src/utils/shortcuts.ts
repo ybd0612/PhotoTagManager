@@ -6,6 +6,8 @@
  * 每条键位都有对应行为用例：←/→/Esc/Ctrl+C 见预览既有断言，空格见 previewActions，
  * `?` 见 shortcuts 用例。
  */
+import { HOLD_TO_COMPARE } from './strings';
+
 export interface Shortcut {
   /** 键位原文，按用户看到的写法 */
   keys: string;
@@ -18,10 +20,10 @@ export interface Shortcut {
 export const SHORTCUTS: Shortcut[] = [
   { keys: '← / →', action: '预览中看上一张 / 下一张', scope: '预览' },
   { keys: 'Esc', action: '关闭预览、对话框或菜单', scope: '全局' },
-  { keys: '空格（按住）', action: '按住空格或按住图片看原图，松开回到抠图结果', scope: '预览 · 有对比结果时' },
+  { keys: '空格（按住）', action: HOLD_TO_COMPARE, scope: '预览 · 有对比结果时' },
   { keys: 'Ctrl + C', action: '把当前文件复制到剪贴板，可在资源管理器粘贴', scope: '预览' },
   { keys: 'Enter', action: '在标签输入框里确认并写入标签', scope: '预览' },
   { keys: 'Ctrl + 单击', action: '网格中多选图片（批量加标签、批量移到回收站）', scope: '网格' },
-  { keys: 'Tab / ↑ ↓ / Enter', action: '键盘走到并展开模型下拉，方向键选项、Enter 触发', scope: '预览底栏' },
-  { keys: '?', action: '打开设置并停在快捷键分区（本页）', scope: '全局 · 输入框内除外' }
+  { keys: 'Tab / ↑ ↓ / Enter', action: '键盘走到并展开模型下拉，方向键移动、Enter 选择', scope: '预览底栏' },
+  { keys: '?', action: '打开设置并停在快捷键分区（即本列表）', scope: '全局 · 输入框内除外' }
 ];

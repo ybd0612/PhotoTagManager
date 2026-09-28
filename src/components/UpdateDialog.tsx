@@ -124,13 +124,13 @@ function renderStatus(status: UpdateStatus): JSX.Element {
     case 'dev-mode':
       return (
         <Typography variant="body2" color="text.secondary">
-          开发模式，更新不可用
+          当前为开发版，不检查更新
         </Typography>
       );
     default:
       return (
         <Typography variant="body2" color="text.secondary">
-          准备检查更新…
+          尚未检查
         </Typography>
       );
   }

@@ -81,7 +81,7 @@ function GeneralPane(): JSX.Element {
           <ToggleButton value="large">大</ToggleButton>
         </ToggleButtonGroup>
         <Typography variant="caption" color="text.secondary">
-          与网格工具行同一份偏好，立即生效
+          和首页工具条是同一个设置，改完立即生效
         </Typography>
       </Stack>
       <Divider />

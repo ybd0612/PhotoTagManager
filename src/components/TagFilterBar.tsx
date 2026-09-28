@@ -22,6 +22,7 @@ import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 import SearchIcon from '@mui/icons-material/Search';
 import { rootKey, useAppStore } from '../store/useAppStore';
 import { collectDirAndDescendants } from '../utils/folders';
+import { TAGS_PENDING } from '../utils/strings';
 import type { SortKey, ThumbSize } from '../../shared/types';
 
 /**
@@ -165,7 +166,7 @@ export function TagFilterBar(): JSX.Element {
 
         {tagFilter.tags.length === 0 ? (
           <Typography variant="body2" color="text.disabled" className="shrink-0">
-            未选择标签（标签会在读取图片后显示）
+            未选择标签
           </Typography>
         ) : (
           <Stack direction="row" spacing={0.5} className="min-w-0 flex-1 flex-wrap items-center">
@@ -213,7 +214,7 @@ export function TagFilterBar(): JSX.Element {
         </Typography>
         {!hasContext || hotTags.length === 0 ? (
           <Typography variant="caption" color="text.disabled">
-            当前目录暂无标签（浏览图片后自动汇总）
+            {TAGS_PENDING}
           </Typography>
         ) : (
           hotTags.map(([tag, count]) => {
@@ -253,7 +254,7 @@ export function TagFilterBar(): JSX.Element {
         onClose={() => setAnchor(null)}
         PaperProps={{ sx: { maxHeight: 360, width: 240 } }}
       >
-        {allTags.length === 0 && <MenuItem disabled>当前目录暂无标签数据</MenuItem>}
+        {allTags.length === 0 && <MenuItem disabled>{TAGS_PENDING}</MenuItem>}
         {allTags.map(([tag, count]) => {
           const selected = tagFilter.tags.includes(tag);
           return (

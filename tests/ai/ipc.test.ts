@@ -332,7 +332,7 @@ describe('ai IPC handler —— IpcResult 信封与转发', () => {
     expect(unload).toMatchObject({ ok: true, data: { unloaded: true } });
     // 第二次已经没有可卸载的了，要给原因而不是静默
     const again = await invoke('ai:model-unload', 'u2netp');
-    expect((again.data as { reason?: string }).reason).toContain('本来未加载');
+    expect((again.data as { reason?: string }).reason).toContain('无需卸载');
 
     const del = await invoke('ai:model-delete', 'u2netp');
     expect(del).toMatchObject({ ok: true });

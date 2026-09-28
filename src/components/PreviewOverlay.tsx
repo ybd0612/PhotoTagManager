@@ -333,8 +333,8 @@ export function PreviewOverlay(): JSX.Element | null {
               <FolderOpenIcon />
             </IconButton>
           </Tooltip>
-          <Tooltip title="复制路径">
-            <IconButton aria-label="复制路径" sx={{ color: 'white' }} onClick={() => void copyFileToClipboard(image.absPath)}>
+          <Tooltip title="复制文件">
+            <IconButton aria-label="复制文件" sx={{ color: 'white' }} onClick={() => void copyFileToClipboard(image.absPath)}>
               <ContentCopyIcon />
             </IconButton>
           </Tooltip>
@@ -480,7 +480,7 @@ export function PreviewOverlay(): JSX.Element | null {
           ))}
           <TextField
             size="small"
-            placeholder="添加标签后回车"
+            placeholder="输入标签，回车添加"
             value={newTag}
             onChange={(e) => setNewTag(e.target.value)}
             onKeyDown={(e) => {

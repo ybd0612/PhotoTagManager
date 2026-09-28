@@ -198,7 +198,7 @@ describe('G9 预览动作条分层', () => {
 
   it('反面腿：焦点在标签输入框里打空格照常输字，不被当成"按住看原图"', () => {
     render(<PreviewOverlay />);
-    const box = screen.getByPlaceholderText('添加标签后回车');
+    const box = screen.getByPlaceholderText('输入标签，回车添加');
     fireEvent.keyDown(box, { key: ' ' });
     expect(useAiStore.getState().holdingOriginal).toBe(false);
   });
@@ -240,7 +240,7 @@ describe('G10 暗底输入框对比 token', () => {
 
   it('输入框在底栏里，placeholder 文案未被改动', () => {
     render(<PreviewOverlay />);
-    const box = screen.getByPlaceholderText('添加标签后回车');
+    const box = screen.getByPlaceholderText('输入标签，回车添加');
     expect(box).toBeTruthy();
   });
 });

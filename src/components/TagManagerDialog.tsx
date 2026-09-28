@@ -19,6 +19,7 @@ import EditIcon from '@mui/icons-material/Edit';
 import CheckIcon from '@mui/icons-material/Check';
 import CloseIcon from '@mui/icons-material/Close';
 import { call, getApi } from '../api';
+import { TAGS_PENDING } from '../utils/strings';
 import { useAppStore } from '../store/useAppStore';
 
 /**
@@ -72,7 +73,7 @@ export function TagManagerDialog({ open, onClose }: { open: boolean; onClose: ()
       <DialogContent dividers>
         {allTags.length === 0 ? (
           <Typography color="text.secondary" variant="body2">
-            暂无标签数据。浏览图片后，已用标签会自动汇总到这里。
+            {TAGS_PENDING}
           </Typography>
         ) : (
           <List dense disablePadding>

@@ -173,12 +173,12 @@ export function resolveModel(
   modelId?: string
 ): ModelSpec {
   const cap = catalog.find((c) => c.id === capabilityId);
-  if (!cap) throw new AiTaskError('CAPABILITY_UNAVAILABLE', `清单里没有 ID 为 ${capabilityId} 的行为`);
+  if (!cap) throw new AiTaskError('CAPABILITY_UNAVAILABLE', `找不到这个处理功能，请重新打开预览再试`);
   const wanted = modelId ?? cap.defaultModelId;
   const model = cap.models.find((m) => m.id === wanted);
-  if (!model) throw new AiTaskError('MODEL_UNAVAILABLE', `行为 ${capabilityId} 下没有模型 ${wanted}`);
+  if (!model) throw new AiTaskError('MODEL_UNAVAILABLE', `这个功能当前没有可用的模型`);
   if (!model.verified) {
-    throw new AiTaskError('MODEL_NOT_VERIFIED', `模型 ${model.id} 未在本引擎实测跑通，暂不可用`);
+    throw new AiTaskError('MODEL_NOT_VERIFIED', `这个模型还没在本机显卡上验证通过，暂时不能选`);
   }
   return model;
 }
@@ -269,11 +269,11 @@ export class AiService {
   /** 只允许设成该行为下已实测跑通的模型，否则报错而不是默默生效。 */
   async setDefaultModel(capabilityId: string, modelId: string): Promise<void> {
     const cap = this.catalog.find((c) => c.id === capabilityId);
-    if (!cap) throw new AiTaskError('CAPABILITY_UNAVAILABLE', `清单里没有 ID 为 ${capabilityId} 的行为`);
+    if (!cap) throw new AiTaskError('CAPABILITY_UNAVAILABLE', `找不到这个处理功能，请重新打开预览再试`);
     const model = cap.models.find((m) => m.id === modelId);
-    if (!model) throw new AiTaskError('MODEL_UNAVAILABLE', `行为 ${capabilityId} 下没有模型 ${modelId}`);
+    if (!model) throw new AiTaskError('MODEL_UNAVAILABLE', `这个功能当前没有可用的模型`);
     if (!model.verified) {
-      throw new AiTaskError('MODEL_NOT_VERIFIED', `模型 ${model.id} 未在本引擎实测跑通，不能设为默认`);
+      throw new AiTaskError('MODEL_NOT_VERIFIED', `这个模型还没在本机验证通过，不能设为默认`);
     }
     const settings = await this.readSettings();
     settings.aiDefaults = { ...settings.aiDefaults, [capabilityId]: modelId };
@@ -326,9 +326,9 @@ export class AiService {
     const run = this.finished.get(taskId);
     if (!run) throw new AiTaskError('TASK_NOT_FOUND', '该任务的结果已保存或已失效，请重新处理一次');
     const cap = this.catalog.find((c) => c.id === run.capabilityId);
-    if (!cap) throw new AiTaskError('CAPABILITY_UNAVAILABLE', `清单里没有 ID 为 ${run.capabilityId} 的行为`);
+    if (!cap) throw new AiTaskError('CAPABILITY_UNAVAILABLE', `找不到这个处理功能，无法保存结果`);
     if (!(await exists(run.sourceAbsPath))) {
-      throw new AiTaskError('SOURCE_MISSING', `找不到原图：${run.sourceAbsPath}`);
+      throw new AiTaskError('SOURCE_MISSING', `找不到原图（可能已被移动或删除）：${run.sourceAbsPath}`);
     }
     if (!(await exists(run.tempPath))) {
       this.finished.delete(taskId);
@@ -522,7 +522,7 @@ export class AiService {
   private async execute(taskId: string, req: RunRequest, signal: AbortSignal): Promise<RunResult> {
     this.throwIfCancelled(taskId);
     const cap = this.catalog.find((c) => c.id === req.capabilityId);
-    if (!cap) throw new AiTaskError('CAPABILITY_UNAVAILABLE', `清单里没有 ID 为 ${req.capabilityId} 的行为`);
+    if (!cap) throw new AiTaskError('CAPABILITY_UNAVAILABLE', `找不到这个处理功能，请重新打开预览再试`);
     const model = resolveModel(
       this.catalog,
       req.capabilityId,
@@ -535,9 +535,9 @@ export class AiService {
     try {
       sourceStat = await stat(req.absPath);
     } catch {
-      throw new AiTaskError('SOURCE_MISSING', `找不到原图：${req.absPath}`);
+      throw new AiTaskError('SOURCE_MISSING', `找不到原图（可能已被移动或删除）：${req.absPath}`);
     }
-    if (!sourceStat.isFile()) throw new AiTaskError('SOURCE_MISSING', `目标不是文件：${req.absPath}`);
+    if (!sourceStat.isFile()) throw new AiTaskError('SOURCE_MISSING', `这个目标不是一张图片：${req.absPath}`);
 
     const params = toCacheParams(DEFAULT_CUTOUT_PARAMS);
     const key = computeCacheKey({
@@ -571,13 +571,13 @@ export class AiService {
     // ── 确保模型就绪（下载是这一步的内部细节，不是用户步骤）─────────────
     const status = await this.deps.store.status(model.id);
     if (status === 'downloading') {
-      throw new AiTaskError('MODEL_BUSY', `模型 ${model.id} 正在下载中，请稍候`);
+      throw new AiTaskError('MODEL_BUSY', `这个模型还在下载中，下载完成后再试`);
     }
     if (status === 'absent') {
       if (!req.downloadApproved) {
         throw new AiTaskError(
           'DOWNLOAD_NEEDS_CONSENT',
-          `首次使用需下载 ${roundMb(model.sizeBytes)} MB，确认后开始`
+          `首次使用需要下载模型文件（约 ${roundMb(model.sizeBytes)} MB），请在弹窗中确认`
         );
       }
       this.emit(taskId, 'download', 0);
@@ -588,7 +588,7 @@ export class AiService {
 
     const modelPath = join(modelDir(model.id), model.fileName);
     if (!(await exists(modelPath))) {
-      throw new AiTaskError('MODEL_MISSING_ON_DISK', `清单说模型已就位，但磁盘上找不到 ${modelPath}`);
+      throw new AiTaskError('MODEL_MISSING_ON_DISK', `模型文件不见了，请在模型下拉里删除后重新下载（${modelPath}）`);
     }
 
     // 后端变化也要重建会话：与"模型是否仍驻留"是 AND 关系，所以子进程崩溃或
@@ -696,11 +696,11 @@ function toDownloadSpec(model: ModelSpec): ModelDownloadSpec {
 
 /** 推理结果 → 掩码平面。形状一律从会话给的 dims 读，不写死。 */
 function toMaskPlane(data: Float32Array, dims: number[]): MaskPlane {
-  if (dims.length < 2) throw new AiTaskError('UNEXPECTED_OUTPUT', `输出形状不是平面：${dims.join('x')}`);
+  if (dims.length < 2) throw new AiTaskError('UNEXPECTED_OUTPUT', `模型返回的数据格式不对，已中止（形状 ${dims.join('x')}）`);
   const height = dims[dims.length - 2];
   const width = dims[dims.length - 1];
   if (width * height > data.length) {
-    throw new AiTaskError('UNEXPECTED_OUTPUT', `输出长度 ${data.length} 不足 ${width}x${height}`);
+    throw new AiTaskError('UNEXPECTED_OUTPUT', `模型返回的数据不完整，已中止（需要 ${width}×${height}，实际 ${data.length}）`);
   }
   return { data: data.subarray(0, width * height), width, height };
 }
@@ -730,7 +730,7 @@ async function pickTargetName(dir: string, stem: string, suffix: string, ext: st
     const candidate = join(dir, `${stem}.${suffix}.${n}${ext}`);
     if (!(await exists(candidate))) return candidate;
   }
-  throw new AiTaskError('SAVE_NAME_EXHAUSTED', `${stem}.${suffix} 的序号已用尽，请先清理同名派生文件`);
+  throw new AiTaskError('SAVE_NAME_EXHAUSTED', `同名抠图文件太多，序号已用完，请先清理 ${stem}.${suffix} 开头的文件`);
 }
 
 async function removeFile(path: string): Promise<void> {

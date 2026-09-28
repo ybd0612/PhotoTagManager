@@ -36,12 +36,12 @@ export function AiSettingsPane() {
       <Typography variant="subtitle2">存储与显存</Typography>
       <Typography variant="body2" data-testid="ai-stats-loaded">
         模型占用 {formatGb(modelBytes)} · 可用磁盘 {formatGb(stats?.freeDiskBytes ?? null)} · 预览暂存{' '}
-        {stats ? `${stats.preview.entries} 条 / ${formatGb(stats.preview.totalBytes)}` : '未知'}
+        {stats ? `${stats.preview.entries} 个文件 / ${formatGb(stats.preview.totalBytes)}` : '未知'}
       </Typography>
       <Typography variant="body2" data-testid="ai-gpu-line" color="text.secondary">
         {stats?.gpu
           ? `整卡已用 ${stats.gpu.usedMiB} MiB / ${stats.gpu.totalMiB} MiB（整卡口径，含其他程序的占用；分进程显存读不到）`
-          : '整卡显存：未知（没有可用的 NVIDIA 查询）'}
+          : '整卡显存：未知（没有可用的显存查询工具）'}
       </Typography>
 
       <Typography variant="subtitle2">预览暂存</Typography>

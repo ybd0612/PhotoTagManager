@@ -15,11 +15,12 @@ export function scanProgressPercent(stats: ScanStats | null): number {
 }
 
 export function scanStatusLabel(state: ScanState, stats: ScanStats | null): string {
-  if (state === 'error') return '扫描失败，请重试';
+  if (state === 'error') return '扫描失败';
   if (!stats) return '';
   if (state === 'scanning') {
     return `正在扫描 ${stats.scannedFiles.toLocaleString()} / ${stats.totalFiles.toLocaleString()} 个文件 · ${scanProgressPercent(stats)}%`;
   }
-  if (state === 'done') return `已扫描 ${stats.scannedFiles.toLocaleString()} 个文件`;
+  // scannedFiles 含非图片，与状态栏左侧「共 N 张」不是一个分母——把口径写在脸上，省得用户以为漏扫
+  if (state === 'done') return `已扫描 ${stats.scannedFiles.toLocaleString()} 个文件（含非图片）`;
   return '';
 }

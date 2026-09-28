@@ -7,6 +7,7 @@ import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Typography from '@mui/material/Typography';
 import { call, getApi, toFileUrl } from '../api';
+import { HOLD_TO_COMPARE } from '../utils/strings';
 import { useAiStore, type AiCompareMode } from '../store/useAiStore';
 import type { AiDonePayload, AiSaveResult } from '../../shared/types';
 
@@ -116,7 +117,7 @@ export function AiCompareStage({ absPath, alt, onError, viewStyle }: StageProps)
           className="pointer-events-none absolute bottom-2 left-3"
           sx={{ color: OVERLAY.mid }}
         >
-          掩码在 {result.inputWidth}×{result.inputHeight} 下计算，右图放大后偏软是预期的
+          掩码在 {result.inputWidth}×{result.inputHeight} 下计算，右侧结果放大后偏软，属正常
         </Typography>
       </>
     );
@@ -147,7 +148,7 @@ export function AiCompareStage({ absPath, alt, onError, viewStyle }: StageProps)
           borderRadius: 1.5
         }}
       >
-        按住空格或按住图片看原图，松开回到抠图结果
+        {HOLD_TO_COMPARE}
       </Typography>
     </>
   );
