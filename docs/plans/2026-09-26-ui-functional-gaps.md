@@ -294,6 +294,33 @@ BiRefNet 在本机 DML 上确实抛 `DmlFusedNode`，但那是子进程内捕获
 3. 退而信模块级证据：`cutoutE2E.integration.test.ts` 已包住 `global.fetch` 做审计，
    它证明的是"推理链路代码里没有网络调用"，与"这台机器上没外传"是两件事，不能互相顶替。
 
+### 验收③ · RAW 与超大图（§8-28）——**表现合格，但抓到一条假绿 U5**
+夹具（放在 `temp/ptm-acceptance`，验完已删；真 RAW 是**复制**进夹具的，没动原件）：
+`real-sony.ARW` 69,623,804 字节（索尼真 RAW）、`fake-camera.arw` 4,116 字节（垃圾字节冒充）、
+`huge-40mp.jpg` 8000×5000 = **40.0MP**。挂成第三个根后逐张点抠图，读界面实际给出的东西：
+
+| 文件 | 结果 | 界面实际给的 |
+|---|---|---|
+| fake-camera.arw | 不崩、有可读原因 | 「读不出这张图片的信息：可能是本应用不支持的格式（RAW / HEIC 请先转成 JPG 或 PNG），也可能文件已损坏。Input file contains unsupported image format」 |
+| real-sony.ARW（真 RAW） | 不崩、有可读原因 | 同上（**不是**"未知错误"） |
+| huge-40mp.jpg（40MP） | **正常出结果** | 但分屏那句注明是「掩码在 **×** 下计算」——**数字空白** |
+
+→ §8-28 要求的两条（RAW 给人话、超大图能出结果）**表现合格**；
+但"界面注明在 NxN 下处理"这条**实际没生效**，追下去是一条假绿：
+
+**U5 · 掩码尺寸注明永远为空（§8-10 之前记的"自动 ✓"作废）**
+- 生产者 `electron/ai/aiService.ts`（缓存命中路径 558–566、正常路径 ~659）只写 `maskWidth` / `maskHeight`；
+- 消费者 `src/components/AiCompareView.tsx:120` 读的是 `result.inputWidth` / `inputHeight`；
+- `shared/types.ts` 里 `AiDonePayload` 同时有这四字段，但 IPC 传输段是 `unknown`，**tsc 看不见这个不匹配**；
+- 所有相关测试都**手工构造** `inputWidth: 320` 的 payload，于是永远绿——
+  测的是"组件会读这个字段"，从未测"生产者会写这个字段"。
+  §8-10 那句"换 512×288 验证非写死"只证明了前者，所以那条"自动 ✓"是**过度声明**。
+- 修法：生产者补 `inputWidth/inputHeight`（或直接删掉这两个别名字段，统一用 `maskWidth/maskHeight`），
+  并把 `ai:done` 的载荷纳入类型约束（别再用 unknown 过桥），
+  判据要能失败：走一次真实 `aiService` 产出的 payload，断言 `inputWidth > 0`。
+
+**环境已还原**：`roots.json` 回到「截图 | 图片」两根的状态，夹具目录与验收期间的备份文件均已删除。
+
 ### 两条待决策（不在本轮）
 - **换分发源**：`publish.provider: generic` 指向支持 Range 且国内可达的对象存储——治"慢"这个根因，
   但 electron-updater 的整包路径仍不续传。
