@@ -255,6 +255,23 @@ BiRefNet 在本机 DML 上确实抛 `DmlFusedNode`，但那是子进程内捕获
 | U1 | `updaterService` 接上 `electron-log`：记 checking / available / progress 摘要 / error，以及差分回退那句 | 注入假 logger 后触发这些事件，断言日志出现对应行；删掉 `autoUpdater.logger = ...` 必须让用例红 |
 | U2 | `error` 态的人话与重试路径 | 现状：`download()` 要求 `state === 'available'`（`updaterService.ts:73`），一旦进 error 就必须重新"检查更新"才能再下，界面完全没说。判据：error 态下点「重试」能重新发起下载 |
 | U3 | 定 `disableDifferentialDownload` 取值并写明理由 | 配置与注释同批存在；若保留差分，则 U1 的日志必须能区分"差分中"与"回退整包"两种进度 |
+| **U4** | **userData 目录名有两个身份并存**（手装 0.1.4 时实测发现） | 见下方专段 |
+
+### U4 · 两份 userData 并存（优先级高于 U1–U3）
+手装 0.1.4 后核对"升级有没有弄坏数据"，结果机器上存在**两份**目录：
+
+| 目录 | 内容 | 判断 |
+|---|---|---|
+| `%APPDATA%\photo-tag-manager`（小写连字符） | roots = 截图 + 图片；`models/u2netp/u2netp.onnx` 4,574,861 字节（9-24）；今天 CDP 的 `DevToolsActivePort` 也在这 | **在用**。装机版 0.1.4 启动后界面显示「图库 · 2 个根目录 / 截图 3,400 / 图片 108」，与它一致 |
+| `%APPDATA%\PhotoTagManager`（productName 形式，9-26 14:18 创建） | roots 只有 1 条 `sync`；`models/` **空** | **孤儿**。某个历史构建用过这个名字 |
+
+根因：`package.json` **顶层没有 `productName`**，Electron 的 `app.getName()` 于是取 `name`（`photo-tag-manager`），
+而 electron-builder 的安装项 / `appId` / 卸载注册表用的是 `build.productName`（`PhotoTagManager`）。
+**影响**：哪天有人在顶层补上 `productName`，或 Electron 升级改了默认取值，所有老用户的
+根目录与已下载模型就会"凭空消失"——数据没丢，只是换到另一个目录去读了，而界面上完全看不出原因。
+**修法方向**：显式钉死目录名（`app.setName('photo-tag-manager')` 或 `app.setPath('userData', ...)` 并写注释说明
+为什么不能改），外加一次性把孤儿目录里那条 `sync` 根合并进在用目录。
+**顺带一条证据**：升级后状态栏显示「已扫描 3,400 个文件（含非图片）」，即验收①装的确实是新代码。
 
 ### 两条待决策（不在本轮）
 - **换分发源**：`publish.provider: generic` 指向支持 Range 且国内可达的对象存储——治"慢"这个根因，
