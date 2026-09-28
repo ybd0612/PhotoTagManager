@@ -2,7 +2,7 @@
 // 批次3 · G9 —— 预览动作条分层 + 「按住看原图」改成空格与图上浮层。
 // 不变的口径（D15）：默认看到抠图结果，按住才切回原图；换形态不是改判交互。
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, within, act } from '@testing-library/react';
+import { render, screen, fireEvent, within, act, waitFor } from '@testing-library/react';
 
 import { PreviewOverlay } from '../../src/components/PreviewOverlay';
 import { OVERLAY } from '../../src/components/AiCompareView';
@@ -242,5 +242,85 @@ describe('G10 暗底输入框对比 token', () => {
     render(<PreviewOverlay />);
     const box = screen.getByPlaceholderText('输入标签，回车添加');
     expect(box).toBeTruthy();
+  });
+});
+
+/** 批次4：AI 失败此前只写进 store，全仓没有一处渲染它 */
+describe('AI 错误必须看得见', () => {
+  const modelRow = {
+    id: 'u2netp',
+    displayName: 'U²-Netp',
+    sizeBytes: 4_574_861,
+    verified: true,
+    status: 'present',
+    loaded: true,
+    isDefault: true,
+    inputWidth: 320,
+    inputHeight: 320
+  };
+  const catalogWithLoaded = {
+    capabilities: [
+      {
+        id: 'portrait-cutout',
+        label: '抠图',
+        description: '去除人像背景',
+        actionTag: 'AI人像抠图',
+        outputSuffix: 'cutout',
+        outputExt: '.png',
+        defaultModelId: 'u2netp',
+        models: [modelRow]
+      }
+    ]
+  };
+
+  it('错误进 store 后底栏出现错误条，显示人话化的消息', () => {
+    useAiStore.setState({
+      error: {
+        taskId: 'ai-1',
+        code: 'DECODE_FAILED',
+        message: '读不出这张图片的信息：可能是本应用不支持的格式（RAW / HEIC 请先转成 JPG 或 PNG），也可能文件已损坏。'
+      }
+    });
+    render(<PreviewOverlay />);
+    expect(screen.getByTestId('ai-error').textContent).toContain('不支持的格式');
+  });
+
+  it('显存不足 + 确有模型驻留：给一颗真能卸载的按钮', async () => {
+    useAiStore.setState({
+      catalog: catalogWithLoaded as never,
+      error: { taskId: 'ai-2', code: 'GPU_MEMORY_LOW', message: '显存不够，没能完成这次处理。' }
+    });
+    render(<PreviewOverlay />);
+    fireEvent.click(screen.getByTestId('ai-error-unload'));
+    await waitFor(() => expect(api.aiModelUnload).toHaveBeenCalledWith('u2netp'));
+  });
+
+  it('反面腿：非显存类错误不给「卸载已加载的模型」（卸载对它没有任何帮助）', () => {
+    useAiStore.setState({
+      catalog: catalogWithLoaded as never,
+      error: { taskId: 'ai-3', code: 'GPU_DEVICE_UNAVAILABLE', message: '这台机器的显卡加速用不了。' }
+    });
+    render(<PreviewOverlay />);
+    expect(screen.queryByTestId('ai-error-unload')).toBeNull();
+  });
+
+  it('反面腿：显存不足但没有任何模型驻留，同样不给这颗按钮（点了也没东西可卸）', () => {
+    useAiStore.setState({
+      catalog: null,
+      error: { taskId: 'ai-4', code: 'GPU_MEMORY_LOW', message: '显存不够，没能完成这次处理。' }
+    });
+    render(<PreviewOverlay />);
+    expect(screen.queryByTestId('ai-error-unload')).toBeNull();
+  });
+
+  it('「知道了」只关错误条，不许顺手清掉已生成的对比结果', () => {
+    useAiStore.setState({ error: { taskId: 'ai-5', code: 'DECODE_FAILED', message: '读不出这张图片的信息' } });
+    render(<PreviewOverlay />);
+    expect(screen.getByTestId('ai-compare-img')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '知道了' }));
+    expect(useAiStore.getState().error).toBeNull();
+    expect(useAiStore.getState().result).not.toBeNull();
+    expect(screen.queryByTestId('ai-error')).toBeNull();
+    expect(screen.getByTestId('ai-compare-img')).toBeTruthy();
   });
 });

@@ -113,7 +113,7 @@ export type IpcResult<T> =
   | { ok: true; data: T }
   | { ok: false; error: { code: string; message: string } };
 
-/** 模型在本机的状态（下拉里每行都要显示） */
+/** 模型在本机的状态（下拉里每行都要显示）。只描述磁盘/传输真相，不掺能力判断 */
 export type AiModelStatus = 'absent' | 'downloading' | 'present';
 
 /** 清单里的一个候选模型 + 它的本机状态（能力清单是唯一事实源，界面不写死任何字段） */
@@ -124,6 +124,11 @@ export interface AiModelView {
   /** 只有实测跑通的条目允许进 UI（规格 §4.3 硬规则） */
   verified: boolean;
   status: AiModelStatus;
+  /**
+   * 本机跑不动时给一句"为什么 + 怎么办"（规格 §6「无可用 GPU → 条目转不可用并说明原因」）。
+   * 刻意不并进 status：status 要如实反映磁盘状态，否则那颗 下载/删除 按钮会判错。
+   */
+  statusReason?: string;
   /** 是否已加载进显存。加载对用户不可见（D14），但下拉里要如实显示 */
   loaded: boolean;
   isDefault: boolean;

@@ -184,11 +184,16 @@ describe('ai/preprocess —— 输入形态闸门（§6 的 GIF/多帧与 RAW �
     expect(() => assertSingleFrame({ width: 8, height: 4 })).not.toThrow();
   });
 
-  it('解码失败的原始字节给出可读原因，不抛裸异常', async () => {
+  it('元数据都读不出时，两种可能都要说，不许把正常 RAW 断言成"文件损坏"', async () => {
     const junk = join(tmp, 'broken.jpg');
     await writeFile(junk, Buffer.from('这不是图片'));
     const model = specWith(4, 4);
-    await expect(preprocessImage(junk, model)).rejects.toThrow(/无法解码|解码/);
+    const err = (await preprocessImage(junk, model).catch((e: unknown) => e as Error)) as Error;
+    expect(err.message).toContain('不支持的格式');
+    expect(err.message).toContain('请先转成 JPG 或 PNG');
+    expect(err.message).toContain('也可能文件已损坏');
+    // 旧写法把"格式不支持"和"损坏"混成一句结论，反钉不许回来
+    expect(err.message).not.toMatch(/无法解码该图片（RAW\/HEIC 或文件损坏）/);
   });
 
   it('真多帧 GIF 必须被拒绝（夹具由 ffmpeg 生成，pages=4）', async () => {

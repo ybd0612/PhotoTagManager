@@ -32,7 +32,11 @@ export async function loadUprightRgb(absPath: string): Promise<UprightRgb> {
   try {
     pages = (await sharp(absPath).metadata()).pages;
   } catch (err) {
-    throw new Error(`无法解码该图片（RAW/HEIC 或文件损坏）：${decodeReason(err)}`);
+    // 这一步连格式都没认出来：不支持的容器（RAW / HEIC）与真损坏的文件在这里是同一种表现，
+    // 所以两种可能都要说，别把一张正常的 RAW 说成"坏了"
+    throw new Error(
+      `读不出这张图片的信息：可能是本应用不支持的格式（RAW / HEIC 请先转成 JPG 或 PNG），也可能文件已损坏。${decodeReason(err)}`
+    );
   }
   assertSingleFrame({ pages });
 
@@ -47,7 +51,8 @@ export async function loadUprightRgb(absPath: string): Promise<UprightRgb> {
     height = raw.info.height;
     channels = raw.info.channels;
   } catch (err) {
-    throw new Error(`无法解码该图片（RAW/HEIC 或文件损坏）：${decodeReason(err)}`);
+    // 走到这里说明格式是认得的（上一关已过），只是像素解不出来——这才是"损坏/编码异常"
+    throw new Error(`这张图片能读出信息但画不出像素，文件可能已损坏或编码异常。${decodeReason(err)}`);
   }
   if (channels !== 3) {
     throw new Error(`解码后不是三通道 RGB（实际 ${channels} 通道），无法送入模型`);

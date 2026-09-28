@@ -380,3 +380,47 @@ describe('ai IPC handler —— IpcResult 信封与转发', () => {
     expect((res.error as { message: string }).message).toContain('预览暂存');
   });
 });
+
+/** 批次4 · 规格 §6：无可用 GPU 加速设备 → 清单条目转「不可用」并说明原因 */
+describe('ai:catalog 的 GPU 可解释状态', () => {
+  type ModelRow = { id: string; status: string; statusReason?: string };
+  const modelsOf = async (): Promise<ModelRow[]> => {
+    const res = await invoke('ai:catalog');
+    const data = res.data as { capabilities: Array<{ models: ModelRow[] }> };
+    return data.capabilities[0].models;
+  };
+  const registerWith = (capability?: () => Promise<'ok' | 'unavailable' | 'unknown'>) => {
+    handlers.clear();
+    const deps = fakeDeps();
+    if (capability) deps.ai.capability = capability;
+    registerIpc(deps);
+  };
+
+  it('探测到没有可用 GPU：挂上"为什么 + 怎么办"，但 status 仍是磁盘真相', async () => {
+    registerWith(async () => 'unavailable');
+    const [row] = await modelsOf();
+    expect(row.status).toBe('present');
+    expect(row.statusReason).toContain('显卡');
+    expect(row.statusReason).toContain('CPU 慢速模式');
+  });
+
+  it('反面腿：探测不到（缺省 unknown）时一个原因都不挂，绝不误判成不可用', async () => {
+    registerWith();
+    const [row] = await modelsOf();
+    expect(row.statusReason).toBeUndefined();
+  });
+
+  it('反面腿：探测到 ok 也不挂原因', async () => {
+    registerWith(async () => 'ok');
+    const [row] = await modelsOf();
+    expect(row.statusReason).toBeUndefined();
+  });
+
+  it('正在下载的条目不挂原因——进度条不能因为能力判断就凭空消失', async () => {
+    registerWith(async () => 'unavailable');
+    store.status = async () => 'downloading' as never;
+    const [row] = await modelsOf();
+    expect(row.status).toBe('downloading');
+    expect(row.statusReason).toBeUndefined();
+  });
+});

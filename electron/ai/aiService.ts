@@ -5,6 +5,7 @@ import { capabilities, type CapabilitySpec, type ModelSpec } from './capabilityC
 import { computeCacheKey } from './cacheKey';
 import { modelDir, previewDir, previewFile, settingsFile } from './paths';
 import { PIPELINE_VERSION, preprocessImage } from './preprocess';
+import { classifyGpuError } from './gpuErrorText';
 import {
   DEFAULT_CUTOUT_PARAMS,
   composeCutoutPng,
@@ -596,7 +597,15 @@ export class AiService {
     const backend: 'dml' | 'cpu' = req.backend ?? 'dml';
     if (this.deps.runner.loadedModelId !== model.id || this.loadedBackend !== backend) {
       this.emit(taskId, 'load', 0);
-      await this.deps.runner.load({ modelPath, model, backend });
+      try {
+        await this.deps.runner.load({ modelPath, model, backend });
+      } catch (err) {
+        // 加载失败绝大多数出在显卡上：显存不够，或 DML 建会话就崩（实测 BiRefNet 的 DmlFusedNode）。
+        // 认不出来就保留专用码 + 原文，别硬编成"显卡问题"误导人
+        const msg = errorMessage(err);
+        const gpu = classifyGpuError(msg);
+        throw new AiTaskError(gpu?.code ?? 'MODEL_LOAD_FAILED', gpu?.message ?? msg);
+      }
       this.loadedBackend = backend;
     }
     this.throwIfCancelled(taskId);
@@ -614,7 +623,11 @@ export class AiService {
     try {
       reply = await this.deps.runner.infer({ modelId: model.id, dims: input.dims, data: input.tensor });
     } catch (err) {
-      throw new AiTaskError('INFERENCE_FAILED', errorMessage(err));
+      // 推理期同样可能撞显存（大图 + 大模型）。分类只换文案与码，行为不变：
+      // 绝不因为"显存不够"就自动改用 CPU 跑——D12 明令禁止无声降级，要用户自己勾
+      const msg = errorMessage(err);
+      const gpu = classifyGpuError(msg);
+      throw new AiTaskError(gpu?.code ?? 'INFERENCE_FAILED', gpu?.message ?? msg);
     }
     this.throwIfCancelled(taskId);
 

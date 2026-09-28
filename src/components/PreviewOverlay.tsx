@@ -37,6 +37,13 @@ export function PreviewOverlay(): JSX.Element | null {
   const compare = useCompareResult(preview?.image?.absPath);
   const setHoldingOriginal = useAiStore((s) => s.setHoldingOriginal);
   const compareMode = useAiStore((s) => s.compareMode);
+  // AI 失败此前只写进 store，全仓没有任何一处渲染它——错误等于没发生
+  const aiError = useAiStore((s) => s.error);
+  const dismissAiError = useAiStore((s) => s.dismissError);
+  const modelAction = useAiStore((s) => s.modelAction);
+  const catalog = useAiStore((s) => s.catalog);
+  const loadedModelId =
+    catalog?.capabilities.flatMap((c) => c.models).find((m) => m.loaded)?.id ?? null;
   const tagCache = useAppStore((s) => s.tagCache);
   const closePreview = useAppStore((s) => s.closePreview);
   const previewStep = useAppStore((s) => s.previewStep);
@@ -428,6 +435,41 @@ export function PreviewOverlay(): JSX.Element | null {
           </Typography>
         )}
       </Box>
+
+      {/* AI 失败要看得见：一条错误条，不弹窗、不打断浏览 */}
+      {aiError && (
+        <Stack
+          direction="row"
+          alignItems="center"
+          spacing={1}
+          className="shrink-0 px-4"
+          sx={{ bgcolor: 'rgba(183,28,28,0.22)' }}
+        >
+          <Typography variant="caption" data-testid="ai-error" sx={{ color: '#ffcdd2', minWidth: 0, flex: 1, py: 0.5 }}>
+            {aiError.message}
+          </Typography>
+          {/* §8-17 的"一键卸载"：只在显存不足且确有模型驻留时出现，否则就是颗假控件 */}
+          {aiError.code === 'GPU_MEMORY_LOW' && loadedModelId && (
+            <Button
+              size="small"
+              color="inherit"
+              data-testid="ai-error-unload"
+              sx={{ textTransform: 'none', minWidth: 0 }}
+              onClick={() => void modelAction(loadedModelId, 'unload').then(() => dismissAiError())}
+            >
+              卸载已加载的模型
+            </Button>
+          )}
+          <Button
+            size="small"
+            color="inherit"
+            sx={{ textTransform: 'none', minWidth: 0 }}
+            onClick={dismissAiError}
+          >
+            知道了
+          </Button>
+        </Stack>
+      )}
 
       {/* 底栏上半：AI 动作 + 对比动作 + 元数据（原来元数据自己一行还配一条 Divider） */}
       <Box className="shrink-0 px-4 pt-2.5" sx={{ bgcolor: 'rgba(255,255,255,0.05)' }}>

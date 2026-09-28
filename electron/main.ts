@@ -15,6 +15,7 @@ import { ChildRunner, makeUtilityProcessSpawner } from './ai/runner';
 import { AiService, type MetadataGateway } from './ai/aiService';
 import { statfs } from 'fs/promises';
 import { readWholeGpuMemory } from './ai/gpuStats';
+import { readGpuCapability } from './ai/gpuCapability';
 
 electronLog.initialize();
 
@@ -213,6 +214,9 @@ void app.whenReady().then(() => {
       },
       // 只能拿到整卡显存：分进程显存本机驱动返回 [N/A]，所以口径必须标"整卡"
       gpuStats: () => readWholeGpuMemory(),
+      // 规格 §6：无可用 GPU 加速设备时，清单条目要转「不可用」并说明原因。
+      // ipc 侧缺省是 unknown（不让契约测试去起 PowerShell），生产必须在这里接上真探测
+      capability: () => readGpuCapability(),
       retention: aiRetention
     }
   });

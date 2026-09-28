@@ -295,6 +295,7 @@ function ModelMenu({
                 py: 0.25,
                 minHeight: 34,
                 display: 'flex',
+                flexWrap: 'wrap',
                 alignItems: 'center',
                 gap: 0.75,
                 bgcolor: index === active ? 'action.selected' : 'transparent'
@@ -305,9 +306,20 @@ function ModelMenu({
                 <Box component="span" sx={{ color: 'text.secondary', ml: 0.75 }}>
                   {describeDownloadCost(model.sizeBytes).split('，')[0]} ·{' '}
                   {model.status === 'present' ? (model.loaded ? '已加载' : '已下载') : '未下载'}
+                  {model.statusReason ? ' · 不可用' : ''}
                   {model.isDefault ? ' · 默认' : ''}
                 </Box>
               </Typography>
+              {/* 不可用必须说清"为什么 + 怎么办"，只给一个灰词等于没解释（规格 §6） */}
+              {model.statusReason ? (
+                <Typography
+                  variant="caption"
+                  data-testid="model-unavailable-reason"
+                  sx={{ color: 'text.secondary', flexBasis: '100%', lineHeight: 1.35 }}
+                >
+                  {model.statusReason}
+                </Typography>
+              ) : null}
               <Stack direction="row" spacing={0.5}>
                 <Button
                   size="small"

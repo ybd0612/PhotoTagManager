@@ -92,6 +92,7 @@ interface AiState {
   saveResult: () => Promise<AiSaveResult | null>;
   clearResult: () => void;
   modelAction: (modelId: string, action: 'download' | 'unload' | 'delete' | 'set-default') => Promise<void>;
+  dismissError(): void;
 }
 
 let subscribed = false;
@@ -230,6 +231,9 @@ export const useAiStore = create<AiState>((set, get) => ({
   },
 
   clearResult: () => set({ result: null, error: null, ...COMPARE_RESET }),
+
+  /** 只关错误条：不能顺手清掉 result，用户可能正看着上一次抠出来的图 */
+  dismissError: () => set({ error: null }),
 
   modelAction: async (modelId, action) => {
     const api = getApi();

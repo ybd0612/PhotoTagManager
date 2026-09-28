@@ -25,6 +25,7 @@ import type { RootStore } from './services/rootStore';
 import type { UpdaterService } from './services/updaterService';
 import type { AiEvent, RunRequest, RunResult, SaveResult } from './ai/aiService';
 import type { CapabilitySpec } from './ai/capabilityCatalog';
+import { GPU_UNAVAILABLE_REASON, type GpuCapability } from './ai/gpuCapability';
 import type { ModelDownloadSpec, ModelStore } from './ai/modelStore';
 
 /** AI 推理子进程的只读运行态视图（ipc 只需要"当前驻留哪个模型"和卸载入口） */
@@ -73,6 +74,12 @@ export interface IpcDeps {
     freeDiskBytes(): Promise<number | null>;
     /** 整卡显存（口径必须标注"整卡"，分进程显存拿不到） */
     gpuStats(): Promise<AiGpuMemory | null>;
+    /**
+     * 本机 GPU 加速能力（规格 §6「无可用设备 → 条目转不可用并说明原因」）。
+     * 可选且缺省为 unknown：不在这里默认起 PowerShell，否则每次 IPC 契约测试都会真去探测。
+     * 生产由 main.ts 注入 readGpuCapability。
+     */
+    capability?(): Promise<GpuCapability>;
     retention: { retentionDays: number; maxBytes: number };
   };
 }
@@ -300,6 +307,9 @@ export function registerIpc(deps: IpcDeps): void {
   /** 清单 + 本机状态一次拿全。只含实测跑通的条目（§4.3 硬规则：没跑通的连灰都不给看）。 */
   const buildCatalog = async () => {
     const usable = deps.ai.service.usableCatalog();
+    // unknown（探测失败）一律按"能用"处理：误报不可用会把整条功能从能跑的机器上拿走
+    const gpuCap = deps.ai.capability ? await deps.ai.capability() : 'unknown';
+    const noGpu = gpuCap === 'unavailable';
     const capabilities = await Promise.all(
       usable.map(async (cap) => {
         const preferred = await deps.ai.service.defaultModelFor(cap.id);
@@ -312,17 +322,23 @@ export function registerIpc(deps: IpcDeps): void {
           outputExt: cap.outputExt,
           defaultModelId: preferred,
           models: await Promise.all(
-            cap.models.map(async (m) => ({
-              id: m.id,
-              displayName: m.displayName,
-              sizeBytes: m.sizeBytes,
-              verified: m.verified,
-              status: await deps.ai.store.status(m.id),
-              loaded: deps.ai.runner.loadedModelId === m.id,
-              isDefault: preferred === m.id,
-              inputWidth: m.inputDims[3] ?? 0,
-              inputHeight: m.inputDims[2] ?? 0
-            }))
+            cap.models.map(async (m) => {
+              const diskStatus = await deps.ai.store.status(m.id);
+              // 只挂原因、不改 status：磁盘状态要如实，下载/删除那颗按钮靠它判断
+              const unavailable = noGpu && diskStatus !== 'downloading';
+              return {
+                id: m.id,
+                displayName: m.displayName,
+                sizeBytes: m.sizeBytes,
+                verified: m.verified,
+                status: diskStatus,
+                statusReason: unavailable ? GPU_UNAVAILABLE_REASON : undefined,
+                loaded: deps.ai.runner.loadedModelId === m.id,
+                isDefault: preferred === m.id,
+                inputWidth: m.inputDims[3] ?? 0,
+                inputHeight: m.inputDims[2] ?? 0
+              };
+            })
           )
         };
       })

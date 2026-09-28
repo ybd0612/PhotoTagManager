@@ -163,3 +163,45 @@ electron-builder 两次重建之间本就有个位数节差，别拿字节数当
 浏览图片后标签会自动汇总到这里」均在位。
 **抽包这一步不是多余的**：第一轮复验就抓到一处漏网——`electron/ipc.ts:347` 模型下载路径上还留着
 「清单里没有模型 X」，只审代码清单会漏掉它（它不在我列的 26 项里，是脚本按 bundle 反查出来的）。
+
+---
+
+## 批次 5 · 显卡可解释性 + AI 错误上屏 + RAW 文案（2026-09-28）
+
+用户审完文案后追问"这版功能完全吗"，盘出三件事，本轮只做这三件（其余 M2/M3 缺口不动）。
+
+**① 无 GPU 的机器不再"点了才知道"（规格 §6 那行未实装项）**
+新增 `electron/ai/gpuCapability.ts`：先试 `nvidia-smi`（能查到显存就是硬证据），否则 `Get-CimInstance Win32_VideoController`
+枚举适配器。**三态而非两态**：`ok` / `unavailable`（只有 Microsoft Basic Render Driver 这类无 3D 的假适配器）/ `unknown`
+（命令失败、输出读不懂）。`unknown` 一律按"能用"处理——误报"不可用"会把整条功能从能跑的机器上拿走。
+清单组装时挂 `statusReason`，界面在模型行显示「· 不可用」+ 下面一整行"为什么 + 怎么办（勾 CPU 慢速模式）"。
+**刻意不覆盖 `status`**：`status` 是磁盘真相，那颗 下载/删除 按钮靠它判断；中途先做成第四态
+`unavailable` 时用例把它逼出来了——一个没下载的条目被标成不可用后既不给下载也不该给删除。
+探测函数在 `IpcDeps` 里是**可选注入**、缺省 unknown，生产由 `main.ts` 接上真探测：否则每次跑 IPC 契约测试都会去起 PowerShell。
+
+**② AI 错误此前根本没上屏（这才是 §8-17 一直挂着"待人工"的真正原因）**
+`useAiStore.error` 写进去之后**全仓没有任何一处渲染它**；`aiUi.test.tsx:186` 那条名叫"让界面能解释而不是变灰"的用例，
+只断言了 store 里留着错误对象——接缝选错了，所以绿灯一直骗人。本轮补：预览底栏上方一条错误条（不弹窗、不打断浏览），
+显示人话化的消息 + 「知道了」（只清错误，不许顺手清掉已生成的对比结果）。
+新增 `electron/ai/gpuErrorText.ts` 做失败分类：加载与推理两处 catch 认出 `GPU_MEMORY_LOW`（显存不足）与
+`GPU_DEVICE_UNAVAILABLE`（DML 建会话就崩，实测 BiRefNet 的 `DmlFusedNode` 形态），给人话并**保留原始码在 `e.code`**；
+认不出来一律返回 null，保留原文与原码——把一条 IO 错误说成"显存不足"比不说更糟。
+「卸载已加载的模型」这颗按钮只在 `GPU_MEMORY_LOW` **且确有模型驻留**时出现（两条反面腿各自钉住），
+否则就是颗假控件。分类**只改文案与码，不改行为**：绝不因为显存不够就自动退回 CPU 跑（D12 禁止无声降级）。
+
+**③ RAW 文案缺陷**
+`preprocess.ts` 两处失败原本共用一句「无法解码该图片（RAW/HEIC 或文件损坏）」——用户放一张完全正常的 RAW
+会被暗示文件坏了。按真实语义拆开：元数据那关连格式都没认出来 → 两种可能都说 + 给下一步（先转成 JPG/PNG）；
+元数据过了而像素解不出来 → 才是"文件可能已损坏或编码异常"。旧写法在测试里被反钉不许回来。
+
+**门槛**：`typecheck` 0 错；全量 **332 用例 / 31 文件**通过（本批新增 18 条，其中 6 条反面腿）；
+`build` → `dist` 均 exit 0，新包 **121,406,785 字节**（13:28）。
+抽包内容断言 **11 条全 PASS**（渲染侧「知道了 / 卸载已加载的模型 / 不可用 / ai-error-unload」，
+主进程侧「显存不够 / 显卡加速用不了 / 这台机器上没有检测到可用的显卡加速设备 / MODEL_LOAD_FAILED /
+Get-CimInstance Win32_VideoController / 请先转成 JPG 或 PNG」，旧那句混账文案已清零）。
+出包时 `Get-Process PhotoTagManager` 有 4 个进程却没撞 DLL 锁——查明是**装机版**在跑
+（`C:\Program Files\PhotoTagManager\PhotoTagManager.exe`），不占 `dist/win-unpacked`，属误报虚惊。
+
+**仍未做**：`GPU_MEMORY_LOW` 这条路径**没有真机现场**——要验得先另开程序把整卡吃到 7.5GB 以上再点抠图
+（就是 §8-17 那条人工项，实现已就位、判据待走）。`GPU_DEVICE_UNAVAILABLE` 有半条真证据：
+BiRefNet 在本机 DML 上确实抛 `DmlFusedNode`，但那是子进程内捕获的实测形态，不是装机版界面走通的样子。
