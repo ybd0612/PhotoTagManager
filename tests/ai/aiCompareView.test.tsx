@@ -97,21 +97,20 @@ describe('ai/AiCompareStage —— 原位替换 + 按住看原图（默认模式
 
   it('① 按住显示原图、松开回到结果（同一个元素换 src，不会错位）', () => {
     render(<Harness />);
-    const hold = screen.getByRole('button', { name: /按住看原图/ });
     const before = srcOf('ai-compare-img');
-    fireEvent.mouseDown(hold);
+    // G9 起触发器是大图区按住 / 空格，归 PreviewOverlay；本组件只认 store 里的 holding 态
+    act(() => useAiStore.getState().setHoldingOriginal(true));
     const held = srcOf('ai-compare-img');
     expect(held).not.toBe(before);
     expect(held).toContain(encodeURIComponent(SOURCE));
-    fireEvent.mouseUp(hold);
+    act(() => useAiStore.getState().setHoldingOriginal(false));
     expect(srcOf('ai-compare-img')).toBe(before);
   });
 
-  it('松开后回到结果；鼠标移出按钮也算松开（不能把原图卡住）', () => {
+  it('holding 一旦复位就立刻回到结果（松开链路见 previewActions：移出大图/在别处松手都必须复位）', () => {
     render(<Harness />);
-    const hold = screen.getByRole('button', { name: /按住看原图/ });
-    fireEvent.mouseDown(hold);
-    fireEvent.mouseLeave(hold);
+    act(() => useAiStore.getState().setHoldingOriginal(true));
+    act(() => useAiStore.getState().setHoldingOriginal(false));
     expect(useAiStore.getState().holdingOriginal).toBe(false);
     expect(srcOf('ai-compare-img')).toContain('aaaa');
   });
@@ -125,14 +124,14 @@ describe('ai/AiCompareStage —— 原位替换 + 按住看原图（默认模式
 
   it('按住时看的是不透明原图，此时不该再有棋盘格', () => {
     render(<Harness />);
-    fireEvent.mouseDown(screen.getByRole('button', { name: /按住看原图/ }));
+    act(() => useAiStore.getState().setHoldingOriginal(true));
     expect(bgOf('ai-compare-img')).not.toMatch(/gradient/);
   });
 
   it('两张图源都走 ptm-file 协议（不给 file:// 权限）', () => {
     render(<Harness />);
     expect(srcOf('ai-compare-img').startsWith('ptm-file://')).toBe(true);
-    fireEvent.mouseDown(screen.getByRole('button', { name: /按住看原图/ }));
+    act(() => useAiStore.getState().setHoldingOriginal(true));
     expect(srcOf('ai-compare-img').startsWith('ptm-file://')).toBe(true);
   });
 
@@ -213,7 +212,7 @@ describe('ai/AiCompareStage —— 分屏为次要模式', () => {
     render(<Harness />);
     fireEvent.click(screen.getByRole('button', { name: /左右双栏/ }));
     expect(useAiStore.getState().compareMode).toBe('split');
-    // 双栏下按住按钮置灰（两种模式互斥，不该出现"按住"却什么都不换的假控件）
-    expect((screen.getByRole('button', { name: /按住看原图/ }) as HTMLButtonElement).disabled).toBe(true);
+    // G9：双栏下原图同屏已在，不该再挂一条"按住看原图"的图上提示
+    expect(screen.queryByTestId('ai-hold-hint')).toBeNull();
   });
 });

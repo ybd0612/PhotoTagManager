@@ -25,7 +25,7 @@ import MenuItem from '@mui/material/MenuItem';
 import { useAppStore } from '../store/useAppStore';
 import { useAiStore } from '../store/useAiStore';
 import { AiActionSplitButton } from './AiActionSplitButton';
-import { AiCompareActions, AiCompareStage, useCompareResult } from './AiCompareView';
+import { AiCompareActions, AiCompareStage, OVERLAY, useCompareResult } from './AiCompareView';
 import type { ImageInfo } from '../../shared/types';
 
 /**
@@ -35,6 +35,8 @@ export function PreviewOverlay(): JSX.Element | null {
   const preview = useAppStore((s) => s.preview);
   // 结果只在它那张照片上是有效的；hook 要早于下面的提前 return，所以从 preview 上取路径
   const compare = useCompareResult(preview?.image?.absPath);
+  const setHoldingOriginal = useAiStore((s) => s.setHoldingOriginal);
+  const compareMode = useAiStore((s) => s.compareMode);
   const tagCache = useAppStore((s) => s.tagCache);
   const closePreview = useAppStore((s) => s.closePreview);
   const previewStep = useAppStore((s) => s.previewStep);
@@ -94,9 +96,11 @@ export function PreviewOverlay(): JSX.Element | null {
     };
   }, [absPath]);
 
-  // 切换图片时重置缩放/平移
+  // 切换图片时重置缩放/平移，并放开"按住看原图"
+  // （holding 是全局状态，不跟着换图复位的话，翻到下一张就没人能把它松开——和之前 aiResult 挂到下一张是同一类残留）
   useEffect(() => {
     resetView();
+    useAiStore.getState().setHoldingOriginal(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [absPath]);
 
@@ -124,6 +128,8 @@ export function PreviewOverlay(): JSX.Element | null {
     };
     const onUp = (): void => {
       dragRef.current = null;
+      // 在大图上按下后于别处松手：只清 dragRef 会让 holding 卡在 true，原图下不来
+      useAiStore.getState().setHoldingOriginal(false);
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
@@ -171,9 +177,16 @@ export function PreviewOverlay(): JSX.Element | null {
     if (preview) dialogRef.current?.focus();
   }, [preview?.image.absPath]);
 
-  // 键盘：←/→ 翻页、Esc 关闭、Ctrl+C 复制当前文件
+  // 键盘：←/→ 翻页、Esc 关闭、Ctrl+C 复制当前文件、空格按住看原图（批次3 G9）
   useEffect(() => {
     if (!preview) return;
+    const isTyping = (e: KeyboardEvent): boolean => {
+      const el = e.target as HTMLElement | null;
+      return (
+        !!el &&
+        (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable === true)
+      );
+    };
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') closePreview();
       else if (e.key === 'ArrowLeft') previewStep(-1);
@@ -181,11 +194,23 @@ export function PreviewOverlay(): JSX.Element | null {
       else if (e.ctrlKey && (e.key === 'c' || e.key === 'C')) {
         e.preventDefault();
         void copyFileToClipboard(preview.image.absPath);
+      } else if (e.key === ' ' && compare && !isTyping(e)) {
+        // 标签输入框里打空格必须照常输字，所以 isTyping 挡在前面；
+        // 没有这张图的对比结果时空格什么都不做（compare 为空），不进入"按住了个寂寞"的状态
+        e.preventDefault();
+        if (!e.repeat) setHoldingOriginal(true);
       }
     };
+    const onKeyUp = (e: KeyboardEvent): void => {
+      if (e.key === ' ') setHoldingOriginal(false);
+    };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [preview, closePreview, previewStep]);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, [preview, closePreview, previewStep, compare, setHoldingOriginal]);
 
   if (!preview) return null;
 
@@ -226,9 +251,6 @@ export function PreviewOverlay(): JSX.Element | null {
     );
   };
 
-  // 深色预览层上的三级文字对比，统一在这里，不在 JSX 里各处手写 rgba
-  const TEXT = { mid: 'rgba(255,255,255,0.72)', dim: 'rgba(255,255,255,0.55)' } as const;
-
   /** 元数据：原来自己占一行 + 一条 Divider，现在并进动作行右端 */
   const metaBlock = (
     <Stack
@@ -239,22 +261,22 @@ export function PreviewOverlay(): JSX.Element | null {
       sx={{ ml: 'auto', whiteSpace: 'nowrap', pl: 1 }}
     >
       {infoLoading ? (
-        <CircularProgress size={14} sx={{ color: TEXT.dim }} aria-label="正在读取图片信息" />
+        <CircularProgress size={14} sx={{ color: OVERLAY.dim }} aria-label="正在读取图片信息" />
       ) : infoError ? (
         <Typography variant="caption" sx={{ color: 'error.light' }}>图片信息读取失败</Typography>
       ) : (
         <>
           {info?.width && info?.height ? (
-            <Typography variant="caption" sx={{ color: TEXT.dim }}>{info.width} × {info.height}</Typography>
+            <Typography variant="caption" sx={{ color: OVERLAY.dim }}>{info.width} × {info.height}</Typography>
           ) : null}
           {info?.sizeBytes != null ? (
-            <Typography variant="caption" sx={{ color: TEXT.dim }}>{formatBytes(info.sizeBytes)}</Typography>
+            <Typography variant="caption" sx={{ color: OVERLAY.dim }}>{formatBytes(info.sizeBytes)}</Typography>
           ) : null}
           {info?.dateTimeOriginal ? (
-            <Typography variant="caption" sx={{ color: TEXT.dim }}>{info.dateTimeOriginal}</Typography>
+            <Typography variant="caption" sx={{ color: OVERLAY.dim }}>{info.dateTimeOriginal}</Typography>
           ) : null}
           {[info?.make, info?.model].filter(Boolean).join(' ') ? (
-            <Typography variant="caption" sx={{ color: TEXT.dim }}>
+            <Typography variant="caption" sx={{ color: OVERLAY.dim }}>
               {[info?.make, info?.model].filter(Boolean).join(' ')}
             </Typography>
           ) : null}
@@ -336,15 +358,22 @@ export function PreviewOverlay(): JSX.Element | null {
           setImageMenu({ x: e.clientX, y: e.clientY });
         }}
         onMouseDown={(e) => {
-          if (zoomRef.current === 1) return;
-          dragRef.current = {
-            startX: e.clientX,
-            startY: e.clientY,
-            ox: offsetRef.current.x,
-            oy: offsetRef.current.y
-          };
-          e.preventDefault();
+          if (zoomRef.current !== 1) {
+            dragRef.current = {
+              startX: e.clientX,
+              startY: e.clientY,
+              ox: offsetRef.current.x,
+              oy: offsetRef.current.y
+            };
+            e.preventDefault();
+            return;
+          }
+          // 未缩放时大图区兼任"按住看原图"（批次3 G9，原先只能按底栏那颗按钮）；
+          // 分屏模式原图同屏已在，不抢鼠标
+          if (compare && compareMode === 'hold') setHoldingOriginal(true);
         }}
+        onMouseUp={() => setHoldingOriginal(false)}
+        onMouseLeave={() => setHoldingOriginal(false)}
         onDoubleClick={resetView}
         onWheel={handleWheel}
       >
@@ -384,9 +413,16 @@ export function PreviewOverlay(): JSX.Element | null {
         )}
         {zoom !== 1 && (
           <Typography
+            data-testid="preview-zoom-badge"
             className="pointer-events-none absolute bottom-2 right-3"
             variant="caption"
-            sx={{ color: 'rgba(255,255,255,0.55)' }}
+            sx={{
+              color: OVERLAY.textStrong,
+              bgcolor: 'rgba(2,6,23,0.62)',
+              px: 1,
+              py: 0.25,
+              borderRadius: 1
+            }}
           >
             {Math.round(zoom * 100)}% · 双击还原
           </Typography>
@@ -430,7 +466,7 @@ export function PreviewOverlay(): JSX.Element | null {
       {/* 底栏下半：标签编辑（与上半同一块面板，不再各画一条分隔线） */}
       <Box className="shrink-0 px-4 pb-2.5 pt-1" sx={{ bgcolor: 'rgba(255,255,255,0.05)' }}>
         <Stack direction="row" spacing={1} alignItems="center" className="flex-wrap">
-          <Typography variant="caption" sx={{ color: TEXT.mid }}>
+          <Typography variant="caption" sx={{ color: OVERLAY.mid }}>
             标签：
           </Typography>
           {tags.map((tag) => (
@@ -452,8 +488,14 @@ export function PreviewOverlay(): JSX.Element | null {
             }}
             sx={{
               '& .MuiOutlinedInput-root': { color: 'white', bgcolor: 'rgba(255,255,255,0.08)' },
-              '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.25)' },
-              '& input::placeholder': { color: 'rgba(255,255,255,0.45)' }
+              '& .MuiOutlinedInput-notchedOutline': { borderColor: OVERLAY.fieldBorder },
+              // focus 必须肉眼可辨：这块面板整层都是近黑底，只靠主题默认描边看不出光标在哪
+              '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                borderColor: OVERLAY.focus,
+                borderWidth: 2
+              },
+              // 显式 opacity:1：MUI 给 ::placeholder 另压了一层透明度，不写会被二次衰减
+              '& input::placeholder': { color: OVERLAY.fieldPlaceholder, opacity: 1 }
             }}
             InputProps={{
               endAdornment: (
