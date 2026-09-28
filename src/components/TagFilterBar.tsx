@@ -112,44 +112,48 @@ export function TagFilterBar(): JSX.Element {
             ) : null
           }}
         />
-        <Typography variant="caption" color="text.secondary" className="shrink-0">
-          排序
-        </Typography>
-        <ToggleButtonGroup
-          exclusive
-          size="small"
-          value={sortKey}
-          onChange={(_e, value: SortKey | null) => value && setSort(value)}
-        >
-          <ToggleButton value="name" sx={{ px: 1.25, py: 0.25 }}>名称</ToggleButton>
-          <ToggleButton value="time" sx={{ px: 1.25, py: 0.25 }}>时间</ToggleButton>
-          <ToggleButton value="size" sx={{ px: 1.25, py: 0.25 }}>大小</ToggleButton>
-        </ToggleButtonGroup>
-        <Tooltip title={sortDir === 'asc' ? '当前升序，点击改降序' : '当前降序，点击改升序'}>
-          <Button
+        <Stack direction="row" alignItems="center" spacing={0.75} className="shrink-0" sx={{ flexWrap: 'nowrap' }}>
+          <Typography variant="caption" color="text.secondary" className="shrink-0">
+            排序
+          </Typography>
+          <ToggleButtonGroup
+            exclusive
             size="small"
-            color="inherit"
-            aria-label="切换排序方向"
-            onClick={() => setSort(sortKey)}
-            sx={{ minWidth: 0, px: 1 }}
+            value={sortKey}
+            onChange={(_e, value: SortKey | null) => value && setSort(value)}
           >
-            {sortDir === 'asc' ? '↑' : '↓'}
-          </Button>
-        </Tooltip>
+            <ToggleButton value="name" sx={{ px: 1.25, py: 0.25 }}>名称</ToggleButton>
+            <ToggleButton value="time" sx={{ px: 1.25, py: 0.25 }}>时间</ToggleButton>
+            <ToggleButton value="size" sx={{ px: 1.25, py: 0.25 }}>大小</ToggleButton>
+          </ToggleButtonGroup>
+          <Tooltip title={sortDir === 'asc' ? '当前升序，点击改降序' : '当前降序，点击改升序'}>
+            <Button
+              size="small"
+              color="inherit"
+              aria-label="切换排序方向"
+              onClick={() => setSort(sortKey)}
+              sx={{ minWidth: 0, px: 1 }}
+            >
+              {sortDir === 'asc' ? '↑' : '↓'}
+            </Button>
+          </Tooltip>
+        </Stack>
         <Box sx={{ flex: 1 }} />
-        <Typography variant="caption" color="text.secondary" className="shrink-0">
-          缩略图
-        </Typography>
-        <ToggleButtonGroup
-          exclusive
-          size="small"
-          value={thumbSize}
-          onChange={(_e, value: ThumbSize | null) => value && setThumbSize(value)}
-        >
-          <ToggleButton value="small" sx={{ px: 1.25, py: 0.25 }}>小</ToggleButton>
-          <ToggleButton value="medium" sx={{ px: 1.25, py: 0.25 }}>中</ToggleButton>
-          <ToggleButton value="large" sx={{ px: 1.25, py: 0.25 }}>大</ToggleButton>
-        </ToggleButtonGroup>
+        <Stack direction="row" alignItems="center" spacing={0.75} className="shrink-0" sx={{ flexWrap: 'nowrap' }}>
+          <Typography variant="caption" color="text.secondary" className="shrink-0">
+            缩略图
+          </Typography>
+          <ToggleButtonGroup
+            exclusive
+            size="small"
+            value={thumbSize}
+            onChange={(_e, value: ThumbSize | null) => value && setThumbSize(value)}
+          >
+            <ToggleButton value="small" sx={{ px: 1.25, py: 0.25 }}>小</ToggleButton>
+            <ToggleButton value="medium" sx={{ px: 1.25, py: 0.25 }}>中</ToggleButton>
+            <ToggleButton value="large" sx={{ px: 1.25, py: 0.25 }}>大</ToggleButton>
+          </ToggleButtonGroup>
+        </Stack>
       </Stack>
 
       {/* 第一行：已选筛选 + 模式 + 高级筛选 */}

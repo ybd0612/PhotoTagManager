@@ -59,6 +59,8 @@ export function AppLayout(): JSX.Element {
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
   const [aboutDialogOpen, setAboutDialogOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  /** 打开设置时停在哪个分区：工具栏按钮进「常规」，`?` 直接进「快捷键」（批次3 G11） */
+  const [settingsTab, setSettingsTab] = useState<'general' | 'ai' | 'shortcuts'>('general');
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ state: 'idle' });
   const [moreAnchor, setMoreAnchor] = useState<null | HTMLElement>(null);
 
@@ -122,6 +124,27 @@ export function AppLayout(): JSX.Element {
       cancelled = true;
       unsubscribe();
     };
+  }, []);
+
+  /**
+   * 全局 `?` 唤出快捷键列表（批次3 G11）。
+   * 输入框里打问号是正常输入（文件名里就有 `?`），所以先挡掉可编辑目标再响应。
+   */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== '?') return;
+      const el = e.target as HTMLElement | null;
+      if (
+        el &&
+        (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable === true)
+      ) {
+        return;
+      }
+      setSettingsTab('shortcuts');
+      setSettingsOpen(true);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, []);
 
   /** 手动检查更新：先打开对话框展示状态，再触发检查 */
@@ -190,7 +213,7 @@ export function AppLayout(): JSX.Element {
           )}
           <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
           <Tooltip title="设置">
-            <IconButton onClick={() => setSettingsOpen(true)} aria-label="设置">
+            <IconButton onClick={() => { setSettingsTab('general'); setSettingsOpen(true); }} aria-label="设置">
               <SettingsIcon />
             </IconButton>
           </Tooltip>
@@ -291,7 +314,7 @@ export function AppLayout(): JSX.Element {
 
       <UpdateDialog open={updateDialogOpen} onClose={() => setUpdateDialogOpen(false)} />
       {/* 应用级设置总入口（D16） */}
-      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsDialog open={settingsOpen} initialTab={settingsTab} onClose={() => setSettingsOpen(false)} />
       <AboutDialog open={aboutDialogOpen} onClose={() => setAboutDialogOpen(false)} />
       {rootDialogs}
 
