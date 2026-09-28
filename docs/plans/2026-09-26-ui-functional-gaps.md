@@ -98,10 +98,21 @@ electron-builder 两次重建之间本就有个位数节差，别拿字节数当
 是否真收成一行 jsdom 量不到，属像素层，本次由用户眼验判定。
 **认包口径更新**：最新包 = **121,407,031 字节**（12:33 重建，`dist/win-unpacked/PhotoTagManager.exe` 同为 12:33）；
 11:02 的 121,407,224 与 10:57 的 121,407,228 都是批次3 中间版。
-**仍未做**：批次3 的观感已由用户真机眼验判定，但**没跑过 CDP 截图量测**——
-可量化的布局数（底栏实际高度、860 宽下档位标签是否整体下沉）仍缺一份像素层读数，
-需要用户把带 `--remote-debugging-port=9222` 的窗口置前台后跑一次截图回路
-（脚本 `C:/Users/ybd06/temp/ptm-check/cdp-b2.cjs` 可复用）。
+
+**CDP 后台量测（2026-09-28 12:44，新增 `npm run cdp:up` + `npm run cdp:layout`）**：
+第一次量出来的是**我上一版改坏的现场**——`ai-mode-group` 高 **107px**、`sameLine:false`。
+根因不是行宽不够，是我给左段加的 `min-w-0 + flexShrink`：MUI `ToggleButtonGroup` 根节点默认
+`flexWrap: wrap`，一旦允许收缩，两个模式按钮就叠成竖排。改成左段 `shrink-0` + 按钮组显式 `flexWrap: nowrap` 后实测：
+视口 1264×781、**大图区 630px**、`ai-bar` 高 **39px 单行**（四段中心差 1px）、
+**底栏整块吃掉 103px**（09-24 基线 146px，中间坏版 171px）；860×600 视口 `bodyOverflowX:0`，
+「排序」「缩略图」两组标签与按钮**中心线完全对齐**（labelCenter == groupCenter == 112 / 146）。
+**尺子自己也修了一处**：原先拿 `top` 差 ≤2 判"同一行"，而标签比按钮组矮、垂直居中后天然差 4px，
+会把同一行误判成两行——改成比中心线、容差 8px。截图 `C:/Users/ybd06/temp/ptm-check/layout-preview.png`
+与 `layout-narrow.png`，原始读数 `layout-1790570644909.json`。
+**仍未做**：① 视口模拟覆盖了 860×600，但**真实拖窗与 dpr≠1 未覆盖**（Electron 31 的 CDP browser endpoint
+不实现 `Browser.*`，改不了真实窗口尺寸，只能 `Emulation.setDeviceMetricsOverride`）；
+② G10 暗底对比"看不看得出来"属人眼判定，已由用户真机眼验通过，数值绊线只防回退；
+③ M1 人工清单 17 / 22 / 27 / 28 四条仍未走，G8 的"装机版重启后勾选态"也待人工。
 
 **窄窗口取证的方法与限制**：Electron 31 的 CDP browser endpoint **不实现 `Browser.*`**
 （`Browser.getWindowForTarget` 报 `-32601 wasn't found`，page endpoint 与 browser endpoint 都试过），

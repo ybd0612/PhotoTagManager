@@ -192,15 +192,10 @@ export function AiCompareActions({
       data-testid="ai-compare-root"
       sx={{ flexWrap: 'nowrap', minWidth: 0 }}
     >
-      {/* 左段：怎么看。用户真机判过——两段各占一行白吃一条行高，这里强制同一行；
-          左段可收缩把宽度让给右边的保存/不保存 */}
-      <Stack
-        direction="row"
-        alignItems="center"
-        data-testid="ai-mode-group"
-        className="min-w-0"
-        sx={{ flexShrink: 1, minWidth: 0 }}
-      >
+      {/* 左段：怎么看。CDP 实测过——左段一旦可收缩（min-w-0），MUI ToggleButtonGroup
+          默认的 flexWrap: wrap 会把两个模式按钮叠成竖排（高 107px），所以这里不收缩、
+          并在按钮组上显式 nowrap */}
+      <Stack direction="row" alignItems="center" data-testid="ai-mode-group" className="shrink-0">
         <ToggleButtonGroup
           size="small"
           exclusive
@@ -209,6 +204,7 @@ export function AiCompareActions({
           // 深色底栏上不用主题 primary（indigo 压在近黑底上对比不足），三态配色显式给
           sx={{
             textTransform: 'none',
+            flexWrap: 'nowrap',
             '& .MuiToggleButton-root': {
               px: 1.5,
               color: 'rgba(255,255,255,0.78)',
