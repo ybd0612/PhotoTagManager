@@ -224,3 +224,41 @@ Get-CimInstance Win32_VideoController / 请先转成 JPG 或 PNG」，旧那句�
 界面分支正确"，**不证明真机上 ORT/驱动吐出的原文能被 `classifyGpuError` 认出来**。要证后者仍得
 另开程序把整卡吃到 7.5GB 以上再点抠图（§8-17 原样待走）。`GPU_DEVICE_UNAVAILABLE` 有半条真证据：
 BiRefNet 在本机 DML 上确实抛 `DmlFusedNode`，但那是子进程内捕获的实测形态，不是装机版界面走通的样子。
+
+---
+
+## 验收④ · 自动更新链路（2026-09-28，本轮**只记录不修**）
+
+### 已做到哪一步（全部实测）
+- 发布面：71 笔积压提交已推 `origin/master`（`bfc3155`）；release **v0.1.4** 已建，
+  `gh api releases/latest` 返回 `v0.1.4 draft=false prerelease=false`，三个资产齐（latest.yml / exe / blockmap）。
+- feed 正确性：线上 `latest.yml` 与本地**逐字节一致**，其 sha512 与本地 exe 实测值相同，size 121,411,351 对得上。
+- 装机版 0.1.3 确实发现了更新：启动静默检查后弹出「发现新版本 v0.1.4」，点「立即下载」后进度走起来。
+- 图标：构建日志 `default Electron icon is used` 出现 **0 次**；产物期解出的图标与旧装机版 sha 不同
+  （`fdbd1d60` vs `74d479ee`）——配置真生效，不只是"没报警"。
+- 0.1.4 手装（覆盖安装）用于完成验收①，不空等慢网。
+
+### 现象：进度 88% → 5%（不是回滚，是**截断重下**）
+落地文件实测三连：14:24 = 95,911,226 → 14:50 = 7,502,014 → 15:00 = 19,673,601（第三轮）。
+源码定位（本机 `node_modules` 实读，非推测）：
+1. `builder-util-runtime/out/httpExecutor.js` **全文没有 Range 用法**，第 372 行
+   `createWriteStream(options.destination)` 用默认 flag → **整包下载打开即清空，不支持断点续传**。
+2. Range 只存在于差分路径 `differentialDownloader/*`（按块拉），失败同样整块重来。
+3. `electron-updater/out/NsisUpdater.js:170`：`Cannot download differentially, fallback to full download`
+   —— **差分一失败就静默转整包重下**，temp 文件被重建，表现就是进度归零。
+   它只写 `_logger`，而我们从未给 `autoUpdater` 设 logger，所以这句原因在本机**无处可看**。
+4. 速度实测：前 35 秒约 1 MB/s，之后 7 分钟只走 6 MB（≈14 KB/s）。慢网正是差分最容易失败的场景。
+
+### 待修三项（下一批做，每条都要能失败）
+| # | 修什么 | 验收判据 |
+|---|---|---|
+| U1 | `updaterService` 接上 `electron-log`：记 checking / available / progress 摘要 / error，以及差分回退那句 | 注入假 logger 后触发这些事件，断言日志出现对应行；删掉 `autoUpdater.logger = ...` 必须让用例红 |
+| U2 | `error` 态的人话与重试路径 | 现状：`download()` 要求 `state === 'available'`（`updaterService.ts:73`），一旦进 error 就必须重新"检查更新"才能再下，界面完全没说。判据：error 态下点「重试」能重新发起下载 |
+| U3 | 定 `disableDifferentialDownload` 取值并写明理由 | 配置与注释同批存在；若保留差分，则 U1 的日志必须能区分"差分中"与"回退整包"两种进度 |
+
+### 两条待决策（不在本轮）
+- **换分发源**：`publish.provider: generic` 指向支持 Range 且国内可达的对象存储——治"慢"这个根因，
+  但 electron-updater 的整包路径仍不续传。
+- **真断点续传**：复用仓库已有的模型下载续传实现（`electron/ai/modelStore.ts` 的 Range + sha256，已有用例）
+  自研更新包下载 + `spawn(exe, ['/S'])` 静默安装。代价是自己管 UAC、退出时序、签名校验，属 M2 级工作量。
+  **注意：续传只治"白干"，不治"慢"。**
