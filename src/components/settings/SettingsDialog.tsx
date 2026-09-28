@@ -137,7 +137,7 @@ function ProxyRow(): JSX.Element {
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             placeholder="留空 = 不覆盖；例如 127.0.0.1:7890"
-            aria-label="网络代理地址"
+            inputProps={{ 'aria-label': '网络代理地址' }}
             error={!checked.ok}
             sx={{ width: 300 }}
           />

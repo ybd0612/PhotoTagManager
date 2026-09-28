@@ -204,8 +204,11 @@ Q16 失败可诊断性（错误码 + 查看日志入口）· Q17 同图多份暂
 自动化基线：`typecheck` 0 错；**214** 用例绿（基线 24）；`npm run build` 通过；
 安装包 89.8 → **115.8 MB**，包内原生库只剩 `napi-v6/win32/x64` 五个文件 64.4MB。
 
+**U7 更新（2026-09-28）**：`settingsGeneral.test.tsx` 覆盖网络代理输入、显式应用、持久化与拒绝凭据；全量 `npx vitest run` **34 个文件 / 366 项通过**，`npm run typecheck` 0 错。`docs/plans/2026-09-28-model-source-and-proxy.md` 记录构建/抽包及真机两档结论；真机抠图结果与模型校验通过，但当前主进程日志不含源 URL / HTTP 状态，ModelScope 404 → hf-mirror 的具体真机顺序和代理下载所用具体源未由日志直接证实，不计为已验证。
+
 | §8 | 条目 | 状态 | 证据 |
 |----|------|------|------|
+| U7 | 模型双源下载 + 网络代理设置 | 自动与真机部分已验证；下载源级顺序待补证 | `settingsGeneral.test.tsx` + `modelStore.test.ts`；构建抽包五项 PASS；无代理与代理设置档真机抠图成功、错误条为空、模型 SHA-256 正确。主进程日志无请求 URL / HTTP 状态，因此 ModelScope 404 → hf-mirror 的源级真机顺序未由日志证实；详见 `docs/plans/2026-09-28-model-source-and-proxy.md` |
 | 1 | 底栏组合按钮存在、非灰、无"请先下载" | 自动 ✓ | `previewWiring.test.tsx`、`aiUi.test.tsx` ②③ |
 | 2 | 首次点击一次走完下载→加载→抠图 | 自动 ✓ | `cutoutE2E` 首条（真 hf-mirror 下载 + 真 DirectML） |
 | 3 | 断点续传 / 完成后 sha256 | 自动 ✓ | `modelStore.test.ts` ①②③ |
@@ -219,7 +222,7 @@ Q16 失败可诊断性（错误码 + 查看日志入口）· Q17 同图多份暂
 | 11 | 人像/非人像都不崩、文案不承诺通用抠图 | **待人工** | 需真实照片集，见下方人工清单 |
 | 12 | 派生文件继承标签 + 行为标签，可筛出 | 自动 ✓ | `cutoutE2E`（真 exiftool 读回） |
 | 13 | 不保存则照片目录始终干净 | 自动 ✓ | `cutoutE2E` §8-13 |
-| 14 | 设置总入口 + 无假控件 | 自动 ✓ | `aiSettings.test.tsx` ①③（断言 input/slider 为 0） |
+| 14 | 设置总入口 + 无假控件 | 自动 ✓ | `aiSettings.test.tsx` ①③（断言 input/slider 为 0）；网络代理设置另由 `settingsGeneral.test.tsx` 验证输入、应用、持久化与凭据拒绝，U7 双源下载与真机验证见 `docs/plans/2026-09-28-model-source-and-proxy.md` |
 | 15 | 底栏只有已实测的行为 | 自动 ✓ | `aiUi.test.tsx`（verified 过滤） |
 | 16 | CPU 模式限核并说明代价 | 自动 ✓（观感待人工） | 限核：并行度实测 1.99 核；开关与常驻代价提示 `b5e097c`；切后端必重建会话 `333864b`。新增 6 条用例（主进程 2 条 + 渲染层 4 条）**全部先红后绿**。**任务管理器观察待人工** |
 | 17 | 显存不足可读提示 + 一键卸载 | **待人工** | 需连续加载多模型构造 |

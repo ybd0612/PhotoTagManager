@@ -156,15 +156,15 @@ describe('ai/modelStore —— 下载与本地索引', () => {
   });
 
   it('禁止直接写最终文件名：中断后目标目录里只允许出现 .part', async () => {
-    state.truncateFirst = 1;
+    state.truncateFirst = 99;
     await expect(storeWith().download(spec)).rejects.toBeTruthy();
     const files = await readdir(modelDir(spec.id));
     expect(files).not.toContain(spec.fileName);
     expect(files.some((f) => f.endsWith('.part'))).toBe(true);
   });
 
-  it('② 中断后重下从断点续：第二次请求必须带 Range，结果字节完整', async () => {
-    state.truncateFirst = 1;
+  it('② 中断后重下从断点续：第三次请求必须带 Range，结果字节完整', async () => {
+    state.truncateFirst = 2;
     await expect(storeWith().download(spec)).rejects.toBeTruthy();
 
     const partial = (await readdir(modelDir(spec.id))).find((f) => f.endsWith('.part'))!;
@@ -172,20 +172,45 @@ describe('ai/modelStore —— 下载与本地索引', () => {
     expect(partialSize).toBeGreaterThan(0);
 
     const result = await storeWith().download(spec);
-    expect(state.requestCount).toBe(2);
+    expect(state.requestCount).toBe(3);
     expect(state.rangeHeaders[0]).toBeUndefined();
-    expect(state.rangeHeaders[1]).toBe(`bytes=${partialSize}-`);
+    expect(state.rangeHeaders[1]).toBe(`bytes=${Math.floor(PAYLOAD.length / 2)}-`);
+    expect(state.rangeHeaders[2]).toBe(`bytes=${partialSize}-`);
     const onDisk = await readFile(result.path);
     expect(createHash('sha256').update(onDisk).digest('hex')).toBe(PAYLOAD_SHA256);
   });
 
-  it('③ sha256 不符：删除文件并报"内容损坏"，索引不留条目', async () => {
+  it('③ 两个源的 sha256 都不符：丢弃文件并报校验失败，索引不留条目', async () => {
     const bad: ModelDownloadSpec = { ...spec, sha256: '0'.repeat(64) };
-    await expect(storeWith().download(bad)).rejects.toThrow(/损坏/);
+    await expect(storeWith().download(bad)).rejects.toThrow(/校验不通过/);
     const dir = modelDir(bad.id);
     expect(existsSync(dir) ? await readdir(dir) : []).toEqual([]);
     expect((await readIndex()).models?.[bad.id]).toBeUndefined();
     expect(await storeWith().status(bad.id)).toBe('absent');
+  });
+
+  it('③ 换源后校验通过：清掉首源坏文件，只留下正确模型', async () => {
+    const tried: string[] = [];
+    const store = new ModelStore({
+      fetchImpl: (input, init) => {
+        tried.push(String(input));
+        if (tried.length === 1) {
+          return Promise.resolve(new Response(Buffer.from('bad'), { status: 200 }));
+        }
+        return Promise.resolve(new Response(PAYLOAD, {
+          status: 200,
+          headers: { 'Content-Length': String(PAYLOAD.length) }
+        }));
+      }
+    });
+
+    const result = await store.download(spec);
+    const files = await readdir(modelDir(spec.id));
+    const onDisk = await readFile(result.path);
+    expect(tried).toHaveLength(2);
+    expect(tried[0]).toContain('modelscope.cn');
+    expect(createHash('sha256').update(onDisk).digest('hex')).toBe(PAYLOAD_SHA256);
+    expect(files).toEqual([spec.fileName]);
   });
 
   it('④ 可用磁盘不足时在发起请求前拒绝（服务器一次请求都不该收到）', async () => {
@@ -197,7 +222,7 @@ describe('ai/modelStore —— 下载与本地索引', () => {
     const store = storeWith();
     expect(await store.status(spec.id)).toBe('absent');
 
-    state.truncateFirst = 1;
+    state.truncateFirst = 2;
     state.bytesBeforeTruncate = 1024;
     const pending = store.download(spec);
     // 下载标记在任何 await 之前就置位，所以此处必然看到 downloading
@@ -231,7 +256,7 @@ describe('ai/modelStore —— 下载与本地索引', () => {
 
   it('进度只报已收 / 总量，不提供任何"预计还需多久"（实测速率 0.39~1.27 MB/s 波动大）', async () => {
     const seen: Record<string, unknown>[] = [];
-    const store = new ModelStore({ onProgress: (p) => seen.push(p as unknown as Record<string, unknown>) });
+    const store = new ModelStore({ fetchImpl: localFetch, onProgress: (p) => seen.push(p as unknown as Record<string, unknown>) });
     await store.download(spec);
     expect(seen.length).toBeGreaterThan(0);
     for (const p of seen) {

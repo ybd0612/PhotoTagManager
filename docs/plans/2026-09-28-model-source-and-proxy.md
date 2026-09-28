@@ -1,6 +1,6 @@
 # 模型多源下载 + 网络代理设置（U7）——实施方案与交接记录
 
-> 状态：**代码已改到一半，有 4 处测试未更新到新语义（见"当前红灯"）**。
+> 状态：**代码、全量自动验证与打包已完成；真机验证完成部分，下载源级日志仍待补证，详见“已验证 / 未验证”。**
 > 本文件是权威交接记录：新会话从这里接续，不依赖对话历史。
 > 最后更新：2026-09-28 晚。
 
@@ -21,7 +21,7 @@
 | URL 格式 | `https://modelscope.cn/models/{repoId}/resolve/master/{filePath}`（hf-mirror 是 `/resolve/main/`） |
 | Node 全局 `fetch` 不读 Windows 系统代理，只认 `HTTPS_PROXY` 环境变量 | 见上 |
 
-## 三、已完成（代码在工作树，已做保存性提交）
+## 三、已完成（代码实现）
 
 | 文件 | 内容 |
 |---|---|
@@ -35,36 +35,47 @@
 | `src/components/settings/SettingsDialog.tsx` | 常规分区新增「网络代理」行：显式点「应用」才保存；非法值就地说明；说明文案强调"只影响模型下载与检查更新，照片不出本机" |
 | `scripts/check-sources.cjs`（新） | 清单里每个模型在两源的可用性检查；`--full` 两源各下全文算 sha256 并与清单比对。**快速模式只比大小，不等于内容一致** |
 
-## 四、当前红灯（新会话第一件事）
+## 四、已解决的定向测试失败
 
-`npx vitest run tests/ai/modelStore.test.ts tests/proxyRule.test.ts tests/settingsGeneral.test.tsx` 共 **7 处失败**：
+本轮复现后确认最初输出为 **8 项失败**（交接记录中的“7 处”合并列了 MUI 两条输入用例）：
 
-1. `proxyRule.test`：`socks5://…` 没被拒成"只支持 http"。原因：scheme 正则 `^[a-zA-Z]+:\/\/` 不认带数字的 `socks5`。改成 `[a-zA-Z][a-zA-Z0-9+.-]*`。
-2. `modelStore.test` 三条旧用例写死了"中断/校验失败 = 必须报错"，现在中断后会**换源成功**（这是新特性，且 sha 校验保证文件是对的）。要改的是断言语义：
-   - 「禁止直接写最终文件名」→ 把 `truncateFirst` 从 1 改成 99（两个源都掐断），此时才应该 reject 且目录里只有 `.part`；
-   - 「② 断点续传」→ 同样改成两源都掐断后再成功，并断言第二次请求带 Range；
-   - 「⑤ status 三态」→ 同上；
-   - 「③ sha256 不符」→ 消息口径改了（现在是"两个源的内容校验不通过…"），断言改 `/校验不通过/`，并补一条：换源后成功则不留坏文件。
-3. `modelStore.test`「进度只报已收/总量」失败，且报错是"两个源上都没有这个模型仓库"——**这是未解之谜**：该用例用默认 fetch（不注入），ModelScope 对假仓库名应返回 404（not-found），hf-mirror 应超时（unreachable），汇总应该说"需要代理"；实际却进了 not-found 分支。**先查 `classifyFetchError` 对 vitest 里 hf-mirror 的失败到底分到哪类**（可能在测试环境 hf-mirror 返回了 404 而不是超时）。查清前不要改分类函数。
-4. `settingsGeneral.test` 两条用 `getByLabelText('网络代理地址')` 的用例报 "does not have a value setter"——MUI 的 TextField 把 aria-label 挂在了别处。改用 `screen.getByRole('textbox', { name: '网络代理地址' })` 后用 `fireEvent.change`。
+1. `shared/proxyRule.ts` scheme 正则补充数字、`+.-`，使 `socks5://...` 按“不支持的协议”拒绝；凭据拒绝规则未放宽。
+2. `tests/ai/modelStore.test.ts` 更新源切换语义：两源中断时验证最终文件名不会出现；续传用例中两源各中断一次，第三次请求断言带 Range；状态三态同样验证双源失败时回到 absent；sha 错误消息断言改为“校验不通过”，另加首源内容错误、次源校验正确时只留下最终模型文件。
+3. “进度只报已收/总量”用例的失败原因已取证：测试假仓库对 **ModelScope 和 hf-mirror 均返回 HTTP 404**，所以汇总成仓库不存在符合实现规则。该用例改为注入本地服务器，不改 `classifyFetchError`。
+4. `SettingsDialog` 将 aria-label 传给 MUI `TextField` 的实际 input；测试使用 `getByRole('textbox', { name: '网络代理地址' })` 后触发 change。
+5. `tests/ai/cutoutE2E.integration.test.ts` 的出站域名允许列表增加 `modelscope.cn`，同步新的首选源。
 
-## 五、剩余步骤（按顺序）
+定向测试收尾结果：3 个指定测试文件 **31 项全绿**。
 
-1. 修上面 7 处红灯（第 3 条先取证再动手）。
-2. `npx vitest run`（全量）+ `npm run typecheck` → 全绿。
-3. `npm run build && npm run dist` → 出包；抽包断言：主进程含 `modelscope.cn`、`session.setProxy`、`连不上模型服务器`；渲染层含「网络代理」「应用」。
-4. 真机验证两档：
-   - 不设代理：抠图 → u2netp 应经 ModelScope 404 → 降级 hf-mirror **成功**（错误条不出现）；
-   - 设置里填 `127.0.0.1:7897` 应用 → 删掉 `%APPDATA%\photo-tag-manager\models\u2netp\u2netp.onnx` 再抠 → 应经代理从 hf-mirror 下成功（日志有「网络代理：已启用」）。
-   - 用 CDP 驱动的脚本在 `temp/ptm-check/`（`ptm-cut-run.cjs` / `ptm-roots.cjs` 可改）。
-5. 文档回填本文件的"已完成"，并把 `settingsGeneral` 新用例与 U7 写进验收台账。
-6. 提交（中文约定式，精确 add）。**push 与发布需用户单独授权。**
+## 五、验证结果
+
+### 已验证
+
+- 指定定向测试：`tests/ai/modelStore.test.ts`、`tests/proxyRule.test.ts`、`tests/settingsGeneral.test.tsx`，**31 项通过**。
+- 收尾全量：`npx vitest run`，**34 个文件 / 366 项通过**；本轮只在收尾执行一次全量。
+- `npm run typecheck`：通过，0 错。
+- `npm run build`、`npm run dist`：均 exit 0，生成 `dist/win-unpacked` 与 NSIS 安装包。
+- 安装包 `resources/app.asar` 抽查五项全 PASS：主进程含 `modelscope.cn`、`setProxy`、`连不上模型服务器`；渲染层含「网络代理」「应用」。
+- 真机运行 `dist/win-unpacked/PhotoTagManager.exe --remote-debugging-port=9223`。首次直接把参数交给 exe 会因当前 shell 环境变量 `ELECTRON_RUN_AS_NODE=1` 报 `bad option`；清除此继承变量后用已有 `scripts/cdp-up.cjs` 成功启动，端口可用。用户数据仍在 `%APPDATA%\photo-tag-manager`，没有更改路径。为校准脚本，临时修正了 `C:\Users\ybd06\temp\ptm-check\ptm-cut-run.cjs` 的抠图按钮查找条件，让它识别 aria-label 为「抠图」的 MUI 按钮；该调试脚本不属于仓库文件。
+- **无代理档：**设置未覆盖代理（日志「网络代理：跟随系统默认（本应用未覆盖）」），先备份并删除原模型缓存，再经 CDP 抠图；观察到结果出现、忙碌状态结束、错误条为空。随后模型文件重新出现，大小 4,574,861 字节，SHA-256 为 `309c8469258dda742793dce0ebea8e6dd393174f89934733ecc8b14c76f4ddd8`，与删除前备份相同。
+- **代理设置档：**设置界面填写并应用 `127.0.0.1:7897`；`settings.json` 读回相同值，`main.log` 有「网络代理：已启用 127.0.0.1:7897」。再次删除前与备份核对 SHA-256；删除后经 CDP 抠图，结果出现、忙碌状态结束、错误条为空。模型文件重新生成，大小与 SHA-256 均与清单和备份一致。
+- 原模型副本保存在 `C:\Users\ybd06\temp\ptm-check\u2netp.before-u7-proxy.onnx`。删除操作仅针对上述模型缓存，照片、标签与用户数据目录没有迁移或删除。
+
+### 未验证 / 证据边界
+
+- 生产日志目前只记代理启用，没有记录每次请求 URL / HTTP 状态。因此两档抠图成功已实测，但“ModelScope 返回 404 后具体从 hf-mirror 成功”的真机源级顺序**未从运行日志直接证实**。顺序有源码实现与自动用例覆盖，不把它冒称真机日志已验证。
+- 代理档成功发生在代理已应用、缓存删除后；因日志没有每个源的请求轨迹，不宣称单凭当前日志能确认下载请求具体走 hf-mirror。模型 SHA-256 与清单一致、UI 无错误条为已验证。
+
+### 后续
+
+1. 更新 M1 §8 验收台账，记录 `settingsGeneral` 新用例与 U7 的自动/真机验证结论及上述日志证据边界。
+2. 精确暂存本轮修改文件，做中文约定式本地提交。**不 push、不发布。**
 
 ## 六、约束（新会话必须遵守）
 
 - 全量测试只在收尾跑一次；中途只跑定向。
 - 先提交后写报告；报告里"已验证/未验证"分开写，不许把"应该通了"写成"已验证"。
-- 用普通人能读懂的话：不写"腿/棒/绊线/尺子/账本"这类词；说"对照检查""守卫检查""能失败的断言"。
+- 文档和交接使用直白说法，例如"对照检查""守卫检查""能失败的断言"。
 - 用户数据目录 `%APPDATA%\photo-tag-manager` 是钉死的（U4），任何改动都要保住"升级不丢数据"这条。
 - 代理地址涉及用户凭据：只收 host:port，带账号密码一律拒绝（`shared/proxyRule.ts` 已实现，别放宽）。
 

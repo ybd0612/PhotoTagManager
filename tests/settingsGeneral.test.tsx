@@ -141,13 +141,13 @@ describe('G8 新偏好 scanDoneToast —— 必须真接上扫描完成这条链
 describe('网络代理设置', () => {
   it('有一行代理输入框；没改动时「应用」不可点（每敲一个字就 setProxy 会反复重建连接）', () => {
     render(<SettingsDialog open onClose={() => undefined} />);
-    expect(screen.getByLabelText('网络代理地址')).toBeTruthy();
+    expect(screen.getByRole('textbox', { name: '网络代理地址' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '应用' }).hasAttribute('disabled')).toBe(true);
   });
 
   it('填合法地址点应用 → store 改值并落盘', () => {
     render(<SettingsDialog open onClose={() => undefined} />);
-    fireEvent.change(screen.getByLabelText('网络代理地址'), { target: { value: '127.0.0.1:7890' } });
+    fireEvent.change(screen.getByRole('textbox', { name: '网络代理地址' }), { target: { value: '127.0.0.1:7890' } });
     const btn = screen.getByRole('button', { name: '应用' });
     expect(btn.hasAttribute('disabled')).toBe(false);
     fireEvent.click(btn);
@@ -157,7 +157,7 @@ describe('网络代理设置', () => {
 
   it('不该发生：带账号密码仍给应用，或不说明原因就静默存空值', () => {
     render(<SettingsDialog open onClose={() => undefined} />);
-    fireEvent.change(screen.getByLabelText('网络代理地址'), { target: { value: 'http://u:p@127.0.0.1:7890' } });
+    fireEvent.change(screen.getByRole('textbox', { name: '网络代理地址' }), { target: { value: 'http://u:p@127.0.0.1:7890' } });
     expect(screen.getByRole('button', { name: '应用' }).hasAttribute('disabled')).toBe(true);
     expect(screen.getByTestId('proxy-hint').textContent).toContain('账号密码');
   });

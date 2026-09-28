@@ -161,7 +161,7 @@ describe.skipIf(!networkOk)('端到端：人像抠图全链路（真下载 / 真
 
   it('AG1 证据：除模型下载外没有任何出站请求，且图片内容从不上网', async () => {
     const hosts = new Set(outbound.map((u) => new URL(u).host));
-    expect([...hosts].every((h) => h === 'hf-mirror.com' || h.endsWith('.hf-mirror.com') || h === 'cas-bridge.xethub.hf.co')).toBe(true);
+    expect([...hosts].every((h) => h === 'modelscope.cn' || h.endsWith('.modelscope.cn') || h === 'hf-mirror.com' || h.endsWith('.hf-mirror.com') || h === 'cas-bridge.xethub.hf.co')).toBe(true);
     // 处理阶段（模型已就位后）不应再有新请求
     const before = outbound.length;
     await stat(photoPath);

@@ -25,7 +25,7 @@ export function sanitizeProxyRules(raw: string): ProxyRuleResult {
   if (trimmed === '') return { ok: true, value: '' };
 
   let body = trimmed;
-  if (/^[a-zA-Z]+:\/\//.test(body)) {
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(body)) {
     const scheme = body.slice(0, body.indexOf('://')).toLowerCase();
     if (scheme !== 'http') {
       return { ok: false, value: '', message: '只支持 http 代理，请填形如 127.0.0.1:7890 的地址。' };
