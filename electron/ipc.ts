@@ -198,15 +198,15 @@ export function registerIpc(deps: IpcDeps): void {
   });
 
   /**
-   * 视图偏好（排序、缩略图档位）：与 AI 设置同文件、不同键（settings.json 的 ui 段）。
-   * 三个字段都是枚举，写入前按白名单校验——存进一个拼错的值会让界面筛出空列表。
+   * 视图偏好（排序、缩略图档位、扫描完成提示）：与 AI 设置同文件、不同键（settings.json 的 ui 段）。
+   * 枚举字段按白名单校验、布尔字段按类型校验——存进一个拼错的值会让界面筛出空列表或让开关形同虚设。
    */
   const SORT_KEYS: SortKey[] = ['name', 'time', 'size'];
   const SORT_DIRS: SortDir[] = ['asc', 'desc'];
   const THUMB_SIZES: ThumbSize[] = ['small', 'medium', 'large'];
   const readUiPrefs = async (): Promise<UiPrefs | null> => {
     try {
-      const raw = JSON.parse(await fsp.readFile(settingsFile(), 'utf8')) as { ui?: UiPrefs };
+      const raw = JSON.parse(await fsp.readFile(settingsFile(), 'utf8')) as { ui?: Partial<UiPrefs> };
       return raw.ui ? { ...DEFAULT_UI_PREFS, ...raw.ui } : null;
     } catch {
       return null; // 文件不存在或坏了都按"没有偏好"处理
@@ -221,7 +221,8 @@ export function registerIpc(deps: IpcDeps): void {
     const next: UiPrefs = {
       sortKey: SORT_KEYS.includes(p.sortKey as SortKey) ? (p.sortKey as SortKey) : base.sortKey,
       sortDir: SORT_DIRS.includes(p.sortDir as SortDir) ? (p.sortDir as SortDir) : base.sortDir,
-      thumbSize: THUMB_SIZES.includes(p.thumbSize as ThumbSize) ? (p.thumbSize as ThumbSize) : base.thumbSize
+      thumbSize: THUMB_SIZES.includes(p.thumbSize as ThumbSize) ? (p.thumbSize as ThumbSize) : base.thumbSize,
+      scanDoneToast: typeof p.scanDoneToast === 'boolean' ? p.scanDoneToast : base.scanDoneToast
     };
     let all: Record<string, unknown> = {};
     const file = settingsFile();

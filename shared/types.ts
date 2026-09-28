@@ -242,10 +242,17 @@ export interface UiPrefs {
   sortKey: SortKey;
   sortDir: SortDir;
   thumbSize: ThumbSize;
+  /** 扫描完成后是否额外弹一条 snackbar。状态栏已常驻「已扫描 N 个文件」，默认不重复播报 */
+  scanDoneToast: boolean;
 }
 
 /** 默认与既有行为一致：按相对路径升序、最小档缩略图 */
-export const DEFAULT_UI_PREFS: UiPrefs = { sortKey: 'name', sortDir: 'asc', thumbSize: 'small' };
+export const DEFAULT_UI_PREFS: UiPrefs = {
+  sortKey: 'name',
+  sortDir: 'asc',
+  thumbSize: 'small',
+  scanDoneToast: false
+};
 
 /** 移到回收站的结果：逐条给失败原因，部分失败不允许静默 */
 export interface TrashResult {

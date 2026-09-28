@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { call, getApi } from '../api';
 import { rootKey, useAppStore } from '../store/useAppStore';
+import { scanStatusLabel } from '../utils/scanStatus';
 import type { RootEntry } from '../../shared/types';
 
 /**
@@ -60,6 +61,10 @@ export function useScanSubscriptions(): void {
     const offDone = api.onScanDone(({ rootId, scanId, stats }) => {
       const store = useAppStore.getState();
       if (!store.finishScan(rootId, scanId, 'done', stats)) return;
+      // G8 偏好「扫描完成后提示」：文案复用状态栏同一口径，不在这里写第二份。
+      // 默认关闭——状态栏已经常驻「已扫描 N 个文件」，同一件事播两遍是批次2 刚去掉的毛病。
+      const doneState = useAppStore.getState();
+      if (doneState.scanDoneToast) doneState.setSnackbar(scanStatusLabel('done', stats));
       // 扫描完成后加载该根的持久化隐藏集（R06）
       void api
         .listHiddenFolders(rootId)

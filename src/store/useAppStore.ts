@@ -66,14 +66,16 @@ interface AppState {
   selectedImages: Set<string>;
   /** 文件名搜索串（批次1）：只过滤当前目录视图，不动扫描数据 */
   nameQuery: string;
-  /** 视图偏好：排序与缩略图档位，启动时从 settings.json 读回 */
+  /** 视图偏好：排序、缩略图档位与扫描完成提示，启动时从 settings.json 读回 */
   sortKey: SortKey;
   sortDir: SortDir;
   thumbSize: ThumbSize;
+  scanDoneToast: boolean;
   setNameQuery(query: string): void;
   /** 同一个键再点一次 = 翻转方向；换键 = 该键的默认方向 asc */
   setSort(key: SortKey): void;
   setThumbSize(size: ThumbSize): void;
+  setScanDoneToast(on: boolean): void;
   loadUiPrefs(): Promise<void>;
   tagCache: Map<string, string[]>;
   tagCounts: Map<string, number>;
@@ -213,6 +215,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   sortKey: DEFAULT_UI_PREFS.sortKey,
   sortDir: DEFAULT_UI_PREFS.sortDir,
   thumbSize: DEFAULT_UI_PREFS.thumbSize,
+  scanDoneToast: DEFAULT_UI_PREFS.scanDoneToast,
 
   setNameQuery: (nameQuery) => set({ nameQuery }),
 
@@ -228,10 +231,20 @@ export const useAppStore = create<AppState>((set, get) => ({
     persistPrefs({ thumbSize });
   },
 
+  setScanDoneToast: (scanDoneToast) => {
+    set({ scanDoneToast });
+    persistPrefs({ scanDoneToast });
+  },
+
   loadUiPrefs: async () => {
     try {
       const prefs = await call(getApi().getPrefs());
-      set({ sortKey: prefs.sortKey, sortDir: prefs.sortDir, thumbSize: prefs.thumbSize });
+      set({
+        sortKey: prefs.sortKey,
+        sortDir: prefs.sortDir,
+        thumbSize: prefs.thumbSize,
+        scanDoneToast: prefs.scanDoneToast
+      });
     } catch {
       // 读不到偏好就用默认值，不能因此卡住启动
     }
