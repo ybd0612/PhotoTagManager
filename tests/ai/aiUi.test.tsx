@@ -191,6 +191,16 @@ describe('ai/useAiStore —— 状态机', () => {
     expect(s.task).toBeNull();
   });
 
+  // 上面那条只断言"store 里留着错误"，抓不到下面这个真缺陷：
+  // 错误条上那颗「卸载已加载的模型」判据读的是 catalog 里的 loaded，
+  // 而推理崩时模型往往已经驻留——失败后不刷新清单，按钮就永远不出现（真机验证时露馅）
+  it('失败事件要顺手刷新清单，否则那颗「卸载已加载的模型」永远不出现', async () => {
+    api.aiCatalog.mockClear();
+    await useAiStore.getState().startRun('C:/photos/a.jpg');
+    listeners.error?.({ taskId: 'ai-1', code: 'GPU_MEMORY_LOW', message: '显存不够，没能完成这次处理。' });
+    await vi.waitFor(() => expect(api.aiCatalog).toHaveBeenCalled());
+  });
+
   it('⑤ 模型未下载时先要代价确认，取消则完全不发请求', async () => {
     seedCatalog(capWith({}, { status: 'absent' }));
     await useAiStore.getState().requestRun('C:/photos/a.jpg');

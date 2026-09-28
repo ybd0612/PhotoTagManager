@@ -423,4 +423,16 @@ describe('ai:catalog 的 GPU 可解释状态', () => {
     expect(row.status).toBe('downloading');
     expect(row.statusReason).toBeUndefined();
   });
+
+  it('PTM_FAKE_GPU=none 时那句原因必须带模拟标注（调试截图不许被当成真机结论）', async () => {
+    process.env.PTM_FAKE_GPU = 'none';
+    try {
+      registerWith(async () => 'unavailable');
+      const [row] = await modelsOf();
+      expect(row.statusReason).toContain('模拟');
+      expect(row.statusReason).toContain('PTM_FAKE_GPU=none');
+    } finally {
+      delete process.env.PTM_FAKE_GPU;
+    }
+  });
 });

@@ -124,6 +124,9 @@ export const useAiStore = create<AiState>((set, get) => ({
     });
     api.onAiError((err) => {
       set({ task: null, error: err });
+      // 失败后必须刷新清单：推理崩时模型常常已经驻留（load 成功、infer 失败），
+      // 而错误条上那颗「卸载已加载的模型」的判据正是 catalog 里的 loaded——不刷就永远不出现
+      void get().refreshCatalog();
     });
   },
 

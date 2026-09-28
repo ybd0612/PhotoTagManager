@@ -202,6 +202,25 @@ Get-CimInstance Win32_VideoController / 请先转成 JPG 或 PNG」，旧那句�
 出包时 `Get-Process PhotoTagManager` 有 4 个进程却没撞 DLL 锁——查明是**装机版**在跑
 （`C:\Program Files\PhotoTagManager\PhotoTagManager.exe`），不占 `dist/win-unpacked`，属误报虚惊。
 
-**仍未做**：`GPU_MEMORY_LOW` 这条路径**没有真机现场**——要验得先另开程序把整卡吃到 7.5GB 以上再点抠图
-（就是 §8-17 那条人工项，实现已就位、判据待走）。`GPU_DEVICE_UNAVAILABLE` 有半条真证据：
+**本地调试开关 `PTM_FAKE_GPU`（同批加入）**：`none` 让能力探测短路成"无可用 GPU"，用来验清单条目的
+「不可用 + 原因」分支；`oom` 让**推理那一步**抛一条显存不足形态的错，用来验错误条与「卸载已加载的模型」。
+挂在 infer 而不是 load：load 失败时模型根本没驻留，那颗卸载按钮按判据不会出现，就只能验到文案。
+非法值（拼错、`0`、`false`）一律当没设过——一个错别字不该改掉真机判断；模拟生效时那句原因会带
+「（模拟：PTM_FAKE_GPU=none，非本机真实情况）」，调试截图不许被当成真机结论。
+
+**它当场抓到一个我上一轮提交的 bug**：`oom` 档跑真包时错误条出来了，但**卸载按钮不出现**。
+根因是按钮判据读 `catalog` 里的 `loaded`，而失败事件从不刷新清单——推理崩时模型其实已经驻留，
+于是那个状态永远是刷新前的 `false`。修法是在 `onAiError` 里补一次 `refreshCatalog()`，
+并加一条能失败的用例（原有的"error 事件保留错误上下文"只断言 store 里留着错误对象，抓不到这件事）。
+**修后真机读数**（`dist/win-unpacked`，CDP 驱动）：
+`none` 档模型行显示 `U²-Netp 4.4MB · 已下载 · 不可用 · 默认` + 整行原因（含模拟标注），
+下载/删除那颗按钮仍在（因为 status 没被覆盖）；`oom` 档错误条文案为人话、
+`unloadButtonPresent: true`、点下去错误条消失且模型真的被卸掉。
+
+**门槛更新**：`typecheck` 0 错；全量 **338 用例**通过；`build` → `dist` exit 0，
+包 **121,407,121 字节**（13:48）。
+
+**仍未做**：`GPU_MEMORY_LOW` 的**真机现场**依然没有——`PTM_FAKE_GPU=oom` 只证明"分类器给出这个码时
+界面分支正确"，**不证明真机上 ORT/驱动吐出的原文能被 `classifyGpuError` 认出来**。要证后者仍得
+另开程序把整卡吃到 7.5GB 以上再点抠图（§8-17 原样待走）。`GPU_DEVICE_UNAVAILABLE` 有半条真证据：
 BiRefNet 在本机 DML 上确实抛 `DmlFusedNode`，但那是子进程内捕获的实测形态，不是装机版界面走通的样子。

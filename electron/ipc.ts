@@ -25,7 +25,7 @@ import type { RootStore } from './services/rootStore';
 import type { UpdaterService } from './services/updaterService';
 import type { AiEvent, RunRequest, RunResult, SaveResult } from './ai/aiService';
 import type { CapabilitySpec } from './ai/capabilityCatalog';
-import { GPU_UNAVAILABLE_REASON, type GpuCapability } from './ai/gpuCapability';
+import { GPU_UNAVAILABLE_REASON, activeFakeGpu, type GpuCapability } from './ai/gpuCapability';
 import type { ModelDownloadSpec, ModelStore } from './ai/modelStore';
 
 /** AI 推理子进程的只读运行态视图（ipc 只需要"当前驻留哪个模型"和卸载入口） */
@@ -310,6 +310,9 @@ export function registerIpc(deps: IpcDeps): void {
     // unknown（探测失败）一律按"能用"处理：误报不可用会把整条功能从能跑的机器上拿走
     const gpuCap = deps.ai.capability ? await deps.ai.capability() : 'unknown';
     const noGpu = gpuCap === 'unavailable';
+    // 模拟出来的"不可用"必须看得出来是模拟，否则调试截图会被当成真机结论
+    const fake = activeFakeGpu();
+    const noGpuReason = GPU_UNAVAILABLE_REASON + (fake ? `（模拟：PTM_FAKE_GPU=${fake}，非本机真实情况）` : '');
     const capabilities = await Promise.all(
       usable.map(async (cap) => {
         const preferred = await deps.ai.service.defaultModelFor(cap.id);
@@ -332,7 +335,7 @@ export function registerIpc(deps: IpcDeps): void {
                 sizeBytes: m.sizeBytes,
                 verified: m.verified,
                 status: diskStatus,
-                statusReason: unavailable ? GPU_UNAVAILABLE_REASON : undefined,
+                statusReason: unavailable ? noGpuReason : undefined,
                 loaded: deps.ai.runner.loadedModelId === m.id,
                 isDefault: preferred === m.id,
                 inputWidth: m.inputDims[3] ?? 0,

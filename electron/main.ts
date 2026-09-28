@@ -15,7 +15,8 @@ import { ChildRunner, makeUtilityProcessSpawner } from './ai/runner';
 import { AiService, type MetadataGateway } from './ai/aiService';
 import { statfs } from 'fs/promises';
 import { readWholeGpuMemory } from './ai/gpuStats';
-import { readGpuCapability } from './ai/gpuCapability';
+import { readGpuCapability, activeFakeGpu } from './ai/gpuCapability';
+import type { InferenceRunner } from './ai/runner';
 
 electronLog.initialize();
 
@@ -169,8 +170,37 @@ void app.whenReady().then(() => {
     copyBase: (fromPath, toPath) => xmpService.copyMetadataFrom(fromPath, toPath)
   };
   const aiRetention = { retentionDays: 30, maxBytes: 1024 * 1024 * 1024 };
+  /**
+   * 本地调试开关 PTM_FAKE_GPU（见 electron/ai/gpuCapability.ts）：
+   * - `none`：能力探测直接判"无可用 GPU"，用来验清单条目的「不可用 + 原因」分支；
+   * - `oom`：让**推理那一步**抛一条显存不足形态的错，用来验错误条与「卸载已加载的模型」。
+   *   刻意不挂在 load 上：load 失败时模型根本没驻留，那颗卸载按钮按判据不会出现，
+   *   就只能验到文案、验不到按钮。挂在 infer 上，加载照常成功 → 错误条出现 →
+   *   点按钮真的把模型卸掉，整条路径都能走通。
+   * 用 getter 转发而不是展开对象：ChildRunner 的 loadedModelId 是活值，展开会把它冻在当下，
+   * 会话重建判据（模型或后端任一变化即重建）就废了。
+   */
+  const fakeGpu = activeFakeGpu();
+  if (fakeGpu) electronLog.warn(`PTM_FAKE_GPU=${process.env.PTM_FAKE_GPU} 生效：GPU 能力/推理结果为模拟值，不代表本机真实情况`);
+  const serviceRunner: InferenceRunner =
+    fakeGpu === 'oom'
+      ? {
+          get loadedModelId() {
+            return runner.loadedModelId;
+          },
+          get restartCount() {
+            return runner.restartCount;
+          },
+          load: (req) => runner.load(req),
+          infer: async (req) => {
+            throw new Error('DML: out of memory. Failed to allocate 2147483648 bytes for the tensor');
+          },
+          unload: () => runner.unload(),
+          dispose: () => runner.dispose()
+        }
+      : runner;
   const aiService = new AiService({
-    runner,
+    runner: serviceRunner,
     store: aiStore,
     meta: aiMeta,
     previewRetention: aiRetention

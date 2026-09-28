@@ -2,9 +2,15 @@
  * 批次4 · 显卡可解释性（规格 §6 + §8-17）的纯函数用例。
  * 两条判据方向相反，都得钉住：认得出显卡问题，且**认不出时不许硬编成显卡问题**。
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { classifyGpuError, isUnloadActionable } from '../../electron/ai/gpuErrorText';
-import { classifyAdapters } from '../../electron/ai/gpuCapability';
+import {
+  classifyAdapters,
+  parseFakeGpuEnv,
+  activeFakeGpu,
+  readGpuCapability,
+  resetGpuCapabilityCache
+} from '../../electron/ai/gpuCapability';
 
 describe('classifyGpuError —— 显卡类错误的人话化', () => {
   it('显存不足：给出 GPU_MEMORY_LOW 与人话，且人话里带着"怎么办"', () => {
@@ -63,5 +69,39 @@ describe('classifyAdapters —— 有没有能用的 GPU', () => {
     expect(classifyAdapters(['   ', ''])).toBe('unknown');
     // 名字既不是 Basic 也认不出厂商、显存字段又读不到：没有证据说这台机器跑不动
     expect(classifyAdapters(['Some Virtual Device|'])).toBe('unknown');
+  });
+});
+
+describe('PTM_FAKE_GPU 本地调试开关', () => {
+  afterEach(() => {
+    delete process.env.PTM_FAKE_GPU;
+    resetGpuCapabilityCache();
+  });
+
+  it('认得 none 与 oom，别名与大小写/空格也认', () => {
+    expect(parseFakeGpuEnv('none')).toBe('none');
+    expect(parseFakeGpuEnv(' No-GPU ')).toBe('none');
+    expect(parseFakeGpuEnv('UNAVAILABLE')).toBe('none');
+    expect(parseFakeGpuEnv('oom')).toBe('oom');
+    expect(parseFakeGpuEnv('VRAM')).toBe('oom');
+  });
+
+  it('反面腿：空值、拼错的值、0 一律当没设过——一个错别字不该改掉真机判断', () => {
+    for (const v of ['', '   ', 'flase', 'nope', '0', 'false', 'yes']) {
+      expect(parseFakeGpuEnv(v), `「${v}」不该被当成有效开关`).toBeNull();
+    }
+  });
+
+  it('设成 none 时探测直接短路成 unavailable，且没去起 nvidia-smi', async () => {
+    process.env.PTM_FAKE_GPU = 'none';
+    const t0 = Date.now();
+    expect(await readGpuCapability()).toBe('unavailable');
+    // 真探测要起一次外部命令（本机实测 3 秒超时上限）；短路路径不该有这种耗时
+    expect(Date.now() - t0).toBeLessThan(500);
+  });
+
+  it('oom 档只被识别成 oom（它作用在推理那一步，不参与能力判断）', () => {
+    process.env.PTM_FAKE_GPU = 'oom';
+    expect(activeFakeGpu()).toBe('oom');
   });
 });

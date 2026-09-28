@@ -59,11 +59,33 @@ export function probeAdaptersViaCim(): Promise<GpuCapability> {
 
 let cached: GpuCapability | null = null;
 
+/** 本地调试开关的取值（见 parseFakeGpuEnv） */
+export type FakeGpu = 'none' | 'oom';
+
+/**
+ * 解析 `PTM_FAKE_GPU`。**非法值一律返回 null（当没设过）**——
+ * 一个拼错的环境变量不该把真机的 GPU 判断改掉，那会让"我这台机器到底行不行"变成不可知。
+ * 纯函数拆出来是为了单测能覆盖到"垃圾值必须无效"这条。
+ */
+export function parseFakeGpuEnv(raw: string | undefined): FakeGpu | null {
+  const v = (raw ?? '').trim().toLowerCase();
+  if (v === 'none' || v === 'no-gpu' || v === 'unavailable') return 'none';
+  if (v === 'oom' || v === 'memory' || v === 'vram') return 'oom';
+  return null;
+}
+
+/** 当前生效的模拟档位；没设或设错都是 null（真实行为） */
+export function activeFakeGpu(): FakeGpu | null {
+  return parseFakeGpuEnv(process.env.PTM_FAKE_GPU);
+}
+
 /**
  * 一次会话内缓存。nvidia-smi 命中就直接 ok（它比适配器枚举更硬：驱动装了且能查询到显存），
- * 否则退到 CIM 枚举。
+ * 否则退到 CIM 枚举。`PTM_FAKE_GPU=none` 时短路成 unavailable（`oom` 不改能力判断，
+ * 它作用在加载那一步，见 main.ts 的挂钩）。
  */
 export async function readGpuCapability(): Promise<GpuCapability> {
+  if (activeFakeGpu() === 'none') return 'unavailable';
   if (cached) return cached;
   const mem = await readWholeGpuMemory();
   cached = mem ? 'ok' : await probeAdaptersViaCim();
