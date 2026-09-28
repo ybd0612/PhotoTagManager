@@ -43,10 +43,10 @@ export function useTrashImages(): {
       const result: TrashResult = await call(getApi().trashFiles(paths));
       removeImagesLocal(result.trashed);
       if (result.failed.length === 0) {
-        setSnackbar(`已把 ${result.trashed.length} 个文件移到回收站，可从系统回收站找回`);
+        setSnackbar(`已把 ${result.trashed.length} 张图片移到回收站，可从系统回收站找回`);
       } else {
         setSnackbar(
-          `已移到回收站 ${result.trashed.length} 个，失败 ${result.failed.length} 个：${result.failed[0].reason}`
+          `已移到回收站 ${result.trashed.length} 张，失败 ${result.failed.length} 张：${result.failed[0].reason}`
         );
       }
       setPending(null);
@@ -61,7 +61,7 @@ export function useTrashImages(): {
   const dialog = (
     <Dialog open={pending !== null} onClose={() => !busy && setPending(null)} aria-labelledby="trash-confirm-title">
       <DialogTitle id="trash-confirm-title">
-        {count === 1 ? '把这个文件移到回收站？' : `把这 ${count} 个文件移到回收站？`}
+        {count === 1 ? '把这张图片移到回收站？' : `把这 ${count} 张图片移到回收站？`}
       </DialogTitle>
       <DialogContent>
         <DialogContentText>
