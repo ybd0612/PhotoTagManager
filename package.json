@@ -1,6 +1,6 @@
 {
   "name": "photo-tag-manager",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "PhotoTagManager - Windows 桌面图片 XMP 标签管理器（Electron + React + Vite + MUI + Tailwind）",
   "main": "./out/main/index.js",
   "author": "PhotoTagManager Team",
@@ -13,6 +13,7 @@
     "typecheck": "tsc --build tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
+    "icon": "node scripts/make-icon.cjs",
     "dist": "electron-builder",
     "verify:ai-child": "electron-vite build && electron scripts/ai-child-probe.cjs",
     "verify:ai-crash": "electron-vite build && electron scripts/ai-crash-probe.cjs",
@@ -42,6 +43,7 @@
       "node_modules/@img/**"
     ],
     "win": {
+      "icon": "build/icon.ico",
       "target": [
         {
           "target": "nsis",
