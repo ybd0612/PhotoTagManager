@@ -1,7 +1,9 @@
 import { app, BrowserWindow, Menu, nativeImage, net, protocol, Tray, utilityProcess } from 'electron';
 import { pathToFileURL } from 'url';
 import { join } from 'path';
+import { existsSync } from 'fs';
 import electronLog from 'electron-log';
+import { USER_DATA_DIR_NAME, legacyUserDataDirFor, userDataDirFor } from './userDataDir';
 import { ScanService } from './services/scanService';
 import { XmpService } from './services/xmpService';
 import { ThumbnailService } from './services/thumbnailService';
@@ -19,6 +21,22 @@ import { readGpuCapability, activeFakeGpu } from './ai/gpuCapability';
 import type { InferenceRunner } from './ai/runner';
 
 electronLog.initialize();
+
+/**
+ * U4：钉死 userData 目录名。必须在任何取 userData 的代码之前执行。
+ * 只 setPath 不 setName 的话，第三方库读 `app.name` 仍会算出另一个目录，所以两个都钉。
+ * 名字一旦改动，老用户的根目录与已下载模型就会"看起来凭空消失"——详见 electron/userDataDir.ts。
+ */
+app.setName(USER_DATA_DIR_NAME);
+app.setPath('userData', userDataDirFor(app.getPath('appData')));
+
+// 历史遗留的另一份目录（大小写形式）只做只读探测与告警，绝不去合并别人的 roots.json
+if (existsSync(join(legacyUserDataDirFor(app.getPath('appData')), 'roots.json'))) {
+  electronLog.warn(
+    `检测到遗留数据目录 ${legacyUserDataDirFor(app.getPath('appData'))}（内含旧的 roots.json），` +
+      `当前使用的是 ${userDataDirFor(app.getPath('appData'))}；两边根目录不一致时以告警为准，不要静默改用户数据`
+  );
+}
 
 /**
  * 自定义协议 ptm-file：渲染进程经 <img src="ptm-file://local/..."> 加载本地大图。
@@ -93,13 +111,21 @@ function createTray(): void {
 }
 
 function createWindow(): void {
+  /**
+   * 不要原生菜单栏（U6）。`autoHideMenuBar: true` 的语义是"平时藏、按 Alt 显"，
+   * 所以按 Alt 冒出来的那排 File/Edit/View 就是 Electron 的默认应用菜单——
+   * 本应用的快捷键全部在渲染层自实现（←/→/Esc/空格/Ctrl+C/Enter/Ctrl+单击/?），
+   * 原生菜单一项都没用上，去掉零损失。
+   * 托盘右键菜单走 setContextMenu，独立于应用菜单，不受这里影响。
+   */
+  Menu.setApplicationMenu(null);
+
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 820,
     minWidth: 920,
     minHeight: 620,
     show: false,
-    autoHideMenuBar: true,
     title: 'PhotoTagManager',
     backgroundColor: '#f8fafc',
     webPreferences: {
@@ -109,6 +135,15 @@ function createWindow(): void {
       sandbox: false // preload 需要 require('electron')
     }
   });
+
+  // 应用菜单被去掉后，dev 下的 devtools 快捷键也一起没了，这里自己接回来（只认 Ctrl+Shift+I）
+  if (!app.isPackaged) {
+    mainWindow.webContents.on('before-input-event', (_e, input) => {
+      if (input.type === 'keyDown' && input.control && input.shift && input.key.toLowerCase() === 'i') {
+        mainWindow?.webContents.toggleDevTools();
+      }
+    });
+  }
 
   mainWindow.on('ready-to-show', () => {
     mainWindow?.show();

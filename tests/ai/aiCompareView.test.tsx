@@ -38,8 +38,6 @@ function payload(over: Partial<AiDonePayload> = {}): AiDonePayload {
     capabilityId: 'portrait-cutout',
     modelId: 'u2netp',
     actionTag: 'AI人像抠图',
-    inputWidth: 320,
-    inputHeight: 320,
     ...over
   };
 }
@@ -190,7 +188,7 @@ describe('ai/AiCompareStage —— 分屏为次要模式', () => {
 
     // 换一组数字：证明它渲染自 payload 而不是硬编码
     await act(async () => {
-      useAiStore.setState({ result: payload({ inputWidth: 512, inputHeight: 288 }) });
+      useAiStore.setState({ result: payload({ maskWidth: 512, maskHeight: 288 }) });
     });
     expect(screen.getByTestId('ai-mask-note').textContent).toContain('掩码在 512×288 下计算');
   });

@@ -105,8 +105,6 @@ function fireDone(payload: Partial<AiDonePayload> = {}): void {
     capabilityId: 'portrait-cutout',
     modelId: 'u2netp',
     actionTag: 'AI人像抠图',
-    inputWidth: 320,
-    inputHeight: 320,
     ...payload
   });
 }

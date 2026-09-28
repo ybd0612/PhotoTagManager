@@ -327,3 +327,49 @@ BiRefNet 在本机 DML 上确实抛 `DmlFusedNode`，但那是子进程内捕获
 - **真断点续传**：复用仓库已有的模型下载续传实现（`electron/ai/modelStore.ts` 的 Range + sha256，已有用例）
   自研更新包下载 + `spawn(exe, ['/S'])` 静默安装。代价是自己管 UAC、退出时序、签名校验，属 M2 级工作量。
   **注意：续传只治"白干"，不治"慢"。**
+
+## 批次 6 · U1–U6 修复（2026-09-28）
+
+### U1 更新器接上日志
+`updaterService` 构造时把 `electron-log` 交给 `autoUpdater.logger`，并把 checking / available /
+not-available / 下载进度（只记整数百分比，避免每秒一条刷满）/ downloaded / error 全部落盘。
+**为什么必须做**：electron-updater 最关键的判断——`Cannot download differentially, fallback to full
+download`（差分失败静默回退整包，就是进度从 88% 跳回 5% 的那个动作）**只写 logger**。
+不设 logger 时这些原因在本机无处可看，上次排障只能靠读 `node_modules` 源码。
+
+### U2 出错态可重试
+- `error` 状态的消息改成"更新失败：{原文}。可点「重试」再查一次 v{版本}"，原文同时进日志；
+- `UpdateDialog` 在错误态新增「重试」按钮，走已有的 `checkUpdate` 通道（不新增 IPC 通道）；
+- **顺带去掉一道会致命的守卫**：`check()` 原先除了 `checkInFlight` 还判 `state === 'checking'`。
+  并发已经由前者的标志挡住，后者只是多造一条死路——一旦 electron-updater 没回任何事件，
+  状态永久停在 `checking`，用户再也点不动重试。新增用例正是这么发现的（期望重查 2 次，实际 1 次）。
+
+### U3 有意**未**决策
+`disableDifferentialDownload` 先不动。现在改它等于在没有证据的情况下赌一个方向：
+差分到底有没有失败、失败几次、回退发生在哪一步，此前**根本没有记录**。
+U1 落地后跑一次真实更新就能看到，届时再定。
+
+### U4 userData 目录名钉死
+新增 `electron/userDataDir.ts`，导出 `USER_DATA_DIR_NAME = 'photo-tag-manager'`；
+主进程在任何取 userData 的代码之前 `app.setName(...)` + `app.setPath('userData', ...)` 双钉，
+并对遗留的 `%APPDATA%\PhotoTagManager`（存在 roots.json 时）只写一条告警日志，**绝不自动合并别人的数据**。
+守卫检查：`tests/structuralPins.test.ts` 钉住这个常量取值、钉住主进程确实调了那两行。
+
+### U5 删掉契约里的别名字段，让不一致重新变成编译错误
+`AiDonePayload` 的 `inputWidth` / `inputHeight` 删除，只留生产者真正写的 `maskWidth` / `maskHeight`；
+`AiCompareView` 那句注明改读 `maskWidth×maskHeight`。
+**证据**：删掉别名后 `typecheck` 立刻在 **5 处测试 fixture** 上报错——说明这些 fixture 一直在同时喂两套名字，
+而组件读的那套生产者从来不写。这正是当初 338 条用例全绿、真机却显示空白的原因。
+新增契约检查：`AiCompareView` 里每个 `result.X` 都必须是 `AiDonePayload` 的字段，且别名不许回来。
+
+### U6 去掉原生菜单栏
+按 Alt 冒出来的那排 File/Edit/View 是 Electron 的默认应用菜单；`autoHideMenuBar: true` 的语义就是
+"平时藏、按 Alt 显"。本应用所有快捷键都在渲染层自己实现，原生菜单一项都没用上，
+故改为 `Menu.setApplicationMenu(null)` 并删掉 `autoHideMenuBar`；开发版下用 `before-input-event`
+把 `Ctrl+Shift+I` 开 devtools 的能力接回来。托盘右键菜单走 `setContextMenu`，不受影响。
+**需要用户眼验**：装机版按 Alt 应再无反应（原生菜单不是网页内容，测不到）。
+
+**门槛**：`typecheck` 0 错；全量 **353 用例**通过（本批新增 15 条，含 4 条"不该发生"的反向用例）；
+`build` → `dist` exit 0，包 **121,411,555 字节**（15:58），图标告警 0 次。
+抽包内容断言 **7 条全 PASS**：主进程含 `setApplicationMenu(null)` / `photo-tag-manager` /
+`更新：发现新版本` / `可点「重试」` / `autoUpdater.logger`，渲染层含「重试」「当前为开发版，不检查更新」。

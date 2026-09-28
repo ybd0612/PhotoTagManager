@@ -43,6 +43,16 @@ export function UpdateDialog({ open, onClose }: UpdateDialogProps): JSX.Element 
     }
   }, []);
 
+  /** 出错后重新查一次：主进程的 check() 允许从 error 态进入，不需要用户先关窗口 */
+  const handleRetry = useCallback(async () => {
+    try {
+      const next = await call(getApi().checkUpdate());
+      setStatus(next);
+    } catch (error) {
+      setStatus({ state: 'error', message: error instanceof Error ? error.message : String(error) });
+    }
+  }, []);
+
   /** 退出应用并安装（downloaded 状态） */
   const handleInstall = useCallback(() => {
     void getApi().installUpdate();
@@ -69,6 +79,11 @@ export function UpdateDialog({ open, onClose }: UpdateDialogProps): JSX.Element 
         {status.state === 'downloaded' && (
           <Button variant="contained" onClick={handleInstall}>
             立即安装
+          </Button>
+        )}
+        {status.state === 'error' && (
+          <Button variant="outlined" onClick={() => void handleRetry()}>
+            重试
           </Button>
         )}
         {showDismiss && (

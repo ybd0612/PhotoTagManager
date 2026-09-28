@@ -1,28 +1,75 @@
 import { app } from 'electron';
 import { autoUpdater } from 'electron-updater';
+import electronLog from 'electron-log';
 import type { WebContents } from 'electron';
 import type { UpdateStatus } from '../../shared/types';
 
-/** 自动更新服务，负责状态机与并发保护。 */
+/**
+ * 可注入的日志面。单测要能断言"这些事件确实落了日志"，
+ * 所以构造时收进来，而不是在方法里到处直接 import 单例。
+ */
+export interface UpdateLogger {
+  info(msg: string): void;
+  warn(msg: string): void;
+  error(msg: string): void;
+}
+
+/**
+ * 自动更新服务：状态机 + 并发保护 + 可追溯日志。
+ *
+ * U1 为什么必须落日志：electron-updater 最关键的几个判断——尤其是
+ * `Cannot download differentially, fallback to full download`（差分失败静默回退整包，
+ * 表现就是进度从 88% 跳回 5%）——**只写 `autoUpdater.logger`**。
+ * 不设 logger 时这些原因在本机无处可看，上次排障只能靠读 node_modules 源码定位。
+ */
 export class UpdaterService {
   private wc: WebContents | null = null;
   private status: UpdateStatus = { state: 'idle' };
   private checkInFlight = false;
   private downloadInFlight = false;
   private installInFlight = false;
+  /** 最后一次确认存在的新版本；出错后要告诉用户"重试"是重试哪个版本 */
+  private lastVersion: string | null = null;
 
-  constructor() {
+  constructor(private readonly log: UpdateLogger = electronLog) {
+    // 把 electron-updater 的内部判断也接到同一份日志上（含差分回退那句）
+    autoUpdater.logger = electronLog as unknown as typeof autoUpdater.logger;
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = true;
-    autoUpdater.on('checking-for-update', () => this.updateStatus({ state: 'checking' }));
-    autoUpdater.on('update-available', (info) => this.updateStatus({ state: 'available', version: info.version }));
-    autoUpdater.on('update-not-available', () => this.updateStatus({ state: 'not-available' }));
-    autoUpdater.on('download-progress', (p) => this.updateStatus({ state: 'downloading', percent: Math.round(p.percent) }));
-    autoUpdater.on('update-downloaded', (info) => this.updateStatus({ state: 'downloaded', version: info.version, percent: 100 }));
+    autoUpdater.on('checking-for-update', () => {
+      this.log.info('更新：开始检查');
+      this.updateStatus({ state: 'checking' });
+    });
+    autoUpdater.on('update-available', (info) => {
+      this.lastVersion = info.version;
+      this.log.info(`更新：发现新版本 ${info.version}`);
+      this.updateStatus({ state: 'available', version: info.version });
+    });
+    autoUpdater.on('update-not-available', () => {
+      this.log.info('更新：已是最新版本');
+      this.updateStatus({ state: 'not-available' });
+    });
+    autoUpdater.on('download-progress', (p) => {
+      // 只记整数百分比：每秒一条会把日志刷满，又给不出新信息
+      const pct = Math.round(p.percent);
+      this.log.info(`更新：下载中 ${pct}%（约 ${Math.round(p.bytesPerSecond / 1024)} KB/s）`);
+      this.updateStatus({ state: 'downloading', percent: pct, version: this.status.version });
+    });
+    autoUpdater.on('update-downloaded', (info) => {
+      this.log.info(`更新：下载完成 ${info.version}，等待安装`);
+      this.updateStatus({ state: 'downloaded', version: info.version, percent: 100 });
+    });
     autoUpdater.on('error', (err) => {
       this.checkInFlight = false;
       this.downloadInFlight = false;
-      this.updateStatus({ state: 'error', message: err.message });
+      const detail = err instanceof Error ? err.message : String(err);
+      // 原文必须留在日志里：进度归零这类现象的唯一线索就在这
+      this.log.error(`更新失败：${detail}`);
+      this.updateStatus({
+        state: 'error',
+        message:
+          `更新失败：${detail}。可点「重试」再查一次` + (this.lastVersion ? ` v${this.lastVersion}` : '')
+      });
     });
   }
 
@@ -46,20 +93,26 @@ export class UpdaterService {
     return !app.isPackaged;
   }
 
+  /**
+   * 检查更新。出错后允许再查一次（界面「重试」走的就是这条路）；
+   * 但下载中与已下载不重查——那会把正在跑的连接打断。
+   */
   async check(): Promise<UpdateStatus> {
     if (this.devMode()) {
-      const status: UpdateStatus = { state: 'dev-mode', message: '当前为开发模式，更新功能不可用' };
+      const status: UpdateStatus = { state: 'dev-mode', message: '当前为开发版，不检查更新' };
       this.updateStatus(status);
       return status;
     }
-    if (this.checkInFlight || this.status.state === 'checking') return this.status;
+    // 并发只由 checkInFlight 挡。刻意不再用 state === 'checking' 加一道：
+    // 那样一旦 electron-updater 没回任何事件，状态就永久卡在 checking，用户再也点不动重试
+    if (this.checkInFlight) return this.status;
     if (this.status.state === 'downloading' || this.status.state === 'downloaded') return this.status;
     this.checkInFlight = true;
     this.updateStatus({ state: 'checking' });
     try {
       await autoUpdater.checkForUpdates();
     } catch {
-      // error event updates status
+      // error 事件已负责日志与状态，这里不重复处理
     } finally {
       this.checkInFlight = false;
     }
@@ -72,9 +125,10 @@ export class UpdaterService {
     if (this.downloadInFlight || this.status.state === 'downloading' || this.status.state === 'downloaded') return this.status;
     if (this.status.state !== 'available') return this.status;
     this.downloadInFlight = true;
+    this.log.info(`更新：开始下载 ${this.status.version ?? this.lastVersion ?? '未知版本'}`);
     this.updateStatus({ state: 'downloading', percent: 0, version: this.status.version });
     void autoUpdater.downloadUpdate().catch(() => {
-      // error event updates status
+      // error 事件负责日志与状态
     });
     return this.status;
   }
@@ -82,6 +136,7 @@ export class UpdaterService {
   install(): UpdateStatus {
     if (this.devMode() || this.installInFlight || this.status.state !== 'downloaded') return this.status;
     this.installInFlight = true;
+    this.log.info('更新：退出并安装（非静默向导，需要用户点 UAC）');
     autoUpdater.quitAndInstall(false, true);
     return this.status;
   }

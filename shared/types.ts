@@ -189,14 +189,16 @@ export interface AiDonePayload {
   /** true 表示命中缓存、没有重跑推理 */
   cacheHit: boolean;
   didApplySigmoid: boolean;
+  /**
+   * 掩码实际计算尺寸（取自清单的 inputDims）。界面那句"掩码在 NxN 下计算"读的就是它。
+   * 这里刻意只留这一对名字：以前另有 inputWidth/inputHeight 别名，生产者只写 mask*、
+   * 界面只读 input*，过 IPC 时是 unknown 所以编译期看不见，真机上那句注明一直是空白的（U5）。
+   */
   maskWidth: number;
   maskHeight: number;
   capabilityId: string;
   modelId: string;
   actionTag: string;
-  /** 界面据此显示"掩码在 NxN 下计算"，数值来自清单不硬编码 */
-  inputWidth: number;
-  inputHeight: number;
 }
 
 export interface AiErrorPayload {

@@ -117,7 +117,7 @@ export function AiCompareStage({ absPath, alt, onError, viewStyle }: StageProps)
           className="pointer-events-none absolute bottom-2 left-3"
           sx={{ color: OVERLAY.mid }}
         >
-          掩码在 {result.inputWidth}×{result.inputHeight} 下计算，右侧结果放大后偏软，属正常
+          掩码在 {result.maskWidth}×{result.maskHeight} 下计算，右侧结果放大后偏软，属正常
         </Typography>
       </>
     );
