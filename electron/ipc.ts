@@ -26,6 +26,7 @@ import type { UpdaterService } from './services/updaterService';
 import type { AiEvent, RunRequest, RunResult, SaveResult } from './ai/aiService';
 import type { CapabilitySpec } from './ai/capabilityCatalog';
 import { GPU_UNAVAILABLE_REASON, activeFakeGpu, type GpuCapability } from './ai/gpuCapability';
+import { sanitizeProxyRules } from '../shared/proxyRule';
 import type { ModelDownloadSpec, ModelStore } from './ai/modelStore';
 
 /** AI 推理子进程的只读运行态视图（ipc 只需要"当前驻留哪个模型"和卸载入口） */
@@ -66,6 +67,8 @@ export interface IpcDeps {
   roots: RootStore;
   updater: UpdaterService;
   getWindow: () => BrowserWindow | null;
+  /** 保存代理设置后立刻作用到会话。可选：IPC 契约测试不注入就跳过 */
+  applyProxy?(rules: string): Promise<void>;
   /** 照片 AI 处理（M1：人像抠图） */
   ai: {
     service: AiServiceView;
@@ -225,11 +228,15 @@ export function registerIpc(deps: IpcDeps): void {
   handle('prefs:set', async (patch: Partial<UiPrefs>): Promise<UiPrefs> => {
     const base = (await readUiPrefs()) ?? { ...DEFAULT_UI_PREFS };
     const p = patch ?? {};
+    // 代理地址走 shared/proxyRule 的校验：不合法就保留原值，绝不把乱填的东西存进配置再交给 setProxy
+    const proxyInput = typeof p.proxyRules === 'string' ? p.proxyRules : base.proxyRules;
+    const proxy = sanitizeProxyRules(proxyInput);
     const next: UiPrefs = {
       sortKey: SORT_KEYS.includes(p.sortKey as SortKey) ? (p.sortKey as SortKey) : base.sortKey,
       sortDir: SORT_DIRS.includes(p.sortDir as SortDir) ? (p.sortDir as SortDir) : base.sortDir,
       thumbSize: THUMB_SIZES.includes(p.thumbSize as ThumbSize) ? (p.thumbSize as ThumbSize) : base.thumbSize,
-      scanDoneToast: typeof p.scanDoneToast === 'boolean' ? p.scanDoneToast : base.scanDoneToast
+      scanDoneToast: typeof p.scanDoneToast === 'boolean' ? p.scanDoneToast : base.scanDoneToast,
+      proxyRules: proxy.ok ? proxy.value : base.proxyRules
     };
     let all: Record<string, unknown> = {};
     const file = settingsFile();
@@ -243,6 +250,8 @@ export function registerIpc(deps: IpcDeps): void {
     const tmp = `${file}.tmp`;
     await fsp.writeFile(tmp, JSON.stringify(all, null, 2));
     await fsp.rename(tmp, file);
+    // 存完立刻生效，不等重启：否则用户在设置里填了代理、当场试一次下载还是失败，等于没有反馈
+    if (proxy.ok) await deps.applyProxy?.(next.proxyRules);
     return next;
   });
 

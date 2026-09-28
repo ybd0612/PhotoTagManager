@@ -18,7 +18,8 @@ function specWith(w: number, h: number): ModelSpec {
   return {
     id: 't',
     displayName: 't',
-    downloadUrl: '',
+    repoId: 't/t',
+    filePath: 't.onnx',
     fileName: 't.onnx',
     sizeBytes: 1,
     sha256: 't',

@@ -251,6 +251,11 @@ export interface UiPrefs {
   thumbSize: ThumbSize;
   /** 扫描完成后是否额外弹一条 snackbar。状态栏已常驻「已扫描 N 个文件」，默认不重复播报 */
   scanDoneToast: boolean;
+  /**
+   * 模型下载与检查更新走的代理，形如 `127.0.0.1:7890`；空字符串 = 不覆盖，跟随系统默认。
+   * 只影响这两件事——照片始终不出本机，本应用没有任何上传照片的请求。
+   */
+  proxyRules: string;
 }
 
 /** 默认与既有行为一致：按相对路径升序、最小档缩略图 */
@@ -258,7 +263,8 @@ export const DEFAULT_UI_PREFS: UiPrefs = {
   sortKey: 'name',
   sortDir: 'asc',
   thumbSize: 'small',
-  scanDoneToast: false
+  scanDoneToast: false,
+  proxyRules: ''
 };
 
 /** 移到回收站的结果：逐条给失败原因，部分失败不允许静默 */

@@ -22,8 +22,13 @@ export interface ModelSpec {
   id: string;
   /** 下拉里给人看的名字 */
   displayName: string;
-  /** 只允许 hf-mirror.com：huggingface.co 直连超时 */
-  downloadUrl: string;
+  /**
+   * 仓库坐标：HuggingFace 风格的「命名空间/仓库名」+ 仓库内路径。
+   * 不存整条 URL —— 具体地址由 modelSources 按「ModelScope 优先、hf-mirror 兜底」的顺序展开，
+   * 加模型只填一次，也不会出现两个源各指一个文件。
+   */
+  repoId: string;
+  filePath: string;
   /** 落在 models/<modelId>/ 下的权重文件名 */
   fileName: string;
   /** 下载体积（字节），用于代价告知与磁盘预检 */
@@ -70,7 +75,10 @@ export const capabilities: CapabilitySpec[] = [
       {
         id: 'u2netp',
         displayName: 'U²-Netp',
-        downloadUrl: 'https://hf-mirror.com/BritishWerewolf/U-2-Netp/resolve/main/onnx/model.onnx',
+        // 实测：ModelScope 没有镜像这个仓库（404），会先快速失败再降级到 hf-mirror 成功。
+        // 等换成两个源都有的抠图模型时，这条注释就可以删掉。
+        repoId: 'BritishWerewolf/U-2-Netp',
+        filePath: 'onnx/model.onnx',
         fileName: 'u2netp.onnx',
         sizeBytes: 4_574_861,
         sha256: '309c8469258dda742793dce0ebea8e6dd393174f89934733ecc8b14c76f4ddd8',

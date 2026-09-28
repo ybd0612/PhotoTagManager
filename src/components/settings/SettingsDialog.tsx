@@ -16,9 +16,11 @@ import TableContainer from '@mui/material/TableContainer';
 import TableRow from '@mui/material/TableRow';
 import TableHead from '@mui/material/TableHead';
 import Tabs from '@mui/material/Tabs';
+import TextField from '@mui/material/TextField';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Typography from '@mui/material/Typography';
+import { sanitizeProxyRules } from '../../../shared/proxyRule';
 import { AiSettingsPane } from './AiSettingsPane';
 import { useAppStore } from '../../store/useAppStore';
 import { SHORTCUTS } from '../../utils/shortcuts';
@@ -102,6 +104,63 @@ function GeneralPane(): JSX.Element {
         />
         <Typography variant="caption" color="text.secondary">
           默认关闭：状态栏已常驻「已扫描 N 个文件」，不重复播报
+        </Typography>
+      </Stack>
+      <Divider />
+      <ProxyRow />
+    </Stack>
+  );
+}
+
+/**
+ * 网络代理设置。
+ * 两个刻意的设计：
+ * - 改动要点「应用」才生效——每敲一个字就 setProxy 一次会让会话反复重建连接；
+ * - 地址不合法就地说明原因，而不是静默存个空值（那等于用户以为设置了，实际没走代理）。
+ */
+function ProxyRow(): JSX.Element {
+  const saved = useAppStore((s) => s.proxyRules);
+  const setProxyRules = useAppStore((s) => s.setProxyRules);
+  const [draft, setDraft] = useState(saved);
+  const checked = sanitizeProxyRules(draft);
+  const dirty = checked.ok && checked.value !== saved;
+
+  return (
+    <Stack direction="row" spacing={1.5} alignItems="flex-start">
+      <Typography variant="body2" sx={{ width: 96 }} className="shrink-0" >
+        网络代理
+      </Typography>
+      <Stack spacing={0.5} sx={{ flex: 1, minWidth: 0 }}>
+        <Stack direction="row" spacing={1} alignItems="center">
+          <TextField
+            size="small"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="留空 = 不覆盖；例如 127.0.0.1:7890"
+            aria-label="网络代理地址"
+            error={!checked.ok}
+            sx={{ width: 300 }}
+          />
+          <Button
+            size="small"
+            variant="outlined"
+            disabled={!dirty}
+            onClick={() => setProxyRules(checked.value)}
+            sx={{ textTransform: 'none' }}
+          >
+            应用
+          </Button>
+        </Stack>
+        <Typography variant="caption" data-testid="proxy-hint" color={checked.ok ? 'text.secondary' : 'error'}>
+          {!checked.ok
+            ? checked.message
+            : draft.trim() === ''
+              ? '未覆盖，跟随系统默认设置'
+              : `将使用代理 ${checked.value}`}
+        </Typography>
+        <Typography variant="caption" color="text.secondary">
+          只影响「模型下载」与「检查更新」两件事；照片始终不出本机，本应用没有任何上传照片的请求。
+          不支持带账号密码的代理地址（那会明文存在配置文件里）。
         </Typography>
       </Stack>
     </Stack>

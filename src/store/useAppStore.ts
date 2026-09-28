@@ -71,11 +71,14 @@ interface AppState {
   sortDir: SortDir;
   thumbSize: ThumbSize;
   scanDoneToast: boolean;
+  /** 模型下载与检查更新用的代理，形如 127.0.0.1:7890；空 = 不覆盖，跟随系统默认 */
+  proxyRules: string;
   setNameQuery(query: string): void;
   /** 同一个键再点一次 = 翻转方向；换键 = 该键的默认方向 asc */
   setSort(key: SortKey): void;
   setThumbSize(size: ThumbSize): void;
   setScanDoneToast(on: boolean): void;
+  setProxyRules(rules: string): void;
   loadUiPrefs(): Promise<void>;
   tagCache: Map<string, string[]>;
   tagCounts: Map<string, number>;
@@ -216,6 +219,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   sortDir: DEFAULT_UI_PREFS.sortDir,
   thumbSize: DEFAULT_UI_PREFS.thumbSize,
   scanDoneToast: DEFAULT_UI_PREFS.scanDoneToast,
+  proxyRules: DEFAULT_UI_PREFS.proxyRules,
 
   setNameQuery: (nameQuery) => set({ nameQuery }),
 
@@ -236,14 +240,21 @@ export const useAppStore = create<AppState>((set, get) => ({
     persistPrefs({ scanDoneToast });
   },
 
+  setProxyRules: (proxyRules) => {
+    set({ proxyRules });
+    persistPrefs({ proxyRules });
+  },
+
   loadUiPrefs: async () => {
     try {
       const prefs = await call(getApi().getPrefs());
+      // 逐字段赋值：新增偏好漏一行，它就会在重启后静默回到默认值
       set({
         sortKey: prefs.sortKey,
         sortDir: prefs.sortDir,
         thumbSize: prefs.thumbSize,
-        scanDoneToast: prefs.scanDoneToast
+        scanDoneToast: prefs.scanDoneToast,
+        proxyRules: prefs.proxyRules
       });
     } catch {
       // 读不到偏好就用默认值，不能因此卡住启动

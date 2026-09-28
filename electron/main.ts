@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, nativeImage, net, protocol, Tray, utilityProcess } from 'electron';
+import { app, BrowserWindow, Menu, nativeImage, net, protocol, session, Tray, utilityProcess } from 'electron';
 import { pathToFileURL } from 'url';
 import { join } from 'path';
 import { existsSync } from 'fs';
@@ -11,11 +11,12 @@ import { FolderStore } from './services/folderStore';
 import { RootStore } from './services/rootStore';
 import { UpdaterService } from './services/updaterService';
 import { registerIpc } from './ipc';
-import { configureAiPaths, modelsDir } from './ai/paths';
+import { configureAiPaths, modelsDir, settingsFile } from './ai/paths';
+import { sanitizeProxyRules } from '../shared/proxyRule';
 import { ModelStore } from './ai/modelStore';
 import { ChildRunner, makeUtilityProcessSpawner } from './ai/runner';
 import { AiService, type MetadataGateway } from './ai/aiService';
-import { statfs } from 'fs/promises';
+import { statfs, readFile } from 'fs/promises';
 import { readWholeGpuMemory } from './ai/gpuStats';
 import { readGpuCapability, activeFakeGpu } from './ai/gpuCapability';
 import type { InferenceRunner } from './ai/runner';
@@ -110,6 +111,34 @@ function createTray(): void {
   tray.on('click', showMainWindow);
 }
 
+/** 读已保存的代理设置（settings.json 的 ui.proxyRules）。读不到或值不合法都按"不覆盖"处理。 */
+async function readSavedProxyRules(): Promise<string> {
+  try {
+    const raw = JSON.parse(await readFile(settingsFile(), 'utf8')) as { ui?: { proxyRules?: unknown } };
+    const v = raw.ui?.proxyRules;
+    return typeof v === 'string' ? sanitizeProxyRules(v).value : '';
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * 把代理设置作用到默认会话。留空 = 不覆盖，跟随系统默认。
+ * 必须显式调用：实测 Node 的全局 fetch 与 Electron 的 net.fetch 都**不会**自动使用
+ * Windows 系统代理（这台机器上系统代理未开、只有显式指定 127.0.0.1:7897 才通），
+ * 所以设置里那个输入框若不落到 session.setProxy，就是填了也没用的假控件。
+ */
+async function applyProxyRules(rules: string): Promise<void> {
+  const ses = session.defaultSession;
+  if (rules) {
+    await ses.setProxy({ proxyRules: rules, proxyBypassRules: '<-loopback>' });
+    electronLog.info(`网络代理：已启用 ${rules}`);
+  } else {
+    await ses.setProxy({ mode: 'system' });
+    electronLog.info('网络代理：跟随系统默认（本应用未覆盖）');
+  }
+}
+
 function createWindow(): void {
   /**
    * 不要原生菜单栏（U6）。`autoHideMenuBar: true` 的语义是"平时藏、按 Alt 显"，
@@ -171,7 +200,7 @@ function createWindow(): void {
   }
 }
 
-void app.whenReady().then(() => {
+void app.whenReady().then(async () => {
   if (!hasSingleInstanceLock) return;
 
   const userDataPath = app.getPath('userData');
@@ -187,7 +216,11 @@ void app.whenReady().then(() => {
 
   // AI 处理（M1：人像抠图）。目录布局必须在任何 ai 模块被用到之前配好。
   configureAiPaths(userDataPath);
-  const aiStore = new ModelStore();
+  await applyProxyRules(await readSavedProxyRules());
+  // 下载走 net.fetch 而不是 Node 全局 fetch：只有 Chromium 网络栈受 session.setProxy 管
+  const aiStore = new ModelStore({
+    fetchImpl: (url, init) => net.fetch(url as string, init as Parameters<typeof net.fetch>[1])
+  });
   const runner = new ChildRunner({
     spawn: makeUtilityProcessSpawner(utilityProcess),
     // 推理一律在 utilityProcess 子进程：原生层报错是进程级崩溃，不能带崩窗口（D9）
@@ -265,6 +298,8 @@ void app.whenReady().then(() => {
     roots,
     updater,
     getWindow: () => mainWindow,
+    // 设置里保存代理后立刻作用到会话，不等重启
+    applyProxy: applyProxyRules,
     ai: {
       service: aiService,
       store: aiStore,

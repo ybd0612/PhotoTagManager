@@ -5,25 +5,45 @@ import { once } from 'events';
 import { join } from 'path';
 
 import { indexFile, modelDir, modelsDir } from './paths';
+import {
+  classifyFetchError,
+  classifyHttpStatus,
+  describeDownloadFailure,
+  sourceTargets,
+  type DownloadFailure,
+  type SourceId
+} from './modelSources';
 
 /**
  * 模型权重的下载 / 断点续传 / 校验 / 本地索引 / 删除回收（规格 §5.1、附录 A.4）。
  *
- * 四条硬规矩都来自实测：
- * - 只走 hf-mirror.com，且用 Node fetch（Windows curl 会因证书吊销列表不可达报
- *   CRYPT_E_REVOCATION_OFFLINE）；
+ * 五条硬规矩都来自实测：
+ * - 每个模型只存仓库坐标，实际地址按「ModelScope → hf-mirror」顺序展开，逐个试到成功为止；
+ *   两个源的失败类别要分开记，"源上没有"和"这台机器出不去"绝不能共用一句话。
+ * - 用哪个 fetch 由调用方注入（主进程给的是 Electron 的 net.fetch，配合系统/自定义代理设置）；
  * - 先写 `*.part`，完成后校验 sha256，再改名就位——**绝不允许直接写最终文件名**；
  * - 校验不通过就删文件并报"内容损坏"，静默用坏文件会在推理阶段崩得莫名其妙；
- * - 进度只报已收 / 总量。实测速率 0.39~1.27 MB/s 波动大，任何按固定速率外推的
+ * - 进度只报已收 / 总量。实测速率 0.39~2.8 MB/s 波动大，任何按固定速率外推的
  *   "预计还需 X 秒"都是假信息，所以进度对象里压根不提供这类字段。
  */
 
 export interface ModelDownloadSpec {
   id: string;
-  downloadUrl: string;
+  /** HuggingFace 风格的「命名空间/仓库名」，两个源共用 */
+  repoId: string;
+  /** 仓库内文件路径 */
+  filePath: string;
   fileName: string;
   sizeBytes: number;
   sha256: string;
+}
+
+/** 单个源的失败，带上类别，供上层决定"下一句该说什么" */
+class TransferError extends Error {
+  constructor(message: string, readonly failure: DownloadFailure) {
+    super(message);
+    this.name = 'TransferError';
+  }
 }
 
 export type ModelStatus = 'absent' | 'downloading' | 'present';
@@ -120,17 +140,30 @@ export class ModelStore {
       const existingPart = await sizeOf(part);
       if (existingPart > spec.sizeBytes) await rm(part, { force: true }); // 比目标还大 = 脏数据，重来
 
-      await this.transfer(spec, part, target, signal);
-      const actualSha = await sha256OfFile(target);
-      if (actualSha !== spec.sha256) {
-        await rm(target, { force: true });
-        throw new Error('下载内容损坏，请重试');
+      const ref = { repoId: spec.repoId, filePath: spec.filePath };
+      const failures: Array<{ source: SourceId; failure: DownloadFailure }> = [];
+      for (const src of sourceTargets(ref)) {
+        try {
+          await this.transfer(spec, src.url, part, target, signal);
+        } catch (err) {
+          if (err instanceof TransferError && err.failure === 'cancelled') throw new Error('下载已取消');
+          const failure = err instanceof TransferError ? err.failure : classifyFetchError(err);
+          failures.push({ source: src.source, failure });
+          continue;
+        }
+        const actualSha = await sha256OfFile(target);
+        if (actualSha !== spec.sha256) {
+          // 坏文件绝不留着：下一次推理崩在半路比现在多试一个源难查得多
+          await rm(target, { force: true });
+          failures.push({ source: src.source, failure: 'corrupt' });
+          continue;
+        }
+        const sizeBytes = (await stat(target)).size;
+        await this.recordIndex(spec, target, sizeBytes);
+        this.emitProgress(spec.id, sizeBytes, sizeBytes);
+        return { path: target, sha256: actualSha, sizeBytes, cacheHit: false };
       }
-
-      const sizeBytes = (await stat(target)).size;
-      await this.recordIndex(spec, target, sizeBytes);
-      this.emitProgress(spec.id, sizeBytes, sizeBytes);
-      return { path: target, sha256: actualSha, sizeBytes, cacheHit: false };
+      throw new Error(describeDownloadFailure(ref, failures));
     } finally {
       this.inFlight.delete(spec.id);
     }
@@ -155,20 +188,23 @@ export class ModelStore {
 
   private async transfer(
     spec: ModelDownloadSpec,
+    url: string,
     part: string,
     target: string,
     signal?: AbortSignal
   ): Promise<void> {
     const startBytes = await sizeOf(part);
     const headers: Record<string, string> = startBytes > 0 ? { Range: `bytes=${startBytes}-` } : {};
-    const res = await this.fetchImpl(spec.downloadUrl, { headers, signal }).catch((err: unknown) => {
-      if (isAbort(err)) throw new Error('下载已取消');
-      throw new Error(`下载请求失败：${describeError(err)}`);
+    const res = await this.fetchImpl(url, { headers, signal }).catch((err: unknown) => {
+      if (isAbort(err)) throw new TransferError('下载已取消', 'cancelled');
+      // 抛到这里说明是连接层异常（超时/DNS/拒绝/代理不可达），换源才有意义
+      throw new TransferError(`下载请求失败：${describeError(err)}`, classifyFetchError(err));
     });
-    if (!res.ok && res.status !== 206) {
-      throw new Error(`下载失败：HTTP ${res.status}`);
+    const httpFailure = classifyHttpStatus(res.status);
+    if (httpFailure) {
+      throw new TransferError(`下载失败：HTTP ${res.status}`, httpFailure);
     }
-    if (!res.body) throw new Error('下载失败：响应没有内容');
+    if (!res.body) throw new TransferError('下载失败：响应没有内容', 'unreachable');
 
     // 要求续传但服务器当没看见 → 只能整份重来，否则拼起来是坏文件
     const resumeApplied = startBytes > 0 && res.status === 206;
@@ -185,8 +221,8 @@ export class ModelStore {
       for (;;) {
         if (signal?.aborted) throw new Error('下载已取消');
         const { done, value } = await reader.read().catch((err: unknown) => {
-          if (isAbort(err)) throw new Error('下载已取消');
-          throw new Error(`下载中断：${describeError(err)}`);
+          if (isAbort(err)) throw new TransferError('下载已取消', 'cancelled');
+          throw new TransferError(`下载中断：${describeError(err)}`, 'unreachable');
         });
         if (done) break;
         if (!value) continue;
@@ -205,7 +241,7 @@ export class ModelStore {
     }
     if (received !== totalBytes) {
       // 服务器提前收尾：保留 .part 供下次续传，但本次必须报失败，不能当成功
-      throw new Error(`下载不完整：已收 ${received} / ${totalBytes} 字节，可重试继续`);
+      throw new TransferError(`下载不完整：已收 ${received} / ${totalBytes} 字节，可重试继续`, 'unreachable');
     }
 
     await rename(part, target);

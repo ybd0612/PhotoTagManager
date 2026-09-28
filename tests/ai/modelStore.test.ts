@@ -78,14 +78,25 @@ afterAll(async () => {
 let userData = '';
 const spec: ModelDownloadSpec = {
   id: 'fixture-model',
-  downloadUrl: '',
+  repoId: 'fixture-ns/ptm-model',
+  filePath: 'onnx/model.onnx',
   fileName: 'model.onnx',
   sizeBytes: PAYLOAD.length,
   sha256: PAYLOAD_SHA256
 };
 
+/**
+ * 注入一个把任意源地址改写到本地真服务器的 fetch：
+ * 保留 Range 与掐断 socket 这些真实语义（续传只有真跑一遍才算验），
+ * 同时让 modelStore 自己按「ModelScope → hf-mirror」的顺序去拼 URL。
+ */
+const localFetch: typeof fetch = (input, init) => fetch(baseUrl, init);
+
 function storeWith(freeBytes: number | null = null): ModelStore {
-  return new ModelStore(freeBytes === null ? {} : { freeBytesProbe: async () => freeBytes });
+  return new ModelStore({
+    fetchImpl: localFetch,
+    ...(freeBytes === null ? {} : { freeBytesProbe: async () => freeBytes })
+  });
 }
 
 async function readIndex(): Promise<{ models?: Record<string, { sha256: string; sizeBytes: number; path: string }> }> {
@@ -104,7 +115,6 @@ beforeEach(async () => {
   state.requestCount = 0;
   state.truncateFirst = 0;
   state.bytesBeforeTruncate = 0;
-  spec.downloadUrl = baseUrl;
 });
 
 afterEach(async () => {
@@ -119,6 +129,30 @@ describe('ai/modelStore —— 下载与本地索引', () => {
     expect((await stat(result.path)).size).toBe(PAYLOAD.length);
     expect(result.cacheHit).toBe(false);
     expect(await readdir(modelDir(spec.id))).toEqual([spec.fileName]);
+  });
+
+  it('第一个源上没有这个仓库时，自动降级到第二个源并成功', async () => {
+    const tried: string[] = [];
+    const store = new ModelStore({
+      fetchImpl: (input, init) => {
+        const url = String(input);
+        tried.push(url);
+        // 第一源（ModelScope）报 404，第二源交给本地真服务器
+        if (tried.length === 1) return Promise.resolve(new Response(null, { status: 404 }));
+        return fetch(baseUrl, init);
+      }
+    });
+    const result = await store.download(spec);
+    expect(result.sizeBytes).toBe(PAYLOAD.length);
+    expect(tried[0]).toContain('modelscope.cn');
+    expect(tried.length).toBe(2);
+  });
+
+  it('两个源都连不上时说的是"需要代理"，而不是含糊的下载失败', async () => {
+    const store = new ModelStore({
+      fetchImpl: () => Promise.reject(new Error('fetch failed: ETIMEDOUT'))
+    });
+    await expect(store.download(spec)).rejects.toThrow(/代理/);
   });
 
   it('禁止直接写最终文件名：中断后目标目录里只允许出现 .part', async () => {

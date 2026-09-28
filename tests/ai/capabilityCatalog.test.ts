@@ -11,6 +11,7 @@ import {
   isCapabilityRenderable,
   usableCapabilities
 } from '../../electron/ai/capabilityCatalog';
+import { ALLOWED_SOURCE_HOSTS, sourceTargets } from '../../electron/ai/modelSources';
 
 /** 2026-09-23 实测的 u2netp 事实，清单必须与之一字不差 */
 const U2NETP_SHA256 = '309c8469258dda742793dce0ebea8e6dd393174f89934733ecc8b14c76f4ddd8';
@@ -47,7 +48,12 @@ describe('ai/capabilityCatalog —— 单一事实源', () => {
 
   it('u2netp 条目带真实的下载源 / 体积 / sha256 / 张量规格，且标记为已实测', () => {
     const model = getModel('portrait-cutout', 'u2netp');
-    expect(model?.downloadUrl).toBe(U2NETP_URL);
+    // 换成仓库坐标后，实际地址必须仍然等于当初那个 hf-mirror URL（改结构不许改语义）
+    expect(model?.repoId).toBe('BritishWerewolf/U-2-Netp');
+    expect(model?.filePath).toBe('onnx/model.onnx');
+    expect(
+      sourceTargets({ repoId: model?.repoId ?? '', filePath: model?.filePath ?? '' }).map((s) => s.url)
+    ).toContain(U2NETP_URL);
     expect(model?.sizeBytes).toBe(U2NETP_SIZE);
     expect(model?.sha256).toBe(U2NETP_SHA256);
     expect(model?.inputName).toBe('input.1');
@@ -69,12 +75,24 @@ describe('ai/capabilityCatalog —— 单一事实源', () => {
     expect(model?.outputNameIndex).toBe(0);
   });
 
-  it('模型下载源只允许 hf-mirror.com（huggingface.co 直连超时）', () => {
-    const offenders = capabilities
-      .flatMap((c) => c.models)
-      .filter((m) => !m.downloadUrl.startsWith('https://hf-mirror.com/'))
-      .map((m) => `${m.id}: ${m.downloadUrl}`);
+  it('展开出来的每个下载地址都只能落在白名单域名内（huggingface.co 直连超时）', () => {
+    const offenders: string[] = [];
+    for (const cap of capabilities) {
+      for (const m of cap.models) {
+        for (const s of sourceTargets(m)) {
+          const host = new URL(s.url).hostname;
+          if (!ALLOWED_SOURCE_HOSTS.some((a) => host === a || host.endsWith(`.${a}`))) {
+            offenders.push(`${m.id}: ${s.source} → ${host}`);
+          }
+        }
+      }
+    }
     expect(offenders).toEqual([]);
+  });
+
+  it('源顺序就是优先级：ModelScope 在前、hf-mirror 兜底', () => {
+    const order = sourceTargets({ repoId: 'a/b', filePath: 'c.onnx' }).map((s) => s.source);
+    expect(order).toEqual(['modelscope', 'hf-mirror']);
   });
 
   it('每个行为都指向清单内已存在的默认模型', () => {

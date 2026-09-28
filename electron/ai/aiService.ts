@@ -700,7 +700,8 @@ export class AiService {
 function toDownloadSpec(model: ModelSpec): ModelDownloadSpec {
   return {
     id: model.id,
-    downloadUrl: model.downloadUrl,
+    repoId: model.repoId,
+    filePath: model.filePath,
     fileName: model.fileName,
     sizeBytes: model.sizeBytes,
     sha256: model.sha256

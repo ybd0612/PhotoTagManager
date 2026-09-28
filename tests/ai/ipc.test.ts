@@ -124,7 +124,8 @@ class FakeAiService implements AiServiceView {
       if (!m) continue;
       const spec: ModelDownloadSpec = {
         id: m.id,
-        downloadUrl: m.downloadUrl,
+        repoId: m.repoId,
+        filePath: m.filePath,
         fileName: m.fileName,
         sizeBytes: m.sizeBytes,
         sha256: m.sha256
