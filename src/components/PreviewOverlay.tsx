@@ -436,11 +436,11 @@ export function PreviewOverlay(): JSX.Element | null {
           spacing={1.5}
           alignItems="center"
           data-testid="ai-bar"
-          sx={{ flexWrap: 'wrap', rowGap: 1 }}
+          sx={{ flexWrap: 'nowrap', minWidth: 0 }}
         >
           {absPath && <AiActionSplitButton absPath={absPath} />}
           <AiCompareActions absPath={image.absPath} onSaved={handleAiSaved} />
-          {/* 真机确认：metaBlock 上的 ml:'auto' 在可换行的 Stack 里不生效，用显式撑开件 */}
+          {/* 显式撑开件把元数据顶到最右（单行下仍用它，免得 ml:auto 与左段收缩互相抢宽度） */}
           <Box component="span" sx={{ flex: 1, minWidth: 8 }} />
           {metaBlock}
         </Stack>

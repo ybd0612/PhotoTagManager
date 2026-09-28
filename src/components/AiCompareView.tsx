@@ -190,10 +190,17 @@ export function AiCompareActions({
       spacing={1}
       alignItems="center"
       data-testid="ai-compare-root"
-      sx={{ flexWrap: 'wrap', rowGap: 1 }}
+      sx={{ flexWrap: 'nowrap', minWidth: 0 }}
     >
-      {/* 左段：怎么看。与右段之间一条竖分隔，五颗控件一排时看不出哪截是模式哪截是动作 */}
-      <Stack direction="row" alignItems="center" data-testid="ai-mode-group" className="shrink-0">
+      {/* 左段：怎么看。用户真机判过——两段各占一行白吃一条行高，这里强制同一行；
+          左段可收缩把宽度让给右边的保存/不保存 */}
+      <Stack
+        direction="row"
+        alignItems="center"
+        data-testid="ai-mode-group"
+        className="min-w-0"
+        sx={{ flexShrink: 1, minWidth: 0 }}
+      >
         <ToggleButtonGroup
           size="small"
           exclusive
