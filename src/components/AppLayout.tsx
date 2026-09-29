@@ -236,7 +236,11 @@ export function AppLayout(): JSX.Element {
             每帧都要重新换行测量，动画本身就成了卡顿的来源。宽度只在 CSS 变量里声明一次。
             FolderTree 始终挂载，展开态要活过一次折叠。
           */}
-          <div className={treeCollapsed ? 'ptm-tree-pane ptm-tree-pane--collapsed' : 'ptm-tree-pane'}>
+          {/* 折叠后对读屏不可达：CSS 的 visibility:hidden 是运行时那一半，aria-hidden 是不依赖样式表的另一半 */}
+          <div
+            className={treeCollapsed ? 'ptm-tree-pane ptm-tree-pane--collapsed' : 'ptm-tree-pane'}
+            aria-hidden={treeCollapsed || undefined}
+          >
             <Paper className="ptm-tree-inner flex h-full flex-col overflow-hidden rounded-none border-r border-slate-200">
               <FolderTree rootActions={rootActions} />
             </Paper>
