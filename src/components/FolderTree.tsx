@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Box, Chip, Divider, IconButton, Menu, MenuItem, Stack, Tooltip, Typography } from '@mui/material';
+import { Box, Chip, Divider, IconButton, ListSubheader, Menu, MenuItem, Stack, Tooltip, Typography } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
@@ -13,17 +13,19 @@ import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import { call, getApi } from '../api';
 import { rootKey, useAppStore } from '../store/useAppStore';
 import { rescan, startScan } from '../hooks/useScan';
-import { buildTreeRows, type TreeRow } from '../utils/treeRows';
+import { buildTreeRows, listHiddenUnder, type TreeRow } from '../utils/treeRows';
 import type { RootActions } from '../hooks/useRootActions';
 
 /**
  * 左栏单棵树（批次2 G5，R03/R04/R05 + 多根 R10）：
  * - 根作为顶层节点，子目录缩进在所属根下；同名根与同名子目录不再分处两块面板
  * - 展开态与隐藏集一律以 rootKey(rootId, relPath) 为键，按根分桶不互串
- * - 隐藏集收进行尾单个图标：数量在 tooltip，开关与逐项恢复在弹出菜单里
+ * - 隐藏集全量清单与「在树中显示已隐藏目录」开关在顶栏的 HiddenFoldersButton（左栏可整条收起，入口不能留在树里）
  * - 树头两个常驻图标：添加根目录、重新扫描当前选中根（批次4 从顶栏搬来）
  * - 右键菜单：在资源管理器中打开 / 隐藏 / 取消隐藏 / 重新扫描（都针对该行所属根）；
  *   根行额外给改别名与删除，作为 hover 图标之外的同等入口
+ * - 右键菜单里的「取消隐藏」按该目录子树内的实际隐藏项渲染：0 项整块不出现（旧版是永久灰掉的哑项——
+ *   默认不显示隐藏目录时，能右键到的行必然不在隐藏集里）、1 项单行、≥2 项平铺成「全部恢复（N）」+ 逐项
  */
 export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.Element {
   const roots = useAppStore((s) => s.roots);
@@ -39,6 +41,7 @@ export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.E
   const selectDir = useAppStore((s) => s.selectDir);
   const hideFolderLocal = useAppStore((s) => s.hideFolderLocal);
   const unhideFolderLocal = useAppStore((s) => s.unhideFolderLocal);
+  const setHiddenSet = useAppStore((s) => s.setHiddenSet);
   const setSnackbar = useAppStore((s) => s.setSnackbar);
 
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -71,6 +74,12 @@ export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.E
         showHidden
       }),
     [roots, treesByRoot, hiddenSet, rootDirectCounts, expanded, selectedRootId, selectedDir, showHidden]
+  );
+
+  /** 右键那行的子树内（含它自己）被单独隐藏的目录，浅→深；决定菜单里「取消隐藏」这一区怎么渲染 */
+  const unhideTargets = useMemo(
+    () => (menu === null ? [] : listHiddenUnder(hiddenSet, menu.rootId, menu.relPath)),
+    [menu, hiddenSet]
   );
 
   const toggleExpand = (key: string): void => {
@@ -108,6 +117,32 @@ export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.E
     }
   };
 
+  /**
+   * 批量恢复：持久层只有单条 unhide（folderStore 无批量接口），逐条串行调用；
+   * 全部做完再用 setHiddenSet 一次性写回该根剩余隐藏项——逐项调 unhideFolderLocal 会把目录树重建 N 次。
+   * 失败项保留在隐藏集里（只恢复真正成功的那些），菜单不因此谎报已恢复。
+   */
+  const handleUnhideMany = async (rootId: string, relPaths: string[]): Promise<void> => {
+    const done = new Set<string>();
+    for (const relPath of relPaths) {
+      try {
+        await call(getApi().unhideFolder(rootId, relPath));
+        done.add(relPath);
+      } catch {
+        /* 单条失败不中断整批 */
+      }
+    }
+    const failed = relPaths.length - done.size;
+    if (done.size > 0) {
+      setHiddenSet(
+        rootId,
+        listHiddenUnder(hiddenSet, rootId, '').filter((path) => !done.has(path))
+      );
+    }
+    if (failed > 0) setSnackbar(`已恢复 ${done.size} 个，${failed} 个失败`);
+    setMenu(null);
+  };
+
   /** 在资源管理器中打开目录（根行 relPath='' 即根路径；子目录拼接相对路径） */
   const handleOpenInExplorer = async (rootId: string, relPath: string): Promise<void> => {
     const root = rootById.get(rootId);
@@ -121,7 +156,7 @@ export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.E
     }
   };
 
-  const handleMenuAction = (action: 'open' | 'hide' | 'unhide' | 'rescan' | 'rename' | 'remove'): void => {
+  const handleMenuAction = (action: 'open' | 'hide' | 'rescan' | 'rename' | 'remove'): void => {
     const target = menu;
     setMenu(null);
     if (!target) return;
@@ -129,11 +164,17 @@ export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.E
     if (!root) return;
     if (action === 'open') void handleOpenInExplorer(target.rootId, target.relPath);
     else if (action === 'hide') void handleHide(target.rootId, target.relPath);
-    else if (action === 'unhide') void handleUnhide(target.rootId, target.relPath);
     else if (action === 'rename') rootActions.openRename(root);
     else if (action === 'remove') rootActions.openRemove(root);
     // 树上点到哪个根就重扫哪个根，不必先把选中切过去
     else void startScan(root);
+  };
+
+  /** 菜单里的隐藏项标签：子目录显示相对右键目录的路径，右键目录自身那条标注出来免得和子项混淆 */
+  const hiddenItemLabel = (path: string): string => {
+    if (menu === null) return path;
+    if (path === menu.relPath) return `${path.split('/').pop() ?? path}（本目录）`;
+    return menu.relPath === '' ? path : path.slice(menu.relPath.length + 1);
   };
   return (
     <Box className="flex h-full flex-col">
@@ -218,12 +259,24 @@ export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.E
         <MenuItem disabled={menu?.relPath === ''} onClick={() => handleMenuAction('hide')}>
           隐藏文件夹
         </MenuItem>
-        <MenuItem
-          disabled={menu === null || !hiddenSet.has(rootKey(menu.rootId, menu.relPath))}
-          onClick={() => handleMenuAction('unhide')}
-        >
-          取消隐藏
-        </MenuItem>
+        {menu !== null && unhideTargets.length === 1 && (
+          <MenuItem onClick={() => void handleUnhide(menu.rootId, unhideTargets[0])}>取消隐藏</MenuItem>
+        )}
+        {menu !== null && unhideTargets.length >= 2 && (
+          <>
+            <MenuItem color="primary" onClick={() => void handleUnhideMany(menu.rootId, unhideTargets)}>
+              全部恢复（{unhideTargets.length} 个）
+            </MenuItem>
+            <ListSubheader component="div" sx={{ lineHeight: '24px', fontSize: 12, fontWeight: 600 }}>
+              已隐藏
+            </ListSubheader>
+            {unhideTargets.map((path) => (
+              <MenuItem key={path} sx={{ pl: 3 }} onClick={() => void handleUnhide(menu.rootId, path)}>
+                {hiddenItemLabel(path)}
+              </MenuItem>
+            ))}
+          </>
+        )}
         <Divider />
         <MenuItem onClick={() => handleMenuAction('rescan')}>
           <RefreshIcon fontSize="small" sx={{ mr: 1 }} />

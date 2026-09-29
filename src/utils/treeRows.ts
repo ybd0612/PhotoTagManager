@@ -93,6 +93,27 @@ export function buildTreeRows(input: BuildTreeRowsInput): TreeRow[] {
   return rows;
 }
 
+/**
+ * 列出某目录子树内的已隐藏 relPath（含该目录自己被隐藏的那一条）。
+ * 持久层逐条记录隐藏、不级联（见 folderStore.unhide：取消隐藏只清自身），所以「这个目录下
+ * 还有几个目录被单独隐藏」只能在渲染端按 relPath 前缀扫隐藏集得出。
+ * 结果按层级浅→深排序；relPath 传 '' 表示该根的全部隐藏项。
+ */
+export function listHiddenUnder(hiddenSet: Set<string>, rootId: string, relPath: string): string[] {
+  const bucket = rootKey(rootId, '');
+  const scope = relPath === '' ? '' : `${relPath}/`;
+  const out: string[] = [];
+  for (const key of hiddenSet) {
+    if (!key.startsWith(bucket)) continue;
+    const path = key.slice(bucket.length);
+    // 根自身不参与隐藏；scope 为空时该根下所有隐藏项都算，非空时要求等于自身或落在自身子树内
+    if (path !== '' && (scope === '' || path === relPath || path.startsWith(scope))) out.push(path);
+  }
+  return out.sort(
+    (a, b) => a.split('/').length - b.split('/').length || a.localeCompare(b, 'zh-Hans-CN')
+  );
+}
+
 /** 累加若干目录的图片数（按根分桶；调用方用 collectDirAndDescendants 决定目录集合） */
 export function countImagesInDirs(
   imagesByDir: Map<string, ImageFile[]>,

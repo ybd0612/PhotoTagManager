@@ -345,3 +345,106 @@ describe('左栏折叠与展开', () => {
     expect(useAppStore.getState().treeCollapsed).toBe(true);
   });
 });
+
+/**
+ * 左栏右键菜单的「取消隐藏」区（平铺分组）。
+ * 播种必须走 mergeScanBatch：它才把目录节点登记进 store 内部的节点索引，批量恢复用的 setHiddenSet
+ * 靠那份索引重建目录树——直接 setState 灌 treesByRoot 会让重建拿到空索引，树行凭空消失。
+ */
+describe('左栏右键菜单的「取消隐藏」区', () => {
+  function nested(relPath: string, children: FolderNode[] = []): FolderNode {
+    return {
+      relPath,
+      name: relPath.split('/').pop() ?? '',
+      directCount: 1,
+      totalCount: 1 + children.reduce((sum, c) => sum + c.totalCount, 0),
+      hidden: false,
+      childrenLoaded: true,
+      children
+    };
+  }
+
+  function seedScannedRoot(): void {
+    const stats: ScanStats = { scannedFiles: 4, imageCount: 4, totalFiles: 4, done: true };
+    const store = useAppStore.getState();
+    store.addRootLocal({ id: 'r1', path: 'C:/Photos', alias: '照片', addedAt: 1 });
+    store.selectRoot('r1');
+    store.resetScan('r1', 's1');
+    store.mergeScanBatch({
+      rootId: 'r1',
+      scanId: 's1',
+      kind: 'data',
+      batchIndex: 0,
+      folders: [nested('2024', [nested('2024/01')]), nested('2025')],
+      images: [
+        image('', 'root.jpg'),
+        image('2024', 'a.jpg'),
+        image('2024/01', 'b.jpg'),
+        image('2025', 'c.jpg')
+      ],
+      stats
+    });
+    store.finishScan('r1', 's1', 'done', stats);
+  }
+
+  const rootRow = (): HTMLElement => screen.getByRole('treeitem', { name: /根目录 照片/ });
+
+  it('子树里没有隐藏项时，菜单不出现「取消隐藏」（旧版是点不亮的永久灰项）', () => {
+    seedScannedRoot();
+    render(<AppLayout />);
+    fireEvent.contextMenu(rootRow());
+    expect(screen.getByRole('menuitem', { name: '隐藏文件夹' })).toBeTruthy();
+    expect(screen.queryByRole('menuitem', { name: '取消隐藏' })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: /全部恢复/ })).toBeNull();
+  });
+
+  it('子树里只有一个隐藏项时给单行「取消隐藏」，不铺分组', () => {
+    seedScannedRoot();
+    useAppStore.getState().hideFolderLocal('r1', '2024/01');
+    render(<AppLayout />);
+    fireEvent.contextMenu(rootRow());
+    expect(screen.getByRole('menuitem', { name: '取消隐藏' })).toBeTruthy();
+    expect(screen.queryByRole('menuitem', { name: /全部恢复/ })).toBeNull();
+  });
+
+  it('两个及以上平铺成「全部恢复（N）」+ 已隐藏小标题 + 逐项', () => {
+    seedScannedRoot();
+    useAppStore.getState().hideFolderLocal('r1', '2024');
+    useAppStore.getState().hideFolderLocal('r1', '2024/01');
+    render(<AppLayout />);
+    fireEvent.contextMenu(rootRow());
+    expect(screen.getByRole('menuitem', { name: '全部恢复（2 个）' })).toBeTruthy();
+    expect(screen.getByText('已隐藏')).toBeTruthy();
+    // 根行作用域下标签就是全 relPath，按层级浅→深
+    expect(screen.getByRole('menuitem', { name: '2024' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: '2024/01' })).toBeTruthy();
+  });
+
+  it('点「全部恢复」逐条调用持久层、目录回到树里、菜单收起', async () => {
+    seedScannedRoot();
+    useAppStore.getState().hideFolderLocal('r1', '2024');
+    useAppStore.getState().hideFolderLocal('r1', '2024/01');
+    render(<AppLayout />);
+    fireEvent.contextMenu(rootRow());
+    fireEvent.click(screen.getByRole('menuitem', { name: '全部恢复（2 个）' }));
+
+    const unhide = vi.mocked((window as unknown as { api: PhotoTagApi }).api.unhideFolder);
+    await waitFor(() => expect(unhide).toHaveBeenCalledTimes(2));
+    expect(unhide.mock.calls.map((c) => c[1]).sort()).toEqual(['2024', '2024/01']);
+    expect(unhide.mock.calls.every((c) => c[0] === 'r1')).toBe(true);
+    await waitFor(() => expect(screen.queryByRole('menuitem', { name: /全部恢复/ })).toBeNull());
+    expect(screen.getByRole('treeitem', { name: /2024，/ })).toBeTruthy();
+  });
+
+  it('右键子目录时标签按相对路径显示，自身那条标注「本目录」', () => {
+    seedScannedRoot();
+    useAppStore.getState().hideFolderLocal('r1', '2024');
+    useAppStore.getState().hideFolderLocal('r1', '2024/01');
+    useAppStore.getState().toggleShowHidden();
+    render(<AppLayout />);
+    fireEvent.contextMenu(screen.getByRole('treeitem', { name: /2024，/ }));
+    expect(screen.getByRole('menuitem', { name: '2024（本目录）' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: '01' })).toBeTruthy();
+    expect(screen.queryByRole('menuitem', { name: '2024/01' })).toBeNull();
+  });
+});

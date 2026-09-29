@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { collectDirAndDescendants } from '../src/utils/folders';
-import { useAppStore } from '../src/store/useAppStore';
+import { listHiddenUnder } from '../src/utils/treeRows';
+import { rootKey, useAppStore } from '../src/store/useAppStore';
 import type { FolderNode, ImageFile, ScanBatch } from '../shared/types';
 
 /**
@@ -128,5 +129,62 @@ describe('hideFolderLocal 与内容视图联动', () => {
     useAppStore.getState().selectDir('2024/01');
     useAppStore.getState().hideFolderLocal('r1', '2025');
     expect(useAppStore.getState().selectedDir).toBe('2024/01');
+  });
+
+  it('批量恢复走 setHiddenSet：恢复的子树回到可见汇总，清单外的隐藏项原样保住', () => {
+    scannedRoot();
+    useAppStore.getState().hideFolderLocal('r1', '2024');
+    useAppStore.getState().hideFolderLocal('r1', '2024/01');
+    useAppStore.getState().hideFolderLocal('r1', '2025');
+    expect(collectDirAndDescendants(useAppStore.getState().tree, '')).toEqual(['']);
+    // 「全部恢复 2024 子树」= 该根隐藏集减去这两条，2025 不在恢复清单里必须留下
+    const remain = listHiddenUnder(useAppStore.getState().hiddenSet, 'r1', '').filter(
+      (path) => path !== '2024' && path !== '2024/01'
+    );
+    useAppStore.getState().setHiddenSet('r1', remain);
+    expect(collectDirAndDescendants(useAppStore.getState().tree, '')).toEqual(['', '2024', '2024/01']);
+    expect(listHiddenUnder(useAppStore.getState().hiddenSet, 'r1', '')).toEqual(['2025']);
+  });
+});
+
+/**
+ * 右键菜单的「取消隐藏」清单怎么来：持久层逐条记隐藏不级联，子树范围靠 relPath 前缀扫隐藏集。
+ * 这里盯住三个容易出错的点：同前缀兄弟目录（2024 vs 20241）、跨根串桶、层级顺序。
+ */
+describe('listHiddenUnder 子树隐藏项清点', () => {
+  const hidden = new Set([
+    rootKey('r1', '2024'),
+    rootKey('r1', '2024/01'),
+    rootKey('r1', '2024-旅行'),
+    rootKey('r1', '2024/01/上午'),
+    rootKey('r1', '2025'),
+    rootKey('r2', '2024')
+  ]);
+
+  it('右键目录：含自身与全部后代，同前缀的兄弟目录不误收', () => {
+    expect(listHiddenUnder(hidden, 'r1', '2024')).toEqual(['2024', '2024/01', '2024/01/上午']);
+  });
+
+  it('跨根隔离：r2 的隐藏项不出现在 r1 的任何结果里', () => {
+    expect(listHiddenUnder(hidden, 'r1', '2024')).not.toContain('2024-旅行');
+    expect(listHiddenUnder(hidden, 'r2', '2024')).toEqual(['2024']);
+    expect(listHiddenUnder(hidden, 'r2', '2024/01')).toEqual([]);
+  });
+
+  it('根行（relPath 为空）返回该根全部隐藏项，按层级浅→深', () => {
+    expect(listHiddenUnder(hidden, 'r1', '')).toEqual([
+      '2024',
+      '2024-旅行',
+      '2025',
+      '2024/01',
+      '2024/01/上午'
+    ]);
+  });
+
+  it('子树里没有隐藏项时返回空数组——菜单据此整块不渲染「取消隐藏」', () => {
+    // 夹具里的 2025 自己就被隐藏了，这里要挑「自身与后代都不在隐藏集」的目录
+    expect(listHiddenUnder(hidden, 'r1', '2025/03')).toEqual([]);
+    expect(listHiddenUnder(hidden, 'r1', '2026')).toEqual([]);
+    expect(listHiddenUnder(new Set(), 'r1', '2024')).toEqual([]);
   });
 });
