@@ -19,7 +19,8 @@
     "verify:ai-crash": "electron-vite build && electron scripts/ai-crash-probe.cjs",
     "cdp:up": "node scripts/cdp-up.cjs",
     "cdp:layout": "node scripts/cdp-layout.cjs",
-    "app:kill": "taskkill /IM PhotoTagManager.exe /F"
+    "app:kill": "taskkill /IM PhotoTagManager.exe /F",
+    "app:go": "node scripts/rebuild-run.cjs"
   },
   "build": {
     "appId": "com.ybd0612.phototagmanager",
