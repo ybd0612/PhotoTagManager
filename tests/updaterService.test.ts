@@ -16,6 +16,9 @@ const { autoUpdater, app, log } = vi.hoisted(() => {
     logger: null as unknown,
     autoDownload: true,
     autoInstallOnAppQuit: true,
+    // 替身刻意从 true 起（模拟"生产代码没显式配置过"）：
+    // 只有 updaterService 真的把差分打开，U3 那条断言才可能红，不是永不失败的假断言
+    disableDifferentialDownload: true,
     on(name: string, cb: (p: never) => void) {
       const arr = listeners.get(name) ?? [];
       arr.push(cb);
@@ -52,6 +55,7 @@ function makeService() {
   log.info.mockClear();
   log.error.mockClear();
   autoUpdater.logger = null;
+  autoUpdater.disableDifferentialDownload = true;
   autoUpdater.checkForUpdates.mockClear();
   autoUpdater.downloadUpdate.mockClear();
   const svc = new UpdaterService(log);
@@ -62,6 +66,16 @@ function makeService() {
 beforeEach(() => {
   sent.length = 0;
   app.isPackaged = true;
+});
+
+describe('U3 差分下载取舍（2026-09-29 真机定案）', () => {
+  it('构造时必须显式保留差分（disableDifferentialDownload = false）', () => {
+    makeService();
+    // 定案依据：0.1.4 与 0.1.5 的 blockmap 仅 902/5798 块不同 → 差分约 18 MB vs 整包 115.8 MB；
+    // 当天那次"进度 89% 归零"是缓存里旧 blockmap 与 installer.exe 不配对导致的，不是差分机制坏。
+    // 删掉 updaterService 里那行赋值，本用例就会红（替身从 true 起）。
+    expect(autoUpdater.disableDifferentialDownload).toBe(false);
+  });
 });
 
 describe('U1 更新器必须落日志', () => {

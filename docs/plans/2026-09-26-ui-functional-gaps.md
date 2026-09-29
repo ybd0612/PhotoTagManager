@@ -257,7 +257,7 @@ BiRefNet 在本机 DML 上确实抛 `DmlFusedNode`，但那是子进程内捕获
 |---|---|---|
 | U1 | `updaterService` 接上 `electron-log`：记 checking / available / progress 摘要 / error，以及差分回退那句 | 注入假 logger 后触发这些事件，断言日志出现对应行；删掉 `autoUpdater.logger = ...` 必须让用例红 |
 | U2 | `error` 态的人话与重试路径 | 现状：`download()` 要求 `state === 'available'`（`updaterService.ts:73`），一旦进 error 就必须重新"检查更新"才能再下，界面完全没说。判据：error 态下点「重试」能重新发起下载 |
-| U3 | 定 `disableDifferentialDownload` 取值并写明理由 | 配置与注释同批存在；若保留差分，则 U1 的日志必须能区分"差分中"与"回退整包"两种进度 |
+| U3 | ~~定 `disableDifferentialDownload` 取值并写明理由~~ → **2026-09-29 定案 `false`（保留差分）** | 配置与注释同批存在；判据达成方式见上方《U3 定案》专段（真机 blockmap 取证 + 替身从 true 起始的能失败断言）。原要求"日志能区分差分中与回退整包"由 U1 的 logger 承接，0.1.5 起生效 |
 | **U4** | **userData 目录名有两个身份并存**（手装 0.1.4 时实测发现） | 见下方专段 |
 
 ### U4 · 两份 userData 并存（优先级高于 U1–U3）
@@ -361,6 +361,31 @@ download`（差分失败静默回退整包，就是进度从 88% 跳回 5% 的�
 `disableDifferentialDownload` 先不动。现在改它等于在没有证据的情况下赌一个方向：
 差分到底有没有失败、失败几次、回退发生在哪一步，此前**根本没有记录**。
 U1 落地后跑一次真实更新就能看到，届时再定。
+
+#### U3 定案（2026-09-29）：取值 `false`，保留差分
+真机事实：装机版 0.1.4 检查到 v0.1.5 后走更新器下载，用户观察到**进度到 89% 归零重来**，
+10:23 起转为整包下载，10:33:54 落盘 `pending/PhotoTagManager-0.1.5-x64.exe` = 121,412,134 字节，
+sha512 与 `latest.yml` 声明一致（已实测比对）。
+
+根因取证（读磁盘 + 读 node_modules 源码，非推测）：
+- `AppUpdater.js:668` 拿 `cacheDir/installer.exe` 当"旧包"（本机 = 09-28 下载的 0.1.4 整包，大小与线上一致）；
+- `AppUpdater.js:697-700` 先读 `cacheDir/current.blockmap` 当它的元数据，读不到才去下旧版的 blockmap（`Provider.js:24` 会把 URL 里的新版本号换成旧版本号）；
+- 本机那份 `current.blockmap` 是 **08-20 留下的，4486 块**，而线上 0.1.4 的真 blockmap 是 **5795 块**，
+  前 4486 块里有 **3965 块对不上** → 元数据配错了文件 → 差分必然失败；
+- `AppUpdater.js:704-710` 捕获后写 `Cannot download differentially, fallback to full download` 并返回 true，
+  `NsisUpdater.js:47-50` 随即整包重下 —— 这就是归零。
+- **为什么会配错**：0.1.4 是 09-28 手动覆盖安装的，而缓存里的 `current.blockmap` 只在更新器自己
+  走完"下载完成"时才刷新（`AppUpdater.js:597-599`）。本次整包下载完成后该文件已变成 0.1.5 的 128,067 字节，**缓存自愈**。
+
+量化取舍：`0.1.4` 与 `0.1.5` 两份 blockmap 只有 **902 / 5798 块**内容不同（15.6%），
+按平均块大小 20,940 字节算，**差分约需 18 MB，整包 115.8 MB**——正常经更新器升级的用户省八成流量。
+失败一次的代价是约 90 秒 + 两三 MB 白跑，然后仍会成功下完整包。结论：**保留差分**（显式写 `false`），
+不因为这次归零就关掉它。
+
+守住它的断言：`tests/updaterService.test.ts` 的 U3 用例，替身刻意从 `true` 起始，
+删掉 `updaterService.ts` 里那行赋值即红（本轮已做反证：删行后 1 项失败 `expected true to be false`，还原后 9 项通过）。
+**注意本机盲区**：装机版 0.1.4 早于 U1（`3c97845` 不在 `bfc3155` 的后代里，用 `git merge-base --is-ancestor` 证），
+所以这次回退在 `main.log` 里**一句都没有**；从 0.1.5 起这类原因才会落盘。
 
 ### U4 userData 目录名钉死
 新增 `electron/userDataDir.ts`，导出 `USER_DATA_DIR_NAME = 'photo-tag-manager'`；

@@ -36,6 +36,14 @@ export class UpdaterService {
     autoUpdater.logger = electronLog as unknown as typeof autoUpdater.logger;
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = true;
+    // U3 定案（2026-09-29 真机证据，别随手翻成 true）：保留差分下载。
+    // 当天 0.1.4→0.1.5 确实出现过"进度 89% 归零"，根因不是差分本身坏，而是缓存里的
+    // current.blockmap 还停在 8-20（4486 块），和拿来当旧包的 installer.exe（0.1.4，5795 块）
+    // 不配对——因为 0.1.4 是手动覆盖安装的，没走更新器那条"下载完成才刷新缓存"的路径。
+    // 整包下完后缓存已自愈；0.1.4 与 0.1.5 的 blockmap 只有 902/5798 块不同，
+    // 差分约 18 MB 对比整包 115.8 MB，正常用户省八成流量，留着值。
+    // 真失败时 electron-updater 会自己回退整包并把原因写进上面的 logger，进度归零不再无声无息。
+    autoUpdater.disableDifferentialDownload = false;
     autoUpdater.on('checking-for-update', () => {
       this.log.info('更新：开始检查');
       this.updateStatus({ state: 'checking' });
