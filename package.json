@@ -14,7 +14,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "icon": "node scripts/make-icon.cjs",
-    "dist": "electron-builder",
+    "dist": "electron-builder --publish never",
     "verify:ai-child": "electron-vite build && electron scripts/ai-child-probe.cjs",
     "verify:ai-crash": "electron-vite build && electron scripts/ai-crash-probe.cjs",
     "cdp:up": "node scripts/cdp-up.cjs",
