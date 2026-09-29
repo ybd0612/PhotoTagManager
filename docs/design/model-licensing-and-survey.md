@@ -147,12 +147,25 @@ Apache-2.0 要求再分发时保留版权与许可声明、**并注明修改**�
 | 模型 | 用于 | 优先级 | 备注 |
 |------|------|--------|------|
 | `BritishWerewolf/U-2-Netp` | 已上线（M1 抠图） | **已查，已结案** | 许可可用（Apache-2.0 在白名单内）；同一性记为**已知限制**并接受，**不整改**，见 §6 与 §6.1 |
-| `onnx-community/BiRefNet_lite-ONNX` | 通用抠图 Q14 | 高 | 上游是 onnx-community 官方组织，来源链大概率干净 |
-| `Xenova/clip-vit-base-patch32` | 智能打标 Q15 | 高 | Xenova 亦为转导出方，注意 §3 第 3 档判定 |
-| `Xenova/sam-vit-base` | 可编辑分割 M4 | 中 | 同上 |
-| `onnx-community/depth-anything-v2-small` | 深度图 M3 | 中 | 上游若基于 DINOv2 系，**重点核权重许可**（裁定二） |
-| `Meeperomi/GFPGANv1.4-onnx` | 人脸修复 M3 | 中 | ModelScope 无此仓库（实测 404）；**人脸另涉生物特征合规**，见 §9 |
+| `onnx-community/BiRefNet_lite-ONNX` | 通用抠图 Q14 | 高 | **2026-09-29 双平台实测**：HF 与 ModelScope 均标 `mit`（在白名单内 ✅），但 **HF 文件清单里没有 LICENSE 文件**（只有 README/config/两个 onnx/preprocessor）→ 落**「需评估」** |
+| `onnx-community/depth-anything-v2-small` | 深度图 M3 | 中 | **同日实测**：两边均标 `apache-2.0` ✅，**同样没有 LICENSE 文件本体** → 落**「需评估」**；另需查上游是否基于带研究限制的训练网络 |
+| `Xenova/clip-vit-base-patch32` | 智能打标 Q15 | 高 | ⚠️ **同日实测：两个平台的许可字段都是空的**（HF 无 `license` 字段、无 `license:` tag；ModelScope 为空串且 `LicenseLink` 空）→ 按 §3.1 判**「不列」**，直到查清上游对**权重**的声明。**"平台上没写"不等于"可以随便用"** |
+| `Xenova/sam-vit-base` | 可编辑分割 M4 | 中 | 未查 |
+| `Meeperomi/GFPGANv1.4-onnx` | 人脸修复 M3 | 中 | 未查；ModelScope 无此仓库（实测 404）；**人脸另涉生物特征合规**，见 §9 |
 | （超分） | Q12 | 低 | 仍无可信源，未定 |
+
+### 关于 ModelScope 的许可字段（2026-09-29 实测，务必看这条）
+
+上面三个仓库在 ModelScope 上的返回元数据**完全一致**：
+
+```
+CreatedBy: Cherrytest（昵称"小橙鱼"）    ModelSource: USER_UPLOAD    FromSite: maas
+LicenseName: ""    LicenseLink: ""
+```
+
+也就是说：**ModelScope 上这些命名空间照抄 HF 的 `onnx-community/`、`Xenova/` 仓库，其实是同一个第三方批量搬运**，而 HF 那边的 author 是 `onnx-community` / `Xenova` 本身。搬运**不改变授权**，但多了一个无法核验的环节；且 ModelScope 只存一个许可**字符串**，既没有正文也没有链接，字段还**不强制**（CLIP 那条就是空的）。
+
+**结论**：ModelScope 的价值是**下载通道**（本机实测免代理直连约 2.8 MB/s、支持 Range 续传，而同期 hf-mirror 直连超时），**不是许可来源**。按已定裁定它只是**并列第二源、不替换 hf-mirror**。许可与文件清单一律以**上游一手仓库**为准；从 ModelScope 下载还必须补做**与 HF 的 sha256 比对**——搬运内容是否逐字节一致，本项目至今**一次都没验过**。
 
 **队列纪律**：一次只查一个，查完就把 §4 那七项证据填进 §10 的模板并附来源日期。**不许凭印象填**。
 
