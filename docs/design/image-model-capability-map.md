@@ -180,7 +180,7 @@ L3  真跑一次 DirectML 推理当能力探测
 | A5 | 实例分割 | Mask R-CNN / Mask2Former | 50–270 MB | ○ | 比 A4 慢且大；单张图价值不明显，除非配合 A7 做逐主体交互 |
 | A6 | 全景分割 | Mask2Former 全景版 | 100–300 MB | ○ | 同上，需求更窄 |
 | A7 | **提示式分割（点/框选主体）** | SAM ViT-B | 101 MB (quantized) ※ | ★ | **已在 M4 计划内**。是"手动补选区域"的正确技术路线 |
-| A8 | **显著性抠图 / matting** | U²-Netp / BiRefNet-lite | 4.4 MB / 109–214 MB ※ | ★ | **M1 唯一已上线能力**。BiRefNet 在 DirectML 推理报错（Q14 未结） |
+| A8 | **显著性抠图 / matting** | U²-Netp（伪 alpha）／ **MODNet（肖像连续 alpha）** ／ BiRefNet-lite | 4.4 MB ／ **24.7 MB** ※ ／ 109–214 MB ※ | ★ | **人像抠图已两模型**：2026-09-29 MODNet 进清单，默认仍 u2netp（见 `../models/modnet.md`）。BiRefNet 在 DirectML 推理报错（Q14 未结） |
 | A9 | **单目深度估计** | Depth Anything V2 small | 26 MB (int8) ※ | ★ | **已在 M3 计划内**。是背景虚化/景深合成的地基，体积极小 |
 | A10 | 表面法线 / 几何 | Depth Anything 派生 | 与 A9 同量级 | ✗ | 照片管理器里缺自然入口，等 A9 落地后再议 |
 | A11 | 光流 / 运动估计 | RAFT | 20–30 MB | ✗ | 面向视频；本项目是静态照片 |
@@ -419,7 +419,7 @@ L3  真跑一次 DirectML 推理当能力探测
 
 带 ※ 的体积数据来自本项目已入库的实测记录（2026-09-23 对 `hf-mirror.com` 的 API 查询，见 `ai-photo-processing.md` §4.3 与 §9 附录 B）：
 
-- u2netp 4.4 MB / BiRefNet-lite 109 MB(fp16)、214 MB(fp32) / CLIP ViT-B/32 181 MB(q4)、290 MB(fp16) / GFPGANv1.4-onnx 324 MB / SAM ViT-B 101 MB(quantized) / Depth Anything V2 small 26 MB(int8) / Real-ESRGAN-ONNX 0.0 MB（LFS 指针）。
+- u2netp 4.4 MB / **MODNet 24.7 MB（2026-09-29，双源 sha256 逐字节一致）** / BiRefNet-lite 109 MB(fp16)、214 MB(fp32) / CLIP ViT-B/32 181 MB(q4)、290 MB(fp16) / GFPGANv1.4-onnx 324 MB / SAM ViT-B 101 MB(quantized) / Depth Anything V2 small 26 MB(int8) / Real-ESRGAN-ONNX 0.0 MB（LFS 指针）。
 
 **不带 ※ 的所有体积都是量级估算，未经本项目核实**，包括全部 A1/A3/A4/A12/A13/A17/A18、全部 B 类除 B2、全部 D 类（含取证补项 D6–D8）、全部 E 类，以及 **§7.5 新增的 F–L 全部 27 项——那批的型号名与体积连"镜像上有没有"都一次都没查过**。它们的用途只是判断"这个能力大概有多贵"，**不是**可以写进下载文案的数字。
 

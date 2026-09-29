@@ -75,8 +75,6 @@ export const capabilities: CapabilitySpec[] = [
       {
         id: 'u2netp',
         displayName: 'U²-Netp',
-        // 实测：ModelScope 没有镜像这个仓库（404），会先快速失败再降级到 hf-mirror 成功。
-        // 等换成两个源都有的抠图模型时，这条注释就可以删掉。
         repoId: 'BritishWerewolf/U-2-Netp',
         filePath: 'onnx/model.onnx',
         fileName: 'u2netp.onnx',
@@ -90,6 +88,26 @@ export const capabilities: CapabilitySpec[] = [
           rescale: 1 / 255,
           mean: [0.485, 0.456, 0.406],
           std: [0.229, 0.224, 0.225]
+        }
+      },
+      {
+        // 人像专用：输出是连续 alpha（不是显著图），发丝一类的半透明边缘靠它。
+        // 归一化与 u2netp 不同——MODNet 要的是 [-1,1]，不是 ImageNet 均值方差。
+        id: 'modnet',
+        displayName: 'MODNet（人像专用）',
+        repoId: 'Xenova/modnet',
+        filePath: 'onnx/model.onnx',
+        fileName: 'modnet.onnx',
+        sizeBytes: 25_888_640,
+        sha256: '07c308cf0fc7e6e8b2065a12ed7fc07e1de8febb7dc7839d7b7f15dd66584df9',
+        verified: true,
+        inputName: 'input',
+        inputDims: [1, 3, 512, 512],
+        outputNameIndex: 0,
+        normalize: {
+          rescale: 1 / 255,
+          mean: [0.5, 0.5, 0.5],
+          std: [0.5, 0.5, 0.5]
         }
       }
     ]

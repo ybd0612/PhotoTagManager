@@ -75,6 +75,38 @@ describe('ai/capabilityCatalog —— 单一事实源', () => {
     expect(model?.outputNameIndex).toBe(0);
   });
 
+  /** 2026-09-29 本机实测的 MODNet 事实：真图跑通 + 双源 sha256 逐字节一致 */
+  const MODNET_SHA256 = '07c308cf0fc7e6e8b2065a12ed7fc07e1de8febb7dc7839d7b7f15dd66584df9';
+  const MODNET_SIZE = 25_888_640;
+
+  it('modnet 条目带实测的下载源 / 体积 / sha256 / 张量规格', () => {
+    const model = getModel('portrait-cutout', 'modnet');
+    expect(model?.repoId).toBe('Xenova/modnet');
+    expect(model?.filePath).toBe('onnx/model.onnx');
+    expect(model?.sizeBytes).toBe(MODNET_SIZE);
+    expect(model?.sha256).toBe(MODNET_SHA256);
+    expect(model?.inputName).toBe('input');
+    expect(model?.inputDims).toEqual([1, 3, 512, 512]);
+    expect(model?.outputNameIndex).toBe(0);
+    expect(model?.verified).toBe(true);
+  });
+
+  it('modnet 的归一化是 [-1,1]（mean/std 各 0.5），不得被误抄成 u2netp 的 ImageNet 参数', () => {
+    const model = getModel('portrait-cutout', 'modnet');
+    expect(model?.normalize).toEqual({ rescale: 1 / 255, mean: [0.5, 0.5, 0.5], std: [0.5, 0.5, 0.5] });
+    expect(model?.normalize).not.toEqual(getModel('portrait-cutout', 'u2netp')?.normalize);
+  });
+
+  it('modnet 两个下载源都在（u2netp 只有单源，这条是当初不替换 hf-mirror 的原因）', () => {
+    const model = getModel('portrait-cutout', 'modnet');
+    const targets = sourceTargets({ repoId: model?.repoId ?? '', filePath: model?.filePath ?? '' });
+    expect(targets.map((s) => s.source)).toEqual(['modelscope', 'hf-mirror']);
+    expect(targets.map((s) => s.url)).toEqual([
+      'https://modelscope.cn/models/Xenova/modnet/resolve/master/onnx/model.onnx',
+      'https://hf-mirror.com/Xenova/modnet/resolve/main/onnx/model.onnx'
+    ]);
+  });
+
   it('展开出来的每个下载地址都只能落在白名单域名内（huggingface.co 直连超时）', () => {
     const offenders: string[] = [];
     for (const cap of capabilities) {
