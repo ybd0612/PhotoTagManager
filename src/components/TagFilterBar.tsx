@@ -99,11 +99,11 @@ export function TagFilterBar(): JSX.Element {
           onChange={(e) => setNameQuery(e.target.value)}
           placeholder="搜索文件名"
           aria-label="搜索文件名"
-          sx={{ width: 220 }}
+          sx={{ width: 220, '& .MuiInputBase-input': { fontSize: 13, py: 0.75 } }}
           InputProps={{
             startAdornment: (
               <InputAdornment position="start">
-                <SearchIcon fontSize="small" />
+                <SearchIcon sx={{ fontSize: 16 }} />
               </InputAdornment>
             ),
             endAdornment: nameQuery ? (
@@ -144,12 +144,12 @@ export function TagFilterBar(): JSX.Element {
 
         {/* 标签筛选成组：图标 + 已选标签（或"未选择标签"）+ 同时/任一 + 清除 */}
         <Stack direction="row" spacing={0.75} alignItems="center" className="min-w-0 flex-wrap">
-          <FilterAltIcon fontSize="small" sx={{ color: 'text.secondary' }} />
-          <Typography variant="body2" color="text.secondary" className="shrink-0">
+          <FilterAltIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+          <Typography variant="caption" color="text.secondary" className="shrink-0">
             标签筛选
           </Typography>
           {tagFilter.tags.length === 0 ? (
-            <Typography variant="body2" color="text.disabled" className="shrink-0">
+            <Typography variant="caption" color="text.disabled" className="shrink-0">
               未选择标签
             </Typography>
           ) : (
