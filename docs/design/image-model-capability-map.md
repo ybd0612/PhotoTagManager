@@ -263,11 +263,11 @@ L3  真跑一次 DirectML 推理当能力探测
 > **✅ u2netp 已查（2026-09-29，链条如下）**
 >
 > - **一手来源是干净的**：原始官方仓库 `xuebinqin/U-2-Net`（作者 Xuebin Qin 等，CVPR 2020）**有 LICENSE 文件，类型 Apache License 2.0**——直接查看仓库文件清单确认。Apache-2.0 允许商用与再分发。
-> - **二手环节不干净**：本软件正在引导用户下载的 `BritishWerewolf/U-2-Netp`，README 元数据自称 `apache-2.0`，但**仓库内没有 LICENSE 文件**（`siblings` 只有 `.gitattributes` / `README.md` / `config.json` / `onnx/model.onnx` / `preprocessor_config.json`），系个人账号 2025-03 所建。**那是二手声称，不是一手授权。**
+> - **二手环节（定性已于读完整份 README 后校准）**：本软件正在引导用户下载的 `BritishWerewolf/U-2-Netp`，`siblings` 里**没有 LICENSE 文件**（只有 `.gitattributes` / `README.md` / `config.json` / `onnx/model.onnx` / `preprocessor_config.json`），系个人账号 2025-03 所建。但该仓库 README **明确把作者归属指回 `xuebinqin/U-2-Net`，并写明"采用 Apache-2.0 是为了与原模型一致"**——属于**沿用上游许可并如实标注**，不是自我授权。所以缺的不是授权，是**同一性证明**（无转换脚本、无源 `.pth` 标识、无转换日期），外加该仓库未附许可副本（上游不规范）。**风险属供应链完整性、非版权，危害等级低。** 完整分级与 sha256 的能力边界见 `model-licensing-and-survey.md` §6。
 > - **同链条上更谨慎的一方**（rembg 是最广泛分发 `u2net.onnx` 的项目，其 issue #837 原文）：上游确为 `xuebinqin/U-2-Net` / Apache-2.0；但"**It does not cover the model files**"、"**I am not the rightsholder for those, so I cannot grant or confirm rights to them**"、"**I do not have a conversion record for that file**"，并建议"**If you need a verifiable chain of provenance, convert from the upstream checkpoint yourself**"；另明确指出离线交付时把模型打进包或引导下载属于"**redistributing them yourself**"。
 > - **还有一处解释空间**：原仓库 README 对 `u2netp.pth` 只给 GoogleDrive / 百度网盘链接，**未单独声明权重许可**；仓库根的 Apache-2.0 是否延伸到托管在仓库外的权重文件，存在解释空间——这正是 rembg 维护者不敢替作者确认的原因。
 >
-> **结论**：许可**类型**大概率可用（Apache-2.0，可商用），缺的是**来源链**——目前依赖一个个人镜像，且无法证明那份 ONNX 是作者权重的忠实转换。风险落在"来源与再分发"，不在"能不能商用"。
+> **结论**：分两半看——**授权可用性基本成立**（Apache-2.0，可商用可再分发，二手方也如实指回上游）；**剩余缺口只有一项：同一性无法验证**（缺转换记录），属**供应链完整性**问题，危害低。因此档位按 `model-licensing-and-survey.md` §3 判「需评估」并挂整改待办（自转一手 ONNX），**整改优先级可后置，但规则不因此放宽**。
 >
 > **待办三项（按性价比排序，均未执行）**：
 > 1. 软件内放 **Apache-2.0 全文 + 上游归属声明**（原作者与论文）。这是 Apache 第 4 条对再分发的硬性要求；本项目当前完全没有第三方许可清单。
