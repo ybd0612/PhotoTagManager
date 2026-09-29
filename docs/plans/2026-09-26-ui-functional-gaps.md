@@ -240,6 +240,12 @@ BiRefNet 在本机 DML 上确实抛 `DmlFusedNode`，但那是子进程内捕获
 - **2026-09-29 变更：GitHub Actions 自动发版已删除**（`9c259a2`，远端 `.github/workflows` 现为 404）。事实依据：v0.1.0–v0.1.3 四个 release 都由它发，`--generate-notes` 使正文只有一行 `**Full Changelog**: ...`；v0.1.4 手发后它又因 `a release with the same tag name already exists` 撞红（run 36384973349）。今后一律本地出包 + `gh release create` 人写说明，**`latest.yml` / `exe` / `blockmap` 三件必须齐**（缺 `latest.yml` 自动更新直接失效）。注意 `package.json` 的 `build.publish` 不能删——装机版 `resources/app-update.yml`（更新源坐标）由它生成，压制误发布改用 `dist` 脚本的 `--publish never`。
 - **2026-09-29：v0.1.5 已按新流程发出**（手动 `gh release create`，标签 `bef2b4c`；标签推送后 Actions 无新 run，确认自动发版已停）。线上核对四项全过：① 线上 `latest.yml` 与本地**逐字节一致**（均 355 字节）；② 声明 size 121,412,134 = 实测 exe 大小；③ 声明 sha512 = 本地重算值；④ 线上 exe 可下载（200，大小一致）。三资产 state 均 uploaded，draft=false prerelease=false。
 - **验收④ 仍差最后一环**：装机版 0.1.4 **通过更新器**升到 0.1.5 尚未跑（这一步同时是 U3 差分回退证据的唯一来源——升级下载期间读 `main.log` 看有没有 `Cannot download differentially`）。安装包替换需用户点 UAC，不由代理代做。
+- **2026-09-29 10:50 结案：验收④ 通过**（用户点「重启安装」过 UAC，我事后核验，不是看界面说的）：
+  - 装机版 `C:\Program Files\PhotoTagManager\resources\app.asar` 内 `package.json` version = **0.1.5**；
+  - 包内主进程含 U7 逐源下载日志 **4 处** → 装机用户从此能查到"哪个源交付的"；
+  - 升级**没动用户数据**：`roots.json` 仍是「截图 + 图片」两条根、`settings.json` 的 `ui.proxyRules` 仍是 `127.0.0.1:7897`、`models/u2netp/u2netp.onnx` 仍是 4,574,861 字节且 SHA-256 与 09:44 那次重下一致（文件 mtime 未变，说明安装过程没碰它）；
+  - 更新器日志在装机版上真的落盘了：10:48 两条 `Checking for update` → `Update for version 0.1.5 is not available (latest version: 0.1.5)` + 中文状态行，证明 U1 在发布产物里生效。
+- **一条口径**：U3 那行 `disableDifferentialDownload = false` 是 `56bfd9a`，晚于 0.1.5 的构建，**不在 0.1.5 包里**（实测装机 asar 无该字段）。当前行为不受影响——electron-updater 的默认值本来就是"允许差分"，这笔只是把取值显式钉住加注释，**随 0.1.6 生效**。
 
 ### 现象：进度 88% → 5%（不是回滚，是**截断重下**）
 落地文件实测三连：14:24 = 95,911,226 → 14:50 = 7,502,014 → 15:00 = 19,673,601（第三轮）。
