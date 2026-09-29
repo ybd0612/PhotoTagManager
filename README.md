@@ -78,16 +78,22 @@ npm run dev        # 启动应用（dev server 端口 51783）
 
 ## 发布与更新
 
-- **发版流程**：打 tag 并推送，GitHub Actions 自动打包并发布到 GitHub Releases：
+- **发版流程**：本地打包后手动建 Release（不再由 GitHub Actions 自动发版，2026-09-29 起）：
 
   ```bash
-  git tag v0.1.2 && git push origin v0.1.2
+  npm run build && npm run dist        # 产出 dist/PhotoTagManager-<version>-x64.exe + .blockmap + latest.yml
+  gh release create v<version> \
+    dist/PhotoTagManager-<version>-x64.exe \
+    dist/PhotoTagManager-<version>-x64.exe.blockmap \
+    dist/latest.yml \
+    --title "PhotoTagManager v<version>" --notes "<人写的更新说明>"
+  git tag v<version> && git push origin v<version>
   ```
 
-  Actions（`.github/workflows/release.yml`）在 `windows-latest`、Node.js 24 上执行 `npm ci` → `npm run build` → `electron-builder` 打包 → `gh release create` 发布，自动生成标题 `PhotoTagManager v<版本>` 与基于提交记录的 Release notes，并上传 NSIS 安装包（`dist/PhotoTagManager-<version>-x64.exe`）、`.blockmap` 和 `latest.yml`。
+  **三个资产必须齐全**：`latest.yml` 是自动更新的清单入口，缺它装机版就查不到新版本；`exe` 是安装包本体，`.blockmap` 供差分下载。`npm run dist` 已固定带 `--publish never`，electron-builder 自己不会去建 Release。`package.json` 的 `build.publish` 仍保留 github 坐标——它同时是装机版 `resources/app-update.yml`（更新源）的唯一来源，改动前先跑一次 `npm run dist` 确认该文件还在。
 
 - **更新渠道**：`electron-updater` 读取 GitHub Releases（`publish` 配置为 github 源），应用**启动时静默检查** + 顶栏「检查更新」**手动检查**；发现新版本后下载进度条展示，下载完成可一键重启安装。
-- **当前版本**：`0.1.3`，关于页显示中文产品名、GitHub 仓库和作者网站 `https://yangbang.de`，版本号从 `package.json` 自动同步。
+- **当前版本**：`0.1.5`（`package.json` 为准；0.1.5 的 Release 待发），关于页显示中文产品名、GitHub 仓库和作者网站 `https://yangbang.de`，版本号从 `package.json` 自动同步。
 
 - **本地打包**：也可在本机执行 `npm run dist` 生成安装包（首次打包会自动下载 electron 发行版与 NSIS 工具链，需联网）。
 
