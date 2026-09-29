@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeAll, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import App from '../src/App';
 import { AppLayout } from '../src/components/AppLayout';
 import { AboutDialog } from '../src/components/AboutDialog';
@@ -202,14 +202,30 @@ describe('批次2 G6 顶栏', () => {
     render(<AppLayout />);
     expect(screen.queryByRole('button', { name: '检查更新' })).toBeNull();
     expect(screen.queryByRole('button', { name: '关于照片标签管家' })).toBeNull();
-    expect(screen.getAllByRole('button', { name: '添加根目录' }).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByRole('button', { name: /重新扫描/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: '设置' })).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
     expect(screen.getByRole('menuitem', { name: '检查更新' })).toBeTruthy();
     fireEvent.click(screen.getByRole('menuitem', { name: '关于照片标签管家' }));
     expect(screen.getByText(`当前版本：${packageJson.version}`)).toBeTruthy();
+  });
+
+  it('批次4：顶栏不再放添加根目录与重新扫描，两个入口归到左栏树头', () => {
+    seedGallery();
+    render(<AppLayout />);
+    const header = screen.getByRole('banner');
+    expect(within(header).queryByRole('button', { name: '添加根目录' })).toBeNull();
+    expect(within(header).queryByRole('button', { name: /重新扫描/ })).toBeNull();
+
+    // 左栏树头：加号与刷新常驻
+    expect(screen.getByRole('button', { name: '添加根目录' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '重新扫描当前根目录' }));
+    // 关键：真的发起对当前根 r1 的重扫，而不是只留一个图标
+    const scanStart = (window as unknown as { api: PhotoTagApi }).api.scanStart as ReturnType<
+      typeof vi.fn
+    >;
+    expect(scanStart).toHaveBeenCalledTimes(1);
+    expect(scanStart.mock.calls[0][0]).toBe('r1');
   });
 });
 

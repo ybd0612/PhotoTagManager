@@ -15,7 +15,6 @@ import {
   Typography
 } from '@mui/material';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
-import RefreshIcon from '@mui/icons-material/Refresh';
 import StopCircleIcon from '@mui/icons-material/StopCircle';
 import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
@@ -42,8 +41,9 @@ import type { UpdateStatus } from '../../shared/types';
 
 /**
  * 三栏布局容器 + 顶部工具栏 + 底部状态栏（PRD §3.3 线框图，多根 R10）。
- * 批次2 起：左栏是一棵「根 + 子目录」合并树（G5），顶栏只留主操作与设置、
- * 检查更新与关于收进溢出菜单（G6），状态栏扫描文案只播一次（G7）。
+ * 批次2 起：左栏是一棵「根 + 子目录」合并树（G5），检查更新与关于收进溢出菜单（G6），
+ * 状态栏扫描文案只播一次（G7）。批次4 起：添加根目录与重新扫描都归到左栏树头，
+ * 顶栏只剩标题区、扫描中的「取消」和次操作区。
  */
 export function AppLayout(): JSX.Element {
   const roots = useAppStore((s) => s.roots);
@@ -217,20 +217,16 @@ export function AppLayout(): JSX.Element {
           )}
         </Stack>
 
-        {/* 主操作在左、次操作在右，中间分隔线划开视觉权重（G6） */}
+        {/* 次操作区（G6）：扫描中才出现「取消」，分隔线随之只在需要它时渲染 */}
         <Stack direction="row" spacing={1} alignItems="center" className="shrink-0">
-          <Button variant="contained" startIcon={<FolderOpenIcon />} onClick={() => void rootActions.addRoot()}>
-            添加根目录
-          </Button>
-          <Button variant="outlined" startIcon={<RefreshIcon />} disabled={!hasRoot || scanning} onClick={handleRescan}>
-            重新扫描
-          </Button>
           {scanning && (
-            <Button variant="text" color="error" startIcon={<StopCircleIcon />} onClick={handleCancel}>
-              取消
-            </Button>
+            <>
+              <Button variant="text" color="error" startIcon={<StopCircleIcon />} onClick={handleCancel}>
+                取消
+              </Button>
+              <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
+            </>
           )}
-          <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
           <Tooltip title="设置">
             <IconButton onClick={() => { setSettingsTab('general'); setSettingsOpen(true); }} aria-label="设置">
               <SettingsIcon />

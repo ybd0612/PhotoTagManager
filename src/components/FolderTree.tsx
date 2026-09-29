@@ -12,7 +12,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import { call, getApi } from '../api';
 import { rootKey, useAppStore } from '../store/useAppStore';
-import { startScan } from '../hooks/useScan';
+import { rescan, startScan } from '../hooks/useScan';
 import { buildTreeRows, type TreeRow } from '../utils/treeRows';
 import type { RootActions } from '../hooks/useRootActions';
 
@@ -21,6 +21,7 @@ import type { RootActions } from '../hooks/useRootActions';
  * - 根作为顶层节点，子目录缩进在所属根下；同名根与同名子目录不再分处两块面板
  * - 展开态与隐藏集一律以 rootKey(rootId, relPath) 为键，按根分桶不互串
  * - 隐藏集收进行尾单个图标：数量在 tooltip，开关与逐项恢复在弹出菜单里
+ * - 树头两个常驻图标：添加根目录、重新扫描当前选中根（批次4 从顶栏搬来）
  * - 右键菜单：在资源管理器中打开 / 隐藏 / 取消隐藏 / 重新扫描（都针对该行所属根）；
  *   根行额外给改别名与删除，作为 hover 图标之外的同等入口
  */
@@ -44,6 +45,11 @@ export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.E
   const [menu, setMenu] = useState<{ rootId: string; relPath: string; isRoot: boolean; mouseX: number; mouseY: number } | null>(null);
 
   const rootById = useMemo(() => new Map(roots.map((root) => [root.id, root])), [roots]);
+
+  /** 树头刷新按钮的作用对象：当前选中的根（磁盘上新增/删除照片只能靠重扫进界面，没有目录监听） */
+  const selectedRoot = selectedRootId ? (rootById.get(selectedRootId) ?? null) : null;
+  const selectedRootScanning =
+    selectedRootId !== null && scanStateByRoot.get(selectedRootId) === 'scanning';
 
   /** 根目录直属图片不属于任何子目录节点，得单独按根数一遍给根行计数 */
   const rootDirectCounts = useMemo(() => {
@@ -141,6 +147,26 @@ export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.E
           图库 · {roots.length} 个根目录
         </Typography>
         <Stack direction="row" alignItems="center" spacing={0.25}>
+          <Tooltip
+            title={
+              selectedRoot === null
+                ? '还没有根目录可扫描'
+                : selectedRootScanning
+                  ? `「${selectedRoot.alias}」正在扫描，请等待`
+                  : `重新扫描「${selectedRoot.alias}」（磁盘上的增删要重扫才会更新）`
+            }
+          >
+            <span>
+              <IconButton
+                size="small"
+                aria-label="重新扫描当前根目录"
+                disabled={selectedRoot === null || selectedRootScanning}
+                onClick={() => void rescan()}
+              >
+                <RefreshIcon fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
           <Tooltip title="添加根目录">
             <IconButton size="small" aria-label="添加根目录" onClick={() => void rootActions.addRoot()}>
               <AddIcon fontSize="small" />
