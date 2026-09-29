@@ -237,6 +237,7 @@ BiRefNet 在本机 DML 上确实抛 `DmlFusedNode`，但那是子进程内捕获
 - 图标：构建日志 `default Electron icon is used` 出现 **0 次**；产物期解出的图标与旧装机版 sha 不同
   （`fdbd1d60` vs `74d479ee`）——配置真生效，不只是"没报警"。
 - 0.1.4 手装（覆盖安装）用于完成验收①，不空等慢网。
+- **2026-09-29 变更：GitHub Actions 自动发版已删除**（`9c259a2`，远端 `.github/workflows` 现为 404）。事实依据：v0.1.0–v0.1.3 四个 release 都由它发，`--generate-notes` 使正文只有一行 `**Full Changelog**: ...`；v0.1.4 手发后它又因 `a release with the same tag name already exists` 撞红（run 36384973349）。今后一律本地出包 + `gh release create` 人写说明，**`latest.yml` / `exe` / `blockmap` 三件必须齐**（缺 `latest.yml` 自动更新直接失效）。注意 `package.json` 的 `build.publish` 不能删——装机版 `resources/app-update.yml`（更新源坐标）由它生成，压制误发布改用 `dist` 脚本的 `--publish never`。
 
 ### 现象：进度 88% → 5%（不是回滚，是**截断重下**）
 落地文件实测三连：14:24 = 95,911,226 → 14:50 = 7,502,014 → 15:00 = 19,673,601（第三轮）。
