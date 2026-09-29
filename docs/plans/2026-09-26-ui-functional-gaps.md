@@ -238,6 +238,8 @@ BiRefNet 在本机 DML 上确实抛 `DmlFusedNode`，但那是子进程内捕获
   （`fdbd1d60` vs `74d479ee`）——配置真生效，不只是"没报警"。
 - 0.1.4 手装（覆盖安装）用于完成验收①，不空等慢网。
 - **2026-09-29 变更：GitHub Actions 自动发版已删除**（`9c259a2`，远端 `.github/workflows` 现为 404）。事实依据：v0.1.0–v0.1.3 四个 release 都由它发，`--generate-notes` 使正文只有一行 `**Full Changelog**: ...`；v0.1.4 手发后它又因 `a release with the same tag name already exists` 撞红（run 36384973349）。今后一律本地出包 + `gh release create` 人写说明，**`latest.yml` / `exe` / `blockmap` 三件必须齐**（缺 `latest.yml` 自动更新直接失效）。注意 `package.json` 的 `build.publish` 不能删——装机版 `resources/app-update.yml`（更新源坐标）由它生成，压制误发布改用 `dist` 脚本的 `--publish never`。
+- **2026-09-29：v0.1.5 已按新流程发出**（手动 `gh release create`，标签 `bef2b4c`；标签推送后 Actions 无新 run，确认自动发版已停）。线上核对四项全过：① 线上 `latest.yml` 与本地**逐字节一致**（均 355 字节）；② 声明 size 121,412,134 = 实测 exe 大小；③ 声明 sha512 = 本地重算值；④ 线上 exe 可下载（200，大小一致）。三资产 state 均 uploaded，draft=false prerelease=false。
+- **验收④ 仍差最后一环**：装机版 0.1.4 **通过更新器**升到 0.1.5 尚未跑（这一步同时是 U3 差分回退证据的唯一来源——升级下载期间读 `main.log` 看有没有 `Cannot download differentially`）。安装包替换需用户点 UAC，不由代理代做。
 
 ### 现象：进度 88% → 5%（不是回滚，是**截断重下**）
 落地文件实测三连：14:24 = 95,911,226 → 14:50 = 7,502,014 → 15:00 = 19,673,601（第三轮）。
