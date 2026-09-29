@@ -157,6 +157,15 @@ function createWindow(): void {
     show: false,
     title: 'PhotoTagManager',
     backgroundColor: '#f8fafc',
+    /**
+     * 原生标题栏由 Windows 的 DWM 绘制，浅色模式下涂的是近灰白，开了「透明效果」还会带上桌面的
+     * Mica 染色——这个颜色应用改不了，和界面顶栏的纯白之间必然留一条对不齐的缝。
+     * 改成 hidden 后整条标题栏交回网页自己画，只把右上角三个控件留作系统覆盖层，
+     * 覆盖层底色由 titleBarOverlay.color 指定，于是能和顶栏严格同色。
+     * height 必须与 AppLayout 顶栏的 h-14（56px）一致，否则三个控件会上下错位。
+     */
+    titleBarStyle: 'hidden',
+    titleBarOverlay: { color: '#ffffff', symbolColor: '#0f172a', height: 56 },
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,

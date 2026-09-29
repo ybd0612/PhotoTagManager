@@ -7,6 +7,8 @@
   --ptm-header-height: 56px;
   --ptm-tree-width: 260px;
   --ptm-statusbar-height: 28px;
+  /* 右上角最小化/最大化/关闭三个按钮由系统覆盖层绘制，宽度不受本文件控制，只能靠留白避让 */
+  --ptm-wco-width: 138px;
   color-scheme: light;
 }
 
@@ -51,4 +53,19 @@ body {
 /* 预览大图区域允许选中文件名文本 */
 .ptm-selectable {
   user-select: text;
+}
+
+/*
+ * 顶栏兼作窗口标题栏（主进程 titleBarStyle: 'hidden' + titleBarOverlay）：
+ * 整条可拖动窗口，双击拖拽区由 Electron 的默认行为切换最大化/还原。
+ */
+.ptm-titlebar {
+  -webkit-app-region: drag;
+  padding-right: calc(1rem + var(--ptm-wco-width));
+}
+
+/* 拖拽区会吞掉落在它上面的鼠标事件，顶栏里的可点控件必须显式排除 */
+.ptm-titlebar button,
+.ptm-titlebar [role='button'] {
+  -webkit-app-region: no-drag;
 }

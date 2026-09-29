@@ -161,10 +161,10 @@ export function AppLayout(): JSX.Element {
   const hasRoot = roots.length > 0 && selectedRootId !== null;
   return (
     <Box className="flex h-full flex-col bg-slate-50">
-      {/* 顶部工具栏 */}
+      {/* 顶部工具栏：同时是窗口标题栏（拖拽区与右侧控件避让见 index.css 的 .ptm-titlebar） */}
       <Paper
         component="header"
-        className="flex h-14 shrink-0 items-center justify-between rounded-none border-b border-slate-200 px-4"
+        className="ptm-titlebar flex h-14 shrink-0 items-center justify-between rounded-none border-b border-slate-200 pl-4"
       >
         <Stack direction="row" spacing={1.5} alignItems="center" className="min-w-0">
           <PhotoLibraryIcon color="primary" className="shrink-0" />
