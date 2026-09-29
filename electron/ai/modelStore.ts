@@ -54,11 +54,22 @@ export interface DownloadProgress {
   totalBytes: number;
 }
 
+/**
+ * 来源级诊断日志面（写法与 updaterService 的 UpdateLogger 一致：构造注入，单测可断言）。
+ * U7 交接遗留的缺口：下载"结果成功"证明不了"哪个源成功"，
+ * 每个源每次请求必须各留一行（URL + HTTP 状态或失败类别），真机日志才算闭环。
+ */
+export interface DownloadLogger {
+  info(msg: string): void;
+}
+
 export interface ModelStoreOptions {
   onProgress?: (p: DownloadProgress) => void;
   /** 注入点：单测用它构造"磁盘不足"场景 */
   freeBytesProbe?: (dir: string) => Promise<number>;
   fetchImpl?: typeof fetch;
+  /** 注入点：主进程给 electron-log；缺省不记日志（测试与直接 new 的调用方零行为变化） */
+  logger?: DownloadLogger;
 }
 
 export interface DownloadResult {
@@ -93,9 +104,11 @@ export class ModelStore {
   private readonly onProgress?: (p: DownloadProgress) => void;
   private readonly freeBytesProbe: (dir: string) => Promise<number>;
   private readonly fetchImpl: typeof fetch;
+  private readonly logger?: DownloadLogger;
 
   constructor(opts: ModelStoreOptions = {}) {
     this.onProgress = opts.onProgress;
+    this.logger = opts.logger;
     this.freeBytesProbe =
       opts.freeBytesProbe ??
       (async (dir: string) => {
@@ -144,7 +157,7 @@ export class ModelStore {
       const failures: Array<{ source: SourceId; failure: DownloadFailure }> = [];
       for (const src of sourceTargets(ref)) {
         try {
-          await this.transfer(spec, src.url, part, target, signal);
+          await this.transfer(src.source, spec, src.url, part, target, signal);
         } catch (err) {
           if (err instanceof TransferError && err.failure === 'cancelled') throw new Error('下载已取消');
           const failure = err instanceof TransferError ? err.failure : classifyFetchError(err);
@@ -159,6 +172,7 @@ export class ModelStore {
           continue;
         }
         const sizeBytes = (await stat(target)).size;
+        this.logger?.info(`模型下载：source=${src.source} 成功（校验通过，字节=${sizeBytes}）`);
         await this.recordIndex(spec, target, sizeBytes);
         this.emitProgress(spec.id, sizeBytes, sizeBytes);
         return { path: target, sha256: actualSha, sizeBytes, cacheHit: false };
@@ -187,6 +201,7 @@ export class ModelStore {
   // ── 内部实现 ────────────────────────────────────────────────────────────
 
   private async transfer(
+    source: SourceId,
     spec: ModelDownloadSpec,
     url: string,
     part: string,
@@ -195,11 +210,17 @@ export class ModelStore {
   ): Promise<void> {
     const startBytes = await sizeOf(part);
     const headers: Record<string, string> = startBytes > 0 ? { Range: `bytes=${startBytes}-` } : {};
+    this.logger?.info(`模型下载：source=${source} 请求 ${url}${startBytes > 0 ? `（续传 Range bytes=${startBytes}-）` : ''}`);
     const res = await this.fetchImpl(url, { headers, signal }).catch((err: unknown) => {
-      if (isAbort(err)) throw new TransferError('下载已取消', 'cancelled');
       // 抛到这里说明是连接层异常（超时/DNS/拒绝/代理不可达），换源才有意义
-      throw new TransferError(`下载请求失败：${describeError(err)}`, classifyFetchError(err));
+      if (!isAbort(err)) {
+        const category = classifyFetchError(err);
+        this.logger?.info(`模型下载：source=${source} 请求失败 类别=${category} 原因=${describeError(err)}`);
+        throw new TransferError(`下载请求失败：${describeError(err)}`, category);
+      }
+      throw new TransferError('下载已取消', 'cancelled');
     });
+    this.logger?.info(`模型下载：source=${source} HTTP ${res.status}`);
     const httpFailure = classifyHttpStatus(res.status);
     if (httpFailure) {
       throw new TransferError(`下载失败：HTTP ${res.status}`, httpFailure);

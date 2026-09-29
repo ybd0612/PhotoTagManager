@@ -219,7 +219,8 @@ void app.whenReady().then(async () => {
   await applyProxyRules(await readSavedProxyRules());
   // 下载走 net.fetch 而不是 Node 全局 fetch：只有 Chromium 网络栈受 session.setProxy 管
   const aiStore = new ModelStore({
-    fetchImpl: (url, init) => net.fetch(url as string, init as Parameters<typeof net.fetch>[1])
+    fetchImpl: (url, init) => net.fetch(url as string, init as Parameters<typeof net.fetch>[1]),
+    logger: electronLog
   });
   const runner = new ChildRunner({
     spawn: makeUtilityProcessSpawner(utilityProcess),

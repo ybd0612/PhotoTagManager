@@ -25,3 +25,6 @@ userData/
 
 # WorkBuddy 项目记忆（会话日志，不入库）
 .workbuddy/
+
+# neural memory 工具状态目录（本地生成，不入库）
+.neuralmemory/

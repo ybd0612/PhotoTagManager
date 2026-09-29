@@ -148,6 +148,27 @@ describe('ai/modelStore —— 下载与本地索引', () => {
     expect(tried.length).toBe(2);
   });
 
+  it('来源级诊断日志：首源 404、次源成功时逐源各留一行，真机日志能看出谁交付', async () => {
+    const lines: string[] = [];
+    let attempts = 0;
+    const store = new ModelStore({
+      logger: { info: (msg) => lines.push(msg) },
+      fetchImpl: (input, init) => {
+        attempts += 1;
+        if (attempts === 1) return Promise.resolve(new Response(null, { status: 404 }));
+        return fetch(baseUrl, init);
+      }
+    });
+    await store.download(spec);
+    const idx404 = lines.findIndex((l) => l.includes('source=modelscope') && l.includes('HTTP 404'));
+    expect(idx404).toBeGreaterThanOrEqual(0);
+    expect(lines.some((l) => l.includes('source=modelscope') && l.includes('modelscope.cn'))).toBe(true);
+    const idxMirrorReq = lines.findIndex((l) => l.includes('source=hf-mirror') && l.includes('hf-mirror.com'));
+    expect(idxMirrorReq).toBeGreaterThan(idx404);
+    expect(lines.some((l) => /^模型下载：source=hf-mirror HTTP /.test(l))).toBe(true);
+    expect(lines.some((l) => l.includes('source=hf-mirror') && l.includes('成功'))).toBe(true);
+  });
+
   it('两个源都连不上时说的是"需要代理"，而不是含糊的下载失败', async () => {
     const store = new ModelStore({
       fetchImpl: () => Promise.reject(new Error('fetch failed: ETIMEDOUT'))
