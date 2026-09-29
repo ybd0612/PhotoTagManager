@@ -89,8 +89,10 @@ export function TagFilterBar(): JSX.Element {
 
   return (
     <Paper className="shrink-0 rounded-none border-b border-slate-200 px-3 py-2">
-      {/* 找图工具行：文件名搜索 + 排序 + 缩略图档位（偏好持久化到 settings.json） */}
-      <Stack direction="row" alignItems="center" spacing={1} className="flex-wrap pb-2">
+      {/* 找图工具行：搜索 + 排序 + 标签筛选 + 缩略图档位（三档偏好持久化到 settings.json）。
+          标签筛选原本独占一行，右侧大片留白；并进这一行后靠右的缩略图仍钉在行尾。
+          整行 flex-wrap：窗口窄（左栏展开时约 1000px）或选中标签多，会自动折回两行。 */}
+      <Stack direction="row" alignItems="center" spacing={1} className="flex-wrap">
         <TextField
           size="small"
           value={nameQuery}
@@ -139,6 +141,52 @@ export function TagFilterBar(): JSX.Element {
             </Button>
           </Tooltip>
         </Stack>
+
+        {/* 标签筛选成组：图标 + 已选标签（或"未选择标签"）+ 同时/任一 + 清除 */}
+        <Stack direction="row" spacing={0.75} alignItems="center" className="min-w-0 flex-wrap">
+          <FilterAltIcon fontSize="small" sx={{ color: 'text.secondary' }} />
+          <Typography variant="body2" color="text.secondary" className="shrink-0">
+            标签筛选
+          </Typography>
+          {tagFilter.tags.length === 0 ? (
+            <Typography variant="body2" color="text.disabled" className="shrink-0">
+              未选择标签
+            </Typography>
+          ) : (
+            tagFilter.tags.map((tag) => (
+              <Chip
+                key={tag}
+                label={tag}
+                size="small"
+                color="primary"
+                variant="filled"
+                onDelete={() => toggleFilterTag(tag)}
+              />
+            ))
+          )}
+          <ToggleButtonGroup
+            exclusive
+            size="small"
+            value={tagFilter.mode}
+            onChange={(_e, value: 'AND' | 'OR' | null) => {
+              if (value) setFilterMode(value);
+            }}
+            className="shrink-0"
+          >
+            <ToggleButton value="AND" sx={{ px: 1.5, py: 0.25 }}>
+              同时包含
+            </ToggleButton>
+            <ToggleButton value="OR" sx={{ px: 1.5, py: 0.25 }}>
+              任一包含
+            </ToggleButton>
+          </ToggleButtonGroup>
+          {tagFilter.tags.length > 0 && (
+            <Button size="small" color="inherit" className="shrink-0" onClick={clearFilter}>
+              清除
+            </Button>
+          )}
+        </Stack>
+
         <Box sx={{ flex: 1 }} />
         <Stack direction="row" alignItems="center" spacing={0.75} className="shrink-0" sx={{ flexWrap: 'nowrap' }}>
           <Typography variant="caption" color="text.secondary" className="shrink-0">
@@ -157,57 +205,7 @@ export function TagFilterBar(): JSX.Element {
         </Stack>
       </Stack>
 
-      {/* 第一行：已选筛选 + 模式 + 高级筛选 */}
-      <Stack direction="row" alignItems="center" spacing={1} className="flex-wrap">
-        <FilterAltIcon fontSize="small" sx={{ color: 'text.secondary' }} />
-        <Typography variant="body2" color="text.secondary" className="shrink-0">
-          标签筛选
-        </Typography>
-
-        {tagFilter.tags.length === 0 ? (
-          <Typography variant="body2" color="text.disabled" className="shrink-0">
-            未选择标签
-          </Typography>
-        ) : (
-          <Stack direction="row" spacing={0.5} className="min-w-0 flex-1 flex-wrap items-center">
-            {tagFilter.tags.map((tag) => (
-              <Chip
-                key={tag}
-                label={tag}
-                size="small"
-                color="primary"
-                variant="filled"
-                onDelete={() => toggleFilterTag(tag)}
-              />
-            ))}
-          </Stack>
-        )}
-
-        <ToggleButtonGroup
-          exclusive
-          size="small"
-          value={tagFilter.mode}
-          onChange={(_e, value: 'AND' | 'OR' | null) => {
-            if (value) setFilterMode(value);
-          }}
-          className="shrink-0"
-        >
-          <ToggleButton value="AND" sx={{ px: 1.5, py: 0.25 }}>
-            同时包含
-          </ToggleButton>
-          <ToggleButton value="OR" sx={{ px: 1.5, py: 0.25 }}>
-            任一包含
-          </ToggleButton>
-        </ToggleButtonGroup>
-
-        {tagFilter.tags.length > 0 && (
-          <Button size="small" color="inherit" className="shrink-0" onClick={clearFilter}>
-            清除
-          </Button>
-        )}
-      </Stack>
-
-      {/* 第二行：热门标签（当前上下文范围）+ 更多（全量标签列表） */}
+      {/* 热门标签（当前上下文范围）+ 更多（全量标签列表） */}
       <Stack direction="row" alignItems="center" spacing={0.5} className="mt-1.5 flex-wrap">
         <Typography variant="caption" color="text.secondary" className="shrink-0">
           常用标签
