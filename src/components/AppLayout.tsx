@@ -5,9 +5,6 @@ import {
   Divider,
   IconButton,
   LinearProgress,
-  ListItemIcon,
-  Menu,
-  MenuItem,
   Paper,
   Snackbar,
   Stack,
@@ -17,9 +14,6 @@ import {
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import StopCircleIcon from '@mui/icons-material/StopCircle';
 import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary';
-import MoreVertIcon from '@mui/icons-material/MoreVert';
-import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
-import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
 import SettingsIcon from '@mui/icons-material/Settings';
 import ViewSidebarIcon from '@mui/icons-material/ViewSidebar';
 import { call, getApi } from '../api';
@@ -35,15 +29,14 @@ import { TagFilterBar } from './TagFilterBar';
 import { ThumbnailGrid } from './ThumbnailGrid';
 import { PreviewOverlay } from './PreviewOverlay';
 import { UpdateDialog } from './UpdateDialog';
-import { AboutDialog } from './AboutDialog';
 import { SettingsDialog } from './settings/SettingsDialog';
 import type { UpdateStatus } from '../../shared/types';
 
 /**
  * 三栏布局容器 + 顶部工具栏 + 底部状态栏（PRD §3.3 线框图，多根 R10）。
- * 批次2 起：左栏是一棵「根 + 子目录」合并树（G5），检查更新与关于收进溢出菜单（G6），
- * 状态栏扫描文案只播一次（G7）。批次4 起：添加根目录与重新扫描都归到左栏树头，
- * 顶栏只剩标题区、扫描中的「取消」和次操作区。
+ * 批次2 起：左栏是一棵「根 + 子目录」合并树（G5），状态栏扫描文案只播一次（G7）。
+ * 批次4 起：添加根目录与重新扫描都归到左栏树头，顶栏只剩标题区、扫描中的「取消」和设置入口。
+ * 检查更新与关于（原 G6 的溢出菜单）现收在设置弹窗的「关于与更新」分区，顶栏不再有次操作菜单。
  */
 export function AppLayout(): JSX.Element {
   const roots = useAppStore((s) => s.roots);
@@ -61,12 +54,10 @@ export function AppLayout(): JSX.Element {
 
   const { actions: rootActions, dialogs: rootDialogs } = useRootActions();
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
-  const [aboutDialogOpen, setAboutDialogOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   /** 打开设置时停在哪个分区：工具栏按钮进「常规」，`?` 直接进「快捷键」（批次3 G11） */
   const [settingsTab, setSettingsTab] = useState<'general' | 'ai' | 'shortcuts'>('general');
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ state: 'idle' });
-  const [moreAnchor, setMoreAnchor] = useState<null | HTMLElement>(null);
 
   const selectedRoot = roots.find((r) => r.id === selectedRootId) ?? null;
 
@@ -217,7 +208,7 @@ export function AppLayout(): JSX.Element {
           )}
         </Stack>
 
-        {/* 次操作区（G6）：扫描中才出现「取消」，分隔线随之只在需要它时渲染 */}
+        {/* 次操作区：扫描中才出现「取消」，分隔线随之只在需要它时渲染 */}
         <Stack direction="row" spacing={1} alignItems="center" className="shrink-0">
           {scanning && (
             <>
@@ -230,11 +221,6 @@ export function AppLayout(): JSX.Element {
           <Tooltip title="设置">
             <IconButton onClick={() => { setSettingsTab('general'); setSettingsOpen(true); }} aria-label="设置">
               <SettingsIcon />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="更多操作">
-            <IconButton onClick={(e) => setMoreAnchor(e.currentTarget)} aria-label="更多操作" aria-haspopup="menu">
-              <MoreVertIcon />
             </IconButton>
           </Tooltip>
         </Stack>
@@ -336,27 +322,17 @@ export function AppLayout(): JSX.Element {
       )}
 
       <UpdateDialog open={updateDialogOpen} onClose={() => setUpdateDialogOpen(false)} />
-      {/* 应用级设置总入口（D16） */}
-      <SettingsDialog open={settingsOpen} initialTab={settingsTab} onClose={() => setSettingsOpen(false)} />
-      <AboutDialog open={aboutDialogOpen} onClose={() => setAboutDialogOpen(false)} />
+      {/* 应用级设置总入口（D16）：检查更新由「关于与更新」分区触发，先收起设置再开更新对话框 */}
+      <SettingsDialog
+        open={settingsOpen}
+        initialTab={settingsTab}
+        onClose={() => setSettingsOpen(false)}
+        onCheckUpdate={() => {
+          setSettingsOpen(false);
+          void handleCheckUpdate();
+        }}
+      />
       {rootDialogs}
-
-      {/* 次操作收纳处：检查更新与关于不再裸占顶栏（G6） */}
-      <Menu
-        anchorEl={moreAnchor}
-        open={moreAnchor !== null}
-        onClose={() => setMoreAnchor(null)}
-        PaperProps={{ sx: { minWidth: 196 } }}
-      >
-        <MenuItem onClick={() => { setMoreAnchor(null); void handleCheckUpdate(); }}>
-          <ListItemIcon><SystemUpdateAltIcon fontSize="small" /></ListItemIcon>
-          检查更新
-        </MenuItem>
-        <MenuItem onClick={() => { setMoreAnchor(null); setAboutDialogOpen(true); }}>
-          <ListItemIcon><InfoOutlinedIcon fontSize="small" /></ListItemIcon>
-          关于照片标签管家
-        </MenuItem>
-      </Menu>
 
       <Snackbar
         open={snackbar !== null}

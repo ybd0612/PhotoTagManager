@@ -51,7 +51,7 @@ PhotoTagManager 不把图片复制到应用专属仓库，也不为每张图片�
 - **标签筛选**：常用标签（按当前目录上下文统计）+ 高级筛选 + AND/OR 组合
 - **缩略图网格**：虚拟滚动、列宽自适应、GIF/WebP 直接原图预览
 - **大图预览**：滚轮缩放（光标为中心）、拖动平移、双击还原、Ctrl+C 复制文件、双色绝对路径显示
-- **关于与外部链接**：关于页提供 GitHub 仓库和作者网站，点击后通过系统默认浏览器打开
+- **关于与外部链接**：设置里的「关于与更新」分区提供 GitHub 仓库和作者网站，点击后通过系统默认浏览器打开
 - **性能**：Worker 线程扫描、exiftool 串行队列、缩略图磁盘缓存、按需读取标签
 
 ## 技术栈
@@ -92,8 +92,8 @@ npm run dev        # 启动应用（dev server 端口 51783）
 
   **三个资产必须齐全**：`latest.yml` 是自动更新的清单入口，缺它装机版就查不到新版本；`exe` 是安装包本体，`.blockmap` 供差分下载。`npm run dist` 已固定带 `--publish never`，electron-builder 自己不会去建 Release。`package.json` 的 `build.publish` 仍保留 github 坐标——它同时是装机版 `resources/app-update.yml`（更新源）的唯一来源，改动前先跑一次 `npm run dist` 确认该文件还在。`npm run app:go` 用的是 `--win dir`，这个目标不写 `app-update.yml`，脚本第③.5 步会用 `scripts/write-app-update-yml.cjs` 按同一口径补写，所以从 `dist/win-unpacked` 跑的副本也能自查更新。
 
-- **更新渠道**：`electron-updater` 读取 GitHub Releases（`publish` 配置为 github 源），应用**启动时静默检查** + 顶栏「检查更新」**手动检查**；发现新版本后下载进度条展示，下载完成可一键重启安装。
-- **当前版本**：`0.1.5`（`package.json` 为准，v0.1.5 的 Release 已于 2026-09-29 发布），关于页显示中文产品名、GitHub 仓库和作者网站 `https://yangbang.de`，版本号从 `package.json` 自动同步。
+- **更新渠道**：`electron-updater` 读取 GitHub Releases（`publish` 配置为 github 源），应用**启动时静默检查** + 设置「关于与更新」分区里的**手动检查**；发现新版本后下载进度条展示，下载完成可一键重启安装。
+- **当前版本**：`0.1.5`（`package.json` 为准，v0.1.5 的 Release 已于 2026-09-29 发布），设置「关于与更新」分区显示中文产品名、GitHub 仓库和作者网站 `https://yangbang.de`，版本号从 `package.json` 自动同步。
 
 - **本地打包**：也可在本机执行 `npm run dist` 生成安装包（首次打包会自动下载 electron 发行版与 NSIS 工具链，需联网）。
 

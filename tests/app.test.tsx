@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeAll, beforeEach } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import App from '../src/App';
 import { AppLayout } from '../src/components/AppLayout';
-import { AboutDialog } from '../src/components/AboutDialog';
+import { AboutUpdatePane } from '../src/components/settings/AboutUpdatePane';
 import { rootKey, useAppStore } from '../src/store/useAppStore';
 import { SHORTCUTS } from '../src/utils/shortcuts';
 import { DEFAULT_UI_PREFS } from '../shared/types';
@@ -134,7 +134,7 @@ describe('App 冒烟', () => {
   it('无根目录时渲染空状态引导与「添加根目录」入口（R10）', () => {
     render(<App />);
     expect(screen.getByText('PhotoTagManager')).toBeTruthy();
-    render(<AboutDialog open onClose={() => undefined} />);
+    render(<AboutUpdatePane />);
     expect(screen.getByText(`当前版本：${packageJson.version}`)).toBeTruthy();
     expect(screen.getByText('添加一个或多个图片根目录，起个名字方便管理')).toBeTruthy();
     expect(screen.getAllByText('添加根目录').length).toBeGreaterThanOrEqual(1);
@@ -197,17 +197,27 @@ function seedGallery(selectedDir = '截图'): void {
 }
 
 describe('批次2 G6 顶栏', () => {
-  it('检查更新与关于不在顶栏裸露，收进「更多操作」溢出菜单', () => {
+  it('检查更新与关于不在顶栏，收进设置的「关于与更新」分区', async () => {
     seedGallery();
     render(<AppLayout />);
-    expect(screen.queryByRole('button', { name: '检查更新' })).toBeNull();
-    expect(screen.queryByRole('button', { name: '关于照片标签管家' })).toBeNull();
-    expect(screen.getByRole('button', { name: '设置' })).toBeTruthy();
+    const header = screen.getByRole('banner');
+    expect(within(header).queryByRole('button', { name: '更多操作' })).toBeNull();
+    expect(within(header).queryByRole('button', { name: '检查更新' })).toBeNull();
+    expect(within(header).queryByRole('button', { name: /关于/ })).toBeNull();
+    expect(screen.queryByTestId('settings-about')).toBeNull();
 
-    fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
-    expect(screen.getByRole('menuitem', { name: '检查更新' })).toBeTruthy();
-    fireEvent.click(screen.getByRole('menuitem', { name: '关于照片标签管家' }));
-    expect(screen.getByText(`当前版本：${packageJson.version}`)).toBeTruthy();
+    fireEvent.click(within(header).getByRole('button', { name: '设置' }));
+    const dialog = screen.getByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('tab', { name: '关于与更新' }));
+    expect(within(dialog).getByText(`当前版本：${packageJson.version}`)).toBeTruthy();
+
+    const api = (window as unknown as { api: PhotoTagApi }).api;
+    const checksBefore = vi.mocked(api.checkUpdate).mock.calls.length;
+    fireEvent.click(within(dialog).getByRole('button', { name: '检查更新' }));
+    expect(vi.mocked(api.checkUpdate).mock.calls.length).toBe(checksBefore + 1);
+    // 状态展示交给更新对话框；设置同时收起，两个模态不叠加
+    expect(screen.getByText('尚未检查')).toBeTruthy();
+    await waitFor(() => expect(screen.queryByTestId('settings-about')).toBeNull());
   });
 
   it('批次4：顶栏不再放添加根目录与重新扫描，两个入口归到左栏树头', () => {

@@ -21,6 +21,7 @@ import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Typography from '@mui/material/Typography';
 import { sanitizeProxyRules } from '../../../shared/proxyRule';
+import { AboutUpdatePane } from './AboutUpdatePane';
 import { AiSettingsPane } from './AiSettingsPane';
 import { useAppStore } from '../../store/useAppStore';
 import { SHORTCUTS } from '../../utils/shortcuts';
@@ -206,12 +207,15 @@ function ShortcutPane(): JSX.Element {
 export function SettingsDialog({
   open,
   onClose,
-  initialTab
+  initialTab,
+  onCheckUpdate
 }: {
   open: boolean;
   onClose: () => void;
   /** 打开时停在哪个分区；全局 `?` 用它直接把对话框开到「快捷键」上 */
-  initialTab?: 'general' | 'ai' | 'shortcuts';
+  initialTab?: 'general' | 'ai' | 'shortcuts' | 'about';
+  /** 「关于与更新」分区里的手动检查入口，状态展示仍由 AppLayout 挂载的 UpdateDialog 负责 */
+  onCheckUpdate?: () => void;
 }): JSX.Element {
   const [tab, setTab] = useState<string>(initialTab ?? 'general');
 
@@ -227,10 +231,19 @@ export function SettingsDialog({
         <Tab value="general" label="常规" />
         <Tab value="ai" label="AI 处理" />
         <Tab value="shortcuts" label="快捷键" />
+        <Tab value="about" label="关于与更新" />
       </Tabs>
       {/* 批次1 之前只有两行说明，看起来像半成品；给最小高度让分区站得住 */}
       <DialogContent dividers sx={{ minHeight: 300 }}>
-        {tab === 'general' ? <GeneralPane /> : tab === 'shortcuts' ? <ShortcutPane /> : <AiSettingsPane />}
+        {tab === 'general' ? (
+          <GeneralPane />
+        ) : tab === 'ai' ? (
+          <AiSettingsPane />
+        ) : tab === 'shortcuts' ? (
+          <ShortcutPane />
+        ) : (
+          <AboutUpdatePane onCheckUpdate={onCheckUpdate} />
+        )}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>关闭</Button>
