@@ -90,7 +90,7 @@ npm run dev        # 启动应用（dev server 端口 51783）
   git tag v<version> && git push origin v<version>
   ```
 
-  **三个资产必须齐全**：`latest.yml` 是自动更新的清单入口，缺它装机版就查不到新版本；`exe` 是安装包本体，`.blockmap` 供差分下载。`npm run dist` 已固定带 `--publish never`，electron-builder 自己不会去建 Release。`package.json` 的 `build.publish` 仍保留 github 坐标——它同时是装机版 `resources/app-update.yml`（更新源）的唯一来源，改动前先跑一次 `npm run dist` 确认该文件还在。
+  **三个资产必须齐全**：`latest.yml` 是自动更新的清单入口，缺它装机版就查不到新版本；`exe` 是安装包本体，`.blockmap` 供差分下载。`npm run dist` 已固定带 `--publish never`，electron-builder 自己不会去建 Release。`package.json` 的 `build.publish` 仍保留 github 坐标——它同时是装机版 `resources/app-update.yml`（更新源）的唯一来源，改动前先跑一次 `npm run dist` 确认该文件还在。`npm run app:go` 用的是 `--win dir`，这个目标不写 `app-update.yml`，脚本第③.5 步会用 `scripts/write-app-update-yml.cjs` 按同一口径补写，所以从 `dist/win-unpacked` 跑的副本也能自查更新。
 
 - **更新渠道**：`electron-updater` 读取 GitHub Releases（`publish` 配置为 github 源），应用**启动时静默检查** + 顶栏「检查更新」**手动检查**；发现新版本后下载进度条展示，下载完成可一键重启安装。
 - **当前版本**：`0.1.5`（`package.json` 为准，v0.1.5 的 Release 已于 2026-09-29 发布），关于页显示中文产品名、GitHub 仓库和作者网站 `https://yangbang.de`，版本号从 `package.json` 自动同步。

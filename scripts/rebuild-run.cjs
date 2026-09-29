@@ -1,5 +1,5 @@
 /**
- * app:go —— 改完代码后一条龙：杀掉在跑的实例 → 构建 → 打包到 dist/win-unpacked → 自动启动。
+ * app:go —— 改完代码后一条龙：杀掉在跑的实例 → 构建 → 打包到 dist/win-unpacked → 补写更新源配置 → 自动启动。
  *
  * 为什么要脚本化，而不是分三条命令手敲：
  * 1) 顺序不能错。win-unpacked 里有文件被运行中的实例占用时，electron-builder 清空输出目录会报
@@ -52,6 +52,10 @@ run('npm run build', '构建 out/');
 
 // ③ 只解包不打安装器，产物落在 dist/win-unpacked
 run('npx electron-builder --win dir --publish never', '打包 dist/win-unpacked');
+
+// ③.5 补写更新源配置：dir 目标不写 app-update.yml（只有 nsis 目标写），
+// 缺了它这份副本点「检查更新」必报 ENOENT，而且点「重试」永远不会好。
+run('node scripts/write-app-update-yml.cjs', '补写 resources/app-update.yml');
 
 // ④ 启动；带调试端口时不等待，让调用方自己去连
 const launchArgs = CDP_PORT ? [`--remote-debugging-port=${CDP_PORT}`] : [];

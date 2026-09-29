@@ -413,6 +413,27 @@ sha512 与 `latest.yml` 声明一致（已实测比对）。
 把 `Ctrl+Shift+I` 开 devtools 的能力接回来。托盘右键菜单走 `setContextMenu`，不受影响。
 **需要用户眼验**：装机版按 Alt 应再无反应（原生菜单不是网页内容，测不到）。
 
+### U8 · win-unpacked 副本查更新报 ENOENT（2026-09-29 17:30）
+现象：把 `dist/win-unpacked` 拷到别处运行，点「检查更新」弹
+`更新失败：ENOENT: ... \resources\app-update.yml。可点「重试」再查一次`，重试永不成功（缺的是文件，不是网络）。
+
+根因：`app-update.yml` 只由 **nsis 目标**的 afterPack 写出（`app-builder-lib/out/publish/PublishManager.js`
+的 `isSuitableWindowsTarget` 只认 `nsis`/`nsis-*`，`appx` 需 `electronUpdaterAware`）。
+本批新增的 `npm run app:go`（`34f0602`，13:39）第③步是 `electron-builder --win dir --publish never`，
+`dir` 不是合适目标且会清空重建 `dist/win-unpacked`，把上午 10:03 `npm run dist` 生成的那份一并删掉；
+而 win-unpacked 里 `app.isPackaged === true`，`updaterService.check()` 的开发版短路不生效，
+electron-updater 走 `path.join(process.resourcesPath, "app-update.yml")`（`electron-updater/out/ElectronAppAdapter.js:23`）直接 ENOENT。
+**装机版不受影响**（`C:\Program Files\PhotoTagManager\resources\app-update.yml` 五行齐全，0.1.4→0.1.5 升级链已验）。
+
+修法：新增 `scripts/write-app-update-yml.cjs`，按上游同一口径生成正文（坐标取 `package.json` 的 `build.publish`，
+`updaterCacheDirName` 按 `sanitizeFileName(name).toLowerCase() + "-updater"` 推导，包名不合字符集就报错不猜），
+`app:go` 第③.5 步调用它补写；单独跑也行。**刻意不改 `updaterService.ts`**——那不是更新器的 bug。
+
+**验证**：新测试 `tests/appUpdateYml.test.ts` 5 条通过，其中一条拿本机装机版那份真产物做参照逐键比对
+（该目录不存在时自动 skip）；实测对现有 `dist/win-unpacked/resources` 跑一次，写出 122 字节文件；
+`typecheck` exit 0。**未跑的一腿**：没在真界面点「检查更新」复核（需杀掉正在跑的实例并弹窗口），
+判断依据是失败点就是一次 `readFile` + YAML 解析，而补出的文件与能正常更新的装机版解析结果逐键相同。
+
 **门槛**：`typecheck` 0 错；全量 **353 用例**通过（本批新增 15 条，含 4 条"不该发生"的反向用例）；
 `build` → `dist` exit 0，包 **121,411,555 字节**（15:58），图标告警 0 次。
 抽包内容断言 **7 条全 PASS**：主进程含 `setApplicationMenu(null)` / `photo-tag-manager` /
