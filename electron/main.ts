@@ -19,6 +19,7 @@ import { AiService, type MetadataGateway } from './ai/aiService';
 import { statfs, readFile } from 'fs/promises';
 import { readWholeGpuMemory } from './ai/gpuStats';
 import { readGpuCapability, activeFakeGpu } from './ai/gpuCapability';
+import { APP_ICON_TRAY_DATA_URL, APP_ICON_WINDOW_DATA_URL } from './appIcon';
 import type { InferenceRunner } from './ai/runner';
 
 electronLog.initialize();
@@ -91,10 +92,9 @@ function showMainWindow(): void {
 function createTray(): void {
   if (tray) return;
   // Windows 托盘对内联 SVG 的透明色/颜色解析不稳定，可能显示为黑色；
-  // 使用内嵌 RGBA PNG，避免依赖外部文件且在浅色/深色主题下都保持可见。
-  const trayIcon = nativeImage.createFromDataURL(
-    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAQ0lEQVR42mNgGAWDCfi7Pf1PDzzqgFEHEO0AaoFRB1DNAcTG8agDRh0w6oBRBwxfB4zWBXR3wGiLaNQBdHfAKBgIAAAYy6QiwpOj4wAAAABJRU5ErkJggg=='
-  );
+  // 所以用 npm run icon 从品牌 SVG 预先渲染好的 RGBA PNG（与 build/icon.ico 同源），
+  // 既不依赖外部文件，也不会再出现"托盘一张图、主界面另一张图"。
+  const trayIcon = nativeImage.createFromDataURL(APP_ICON_TRAY_DATA_URL);
   tray = new Tray(trayIcon);
   tray.setToolTip('PhotoTagManager');
   tray.setContextMenu(
@@ -156,6 +156,12 @@ function createWindow(): void {
     minHeight: 620,
     show: false,
     title: 'PhotoTagManager',
+    /**
+     * 不传 icon 时 Windows 取的是"当前可执行文件"的图标：装出来的包有 build/icon.ico，
+     * 而 npm run dev / npx electron . 跑的是 electron.exe，任务栏就成了 Electron 默认蓝图标。
+     * 显式传一张与那张 ICO 同源的品牌 PNG，开发态和安装包就是同一张图。
+     */
+    icon: nativeImage.createFromDataURL(APP_ICON_WINDOW_DATA_URL),
     backgroundColor: '#f8fafc',
     /**
      * 原生标题栏由 Windows 的 DWM 绘制，浅色模式下涂的是近灰白，开了「透明效果」还会带上桌面的
