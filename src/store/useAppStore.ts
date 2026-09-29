@@ -73,12 +73,21 @@ interface AppState {
   scanDoneToast: boolean;
   /** 模型下载与检查更新用的代理，形如 127.0.0.1:7890；空 = 不覆盖，跟随系统默认 */
   proxyRules: string;
+  /** 左栏目录树是否收起（落盘，重启保留用户上次的选择） */
+  treeCollapsed: boolean;
+  /**
+   * 是否在树里显示已隐藏目录。只是本次会话的查看开关，故意不落盘——
+   * 落盘会让下次启动时隐藏目录"莫名其妙又出现了"。
+   */
+  showHidden: boolean;
   setNameQuery(query: string): void;
   /** 同一个键再点一次 = 翻转方向；换键 = 该键的默认方向 asc */
   setSort(key: SortKey): void;
   setThumbSize(size: ThumbSize): void;
   setScanDoneToast(on: boolean): void;
   setProxyRules(rules: string): void;
+  toggleTreeCollapsed(): void;
+  toggleShowHidden(): void;
   loadUiPrefs(): Promise<void>;
   tagCache: Map<string, string[]>;
   tagCounts: Map<string, number>;
@@ -220,6 +229,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   thumbSize: DEFAULT_UI_PREFS.thumbSize,
   scanDoneToast: DEFAULT_UI_PREFS.scanDoneToast,
   proxyRules: DEFAULT_UI_PREFS.proxyRules,
+  treeCollapsed: DEFAULT_UI_PREFS.treeCollapsed,
+  showHidden: false,
 
   setNameQuery: (nameQuery) => set({ nameQuery }),
 
@@ -245,6 +256,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     persistPrefs({ proxyRules });
   },
 
+  toggleTreeCollapsed: () => {
+    const treeCollapsed = !get().treeCollapsed;
+    set({ treeCollapsed });
+    persistPrefs({ treeCollapsed });
+  },
+
+  toggleShowHidden: () => set((s) => ({ showHidden: !s.showHidden })),
+
   loadUiPrefs: async () => {
     try {
       const prefs = await call(getApi().getPrefs());
@@ -254,7 +273,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         sortDir: prefs.sortDir,
         thumbSize: prefs.thumbSize,
         scanDoneToast: prefs.scanDoneToast,
-        proxyRules: prefs.proxyRules
+        proxyRules: prefs.proxyRules,
+        treeCollapsed: prefs.treeCollapsed
       });
     } catch {
       // 读不到偏好就用默认值，不能因此卡住启动

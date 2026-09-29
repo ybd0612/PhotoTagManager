@@ -236,6 +236,7 @@ export function registerIpc(deps: IpcDeps): void {
       sortDir: SORT_DIRS.includes(p.sortDir as SortDir) ? (p.sortDir as SortDir) : base.sortDir,
       thumbSize: THUMB_SIZES.includes(p.thumbSize as ThumbSize) ? (p.thumbSize as ThumbSize) : base.thumbSize,
       scanDoneToast: typeof p.scanDoneToast === 'boolean' ? p.scanDoneToast : base.scanDoneToast,
+      treeCollapsed: typeof p.treeCollapsed === 'boolean' ? p.treeCollapsed : base.treeCollapsed,
       proxyRules: proxy.ok ? proxy.value : base.proxyRules
     };
     let all: Record<string, unknown> = {};

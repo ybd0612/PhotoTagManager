@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
-import { Box, Chip, Divider, IconButton, ListItemText, Menu, MenuItem, Stack, Tooltip, Typography } from '@mui/material';
+import { Box, Chip, Divider, IconButton, Menu, MenuItem, Stack, Tooltip, Typography } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
-import CheckIcon from '@mui/icons-material/Check';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import DriveFileRenameOutlineIcon from '@mui/icons-material/DriveFileRenameOutline';
@@ -10,7 +9,6 @@ import FolderIcon from '@mui/icons-material/Folder';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import { call, getApi } from '../api';
 import { rootKey, useAppStore } from '../store/useAppStore';
@@ -30,6 +28,8 @@ export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.E
   const roots = useAppStore((s) => s.roots);
   const treesByRoot = useAppStore((s) => s.treesByRoot);
   const hiddenSet = useAppStore((s) => s.hiddenSet);
+  /** 是否在树里显示已隐藏目录：开关在顶栏的 HiddenFoldersButton，这里只读 */
+  const showHidden = useAppStore((s) => s.showHidden);
   const imagesByDir = useAppStore((s) => s.imagesByDir);
   const selectedRootId = useAppStore((s) => s.selectedRootId);
   const selectedDir = useAppStore((s) => s.selectedDir);
@@ -41,9 +41,7 @@ export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.E
   const setSnackbar = useAppStore((s) => s.setSnackbar);
 
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const [showHidden, setShowHidden] = useState(false);
   const [menu, setMenu] = useState<{ rootId: string; relPath: string; isRoot: boolean; mouseX: number; mouseY: number } | null>(null);
-  const [hiddenAnchor, setHiddenAnchor] = useState<null | HTMLElement>(null);
 
   const rootById = useMemo(() => new Map(roots.map((root) => [root.id, root])), [roots]);
 
@@ -67,20 +65,6 @@ export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.E
         showHidden
       }),
     [roots, treesByRoot, hiddenSet, rootDirectCounts, expanded, selectedRootId, selectedDir, showHidden]
-  );
-  /** 跨根的隐藏目录清单，标签带根别名前缀免得分不清属于哪个根 */
-  const hiddenEntries = useMemo(
-    () =>
-      [...hiddenSet]
-        .map((key) => {
-          const splitAt = key.indexOf('\u0000');
-          const rootId = key.slice(0, splitAt);
-          const relPath = key.slice(splitAt + 1);
-          return { rootId, relPath, label: `${rootById.get(rootId)?.alias ?? rootId} / ${relPath}` };
-        })
-        .filter((entry) => entry.relPath !== '')
-        .sort((a, b) => a.label.localeCompare(b.label, 'zh-Hans-CN')),
-    [hiddenSet, rootById]
   );
 
   const toggleExpand = (key: string): void => {
@@ -157,22 +141,6 @@ export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.E
           图库 · {roots.length} 个根目录
         </Typography>
         <Stack direction="row" alignItems="center" spacing={0.25}>
-          <Tooltip
-            title={
-              hiddenEntries.length === 0
-                ? '没有已隐藏目录'
-                : `已隐藏 ${hiddenEntries.length} 个目录${showHidden ? '（已在树中显示）' : ''}，点击管理`
-            }
-          >
-            <IconButton
-              size="small"
-              color={showHidden ? 'primary' : 'default'}
-              aria-label={`已隐藏 ${hiddenEntries.length} 个目录，点击管理`}
-              onClick={(e) => setHiddenAnchor(e.currentTarget)}
-            >
-              {showHidden ? <VisibilityIcon fontSize="small" /> : <VisibilityOffIcon fontSize="small" />}
-            </IconButton>
-          </Tooltip>
           <Tooltip title="添加根目录">
             <IconButton size="small" aria-label="添加根目录" onClick={() => void rootActions.addRoot()}>
               <AddIcon fontSize="small" />
@@ -210,33 +178,6 @@ export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.E
           />
         ))}
       </Box>
-      {/* 隐藏集管理：一个图标进、一个菜单出（显示开关 + 逐项恢复） */}
-      <Menu
-        anchorEl={hiddenAnchor}
-        open={Boolean(hiddenAnchor)}
-        onClose={() => setHiddenAnchor(null)}
-        PaperProps={{ sx: { maxHeight: 360, width: 300 } }}
-      >
-        <MenuItem onClick={() => setShowHidden((v) => !v)}>
-          <ListItemText primary="在树中显示已隐藏目录" />
-          {showHidden && <CheckIcon fontSize="small" />}
-        </MenuItem>
-        <Divider />
-        {hiddenEntries.length === 0 && <MenuItem disabled>暂无已隐藏目录</MenuItem>}
-        {hiddenEntries.map((entry) => (
-          <MenuItem
-            key={entry.label}
-            onClick={() => {
-              setHiddenAnchor(null);
-              void handleUnhide(entry.rootId, entry.relPath);
-            }}
-          >
-            <ListItemText primary={entry.label} />
-            <Chip size="small" label="恢复" color="primary" />
-          </MenuItem>
-        ))}
-      </Menu>
-
       <Menu
         open={menu !== null}
         onClose={() => setMenu(null)}

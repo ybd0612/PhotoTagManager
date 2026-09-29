@@ -75,4 +75,24 @@ describe('U6 原生菜单不许回来', () => {
   });
 });
 
+/**
+ * 新增偏好字段时最容易漏的一步：electron/ipc.ts 的 prefs:set 是**逐字段白名单**，
+ * 没写进去的字段每次落盘都被丢掉，表现是"这个开关重启就恢复默认"，且没有任何报错。
+ */
+describe('UiPrefs 落盘白名单不许漏字段', () => {
+  it('shared/types.ts 里每个 UiPrefs 字段都要出现在 prefs:set 的 next 对象里', () => {
+    const types = read(join('shared', 'types.ts'));
+    const body = types.match(/export interface UiPrefs \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    const fields = [...body.matchAll(/^\s{2}(\w+)\??:/gm)].map((m) => m[1]);
+    expect(fields.length).toBeGreaterThan(0); // 一个都没匹配到就是这条检查在空转
+
+    const ipc = read(join('electron', 'ipc.ts'));
+    const whitelist = ipc.match(/const next: UiPrefs = \{([\s\S]*?)\n\s*\};/)?.[1] ?? '';
+    expect(whitelist).not.toBe(''); // 白名单写法变了，这条检查得跟着改，不许静默空转
+    for (const f of fields) {
+      expect(whitelist, `prefs:set 白名单漏了 ${f}，这个偏好永远存不进 ui.json`).toContain(`${f}:`);
+    }
+  });
+});
+
 void sep;

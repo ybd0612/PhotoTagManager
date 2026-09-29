@@ -22,6 +22,7 @@ import MoreVertIcon from '@mui/icons-material/MoreVert';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
 import SettingsIcon from '@mui/icons-material/Settings';
+import ViewSidebarIcon from '@mui/icons-material/ViewSidebar';
 import { call, getApi } from '../api';
 import { useAppStore } from '../store/useAppStore';
 import { cancelScan, rescan } from '../hooks/useScan';
@@ -30,6 +31,7 @@ import { collectDirAndDescendants } from '../utils/folders';
 import { countImagesInDirs } from '../utils/treeRows';
 import { scanProgressPercent, scanStatusLabel } from '../utils/scanStatus';
 import { FolderTree } from './FolderTree';
+import { HiddenFoldersButton } from './HiddenFoldersButton';
 import { TagFilterBar } from './TagFilterBar';
 import { ThumbnailGrid } from './ThumbnailGrid';
 import { PreviewOverlay } from './PreviewOverlay';
@@ -54,6 +56,8 @@ export function AppLayout(): JSX.Element {
   const selectedImages = useAppStore((s) => s.selectedImages);
   const snackbar = useAppStore((s) => s.snackbar);
   const setSnackbar = useAppStore((s) => s.setSnackbar);
+  const treeCollapsed = useAppStore((s) => s.treeCollapsed);
+  const toggleTreeCollapsed = useAppStore((s) => s.toggleTreeCollapsed);
 
   const { actions: rootActions, dialogs: rootDialogs } = useRootActions();
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
@@ -127,11 +131,17 @@ export function AppLayout(): JSX.Element {
   }, []);
 
   /**
-   * 全局 `?` 唤出快捷键列表（批次3 G11）。
-   * 输入框里打问号是正常输入（文件名里就有 `?`），所以先挡掉可编辑目标再响应。
+   * 全局键位：`?` 唤出快捷键列表（批次3 G11）、`Ctrl + B` 收起/展开左栏。
+   * 输入框里打问号是正常输入（文件名里就有 `?`），所以先挡掉可编辑目标再响应；
+   * Ctrl+B 不产生文本，输入框里按也照样切换。
    */
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
+      if (e.ctrlKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        toggleTreeCollapsed();
+        return;
+      }
       if (e.key !== '?') return;
       const el = e.target as HTMLElement | null;
       if (
@@ -145,7 +155,7 @@ export function AppLayout(): JSX.Element {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [toggleTreeCollapsed]);
 
   /** 手动检查更新：先打开对话框展示状态，再触发检查 */
   const handleCheckUpdate = useCallback(async (): Promise<void> => {
@@ -167,6 +177,15 @@ export function AppLayout(): JSX.Element {
         className="ptm-titlebar flex h-14 shrink-0 items-center justify-between rounded-none border-b border-slate-200 pl-4"
       >
         <Stack direction="row" spacing={1.5} alignItems="center" className="min-w-0">
+          {/* 侧栏开关与隐藏集入口：左栏收起后这两个必须还在，否则目录管理没有出口 */}
+          {hasRoot && (
+            <Tooltip title={treeCollapsed ? '展开目录树（Ctrl + B）' : '收起目录树（Ctrl + B）'}>
+              <IconButton size="small" aria-label={treeCollapsed ? '展开侧栏' : '折叠侧栏'} onClick={toggleTreeCollapsed} className="shrink-0">
+                <ViewSidebarIcon />
+              </IconButton>
+            </Tooltip>
+          )}
+          {hasRoot && <HiddenFoldersButton />}
           <PhotoLibraryIcon color="primary" className="shrink-0" />
           <Typography variant="h6" sx={{ fontWeight: 700 }} className="shrink-0">
             <Box component="span">
@@ -229,7 +248,11 @@ export function AppLayout(): JSX.Element {
         <EmptyState onPick={() => void rootActions.addRoot()} />
       ) : (
         <Box className="flex min-h-0 flex-1">
-          <Paper className="flex w-[280px] shrink-0 flex-col overflow-hidden rounded-none border-r border-slate-200">
+          {/* 收起=内联 display:none 而非卸载：FolderTree 的展开态要活过一次折叠 */}
+          <Paper
+            className="flex w-[280px] shrink-0 flex-col overflow-hidden rounded-none border-r border-slate-200"
+            style={{ display: treeCollapsed ? 'none' : undefined }}
+          >
             <FolderTree rootActions={rootActions} />
           </Paper>
 

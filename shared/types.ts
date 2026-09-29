@@ -256,15 +256,21 @@ export interface UiPrefs {
    * 只影响这两件事——照片始终不出本机，本应用没有任何上传照片的请求。
    */
   proxyRules: string;
+  /**
+   * 左侧目录树是否收起。收起后网格多出约 280px（约一列缩略图），
+   * 当前目录仍由顶栏面包屑显示，所以不会失去定位。默认展开。
+   */
+  treeCollapsed: boolean;
 }
 
-/** 默认与既有行为一致：按相对路径升序、最小档缩略图 */
+/** 默认与既有行为一致：按相对路径升序、最小档缩略图、左栏展开 */
 export const DEFAULT_UI_PREFS: UiPrefs = {
   sortKey: 'name',
   sortDir: 'asc',
   thumbSize: 'small',
   scanDoneToast: false,
-  proxyRules: ''
+  proxyRules: '',
+  treeCollapsed: false
 };
 
 /** 移到回收站的结果：逐条给失败原因，部分失败不允许静默 */

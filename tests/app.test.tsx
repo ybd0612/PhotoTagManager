@@ -5,6 +5,8 @@ import App from '../src/App';
 import { AppLayout } from '../src/components/AppLayout';
 import { AboutDialog } from '../src/components/AboutDialog';
 import { rootKey, useAppStore } from '../src/store/useAppStore';
+import { SHORTCUTS } from '../src/utils/shortcuts';
+import { DEFAULT_UI_PREFS } from '../shared/types';
 import packageJson from '../package.json';
 import type { FolderNode, ImageFile, PhotoTagApi, ScanStats } from '../shared/types';
 
@@ -58,8 +60,8 @@ function createMockApi(): PhotoTagApi {
     openExternal: vi.fn(async () => ({ ok: true as const, data: undefined })),
     revealFileInExplorer: vi.fn(async () => ({ ok: true as const, data: undefined })),
     trashFiles: vi.fn(async () => ({ ok: true as const, data: { trashed: [] as string[], failed: [] } })),
-    getPrefs: vi.fn(async () => ({ ok: true as const, data: { sortKey: "name" as const, sortDir: "asc" as const, thumbSize: "small" as const, scanDoneToast: false, proxyRules: "" } })),
-    setPrefs: vi.fn(async () => ({ ok: true as const, data: { sortKey: "name" as const, sortDir: "asc" as const, thumbSize: "small" as const, scanDoneToast: false, proxyRules: "" } })),
+    getPrefs: vi.fn(async () => ({ ok: true as const, data: { sortKey: "name" as const, sortDir: "asc" as const, thumbSize: "small" as const, scanDoneToast: false, proxyRules: "", treeCollapsed: false } })),
+    setPrefs: vi.fn(async () => ({ ok: true as const, data: { sortKey: "name" as const, sortDir: "asc" as const, thumbSize: "small" as const, scanDoneToast: false, proxyRules: "", treeCollapsed: false } })),
     copyFileToClipboard: vi.fn(async () => ({ ok: true as const, data: undefined })),
     readImageTags: vi.fn(async () => ({
       ok: true as const,
@@ -122,7 +124,9 @@ beforeEach(() => {
     tagCache: new Map(),
     tagCounts: new Map(),
     preview: null,
-    snackbar: null
+    snackbar: null,
+    treeCollapsed: false,
+    showHidden: false
   });
 });
 
@@ -243,5 +247,75 @@ describe('批次2 G7 状态栏', () => {
     render(<AppLayout />);
     expect(screen.getByText('当前目录：截图 · 2 张图片')).toBeTruthy();
     expect(screen.getByText(/共 3 张/)).toBeTruthy();
+  });
+});
+
+/**
+ * 左栏折叠：顶栏开关 + Ctrl+B + 状态落盘。
+ * 收起时整棵树的 Paper 用内联 display:none 摘掉（不是卸载），这样 FolderTree 里的
+ * 展开态不丢；内联样式让 jsdom 的 getComputedStyle 能识别，role 查询才会真的查不到。
+ */
+describe('左栏折叠与展开', () => {
+  const queryTree = (): HTMLElement | null => screen.queryByRole('tree', { name: '图库目录树' });
+  const setPrefsMock = (): ReturnType<typeof vi.fn> =>
+    (window as unknown as { api: { setPrefs: ReturnType<typeof vi.fn> } }).api.setPrefs;
+
+  it('顶栏「折叠侧栏」一点收起目录树，再点展开', () => {
+    seedGallery();
+    render(<AppLayout />);
+    expect(queryTree()).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: '折叠侧栏' }));
+    expect(queryTree()).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: '展开侧栏' }));
+    expect(queryTree()).toBeTruthy();
+  });
+
+  it('折叠状态写进偏好：收起发 treeCollapsed:true，展开发 false', () => {
+    seedGallery();
+    render(<AppLayout />);
+    const setPrefs = setPrefsMock();
+
+    fireEvent.click(screen.getByRole('button', { name: '折叠侧栏' }));
+    expect(setPrefs).toHaveBeenCalledWith(expect.objectContaining({ treeCollapsed: true }));
+
+    fireEvent.click(screen.getByRole('button', { name: '展开侧栏' }));
+    expect(setPrefs).toHaveBeenCalledWith(expect.objectContaining({ treeCollapsed: false }));
+  });
+
+  it('Ctrl + B 在全局切换折叠', () => {
+    seedGallery();
+    render(<AppLayout />);
+    fireEvent.keyDown(window, { key: 'b', ctrlKey: true });
+    expect(queryTree()).toBeNull();
+    fireEvent.keyDown(window, { key: 'b', ctrlKey: true });
+    expect(queryTree()).toBeTruthy();
+  });
+
+  it('收起左栏后隐藏集管理仍能从顶栏打开，入口不随左栏消失', () => {
+    seedGallery();
+    render(<AppLayout />);
+    fireEvent.click(screen.getByRole('button', { name: '折叠侧栏' }));
+    fireEvent.click(screen.getByRole('button', { name: /已隐藏 0 个目录，点击管理/ }));
+    expect(screen.getByRole('menuitem', { name: /在树中显示已隐藏目录/ })).toBeTruthy();
+  });
+
+  it('隐藏集入口全应用只有一处，折叠不该让它变成两份', () => {
+    seedGallery();
+    render(<AppLayout />);
+    expect(screen.getAllByRole('button', { name: /已隐藏 \d+ 个目录，点击管理/ })).toHaveLength(1);
+  });
+
+  it('快捷键表列出 Ctrl + B（表里只许有已实现的键位）', () => {
+    expect(SHORTCUTS.some((s) => s.keys === 'Ctrl + B')).toBe(true);
+  });
+
+  it('启动时从偏好读回折叠状态，跨重启保留', async () => {
+    (window as unknown as { api: { getPrefs: ReturnType<typeof vi.fn> } }).api.getPrefs = vi.fn(
+      async () => ({ ok: true as const, data: { ...DEFAULT_UI_PREFS, treeCollapsed: true } })
+    );
+    await useAppStore.getState().loadUiPrefs();
+    expect(useAppStore.getState().treeCollapsed).toBe(true);
   });
 });
