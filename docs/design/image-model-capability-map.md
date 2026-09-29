@@ -256,15 +256,27 @@ L3  真跑一次 DirectML 推理当能力探测
 
 本文件不产出结论，只产出候选。任何一行要变成用户能点的按钮，必须走完：
 
-> **⚠ 待补步骤：许可与可再分发核查（2026-09-29 登记，**尚未执行**）**
+> **⚠ 待补步骤：许可与可再分发核查（2026-09-29 登记）**
 >
-> 用户裁定：M3 的模型还没定，这一条**等定了模型再补**，所以本轮**没有**把它加进 §1 判据表。
+> 用户裁定：M3 的模型还没定，判据表里**没有**为许可新增条目。但**已在分发的模型必须单独查**，所以本轮先查了 u2netp。
 >
-> 两条必须留痕的事实：
-> 1. **本文件目前一条 license 都没有核实过**（全文 `licen / 许可 / 商用 / 版权 / 署名` 零命中）。谁引用本文件，都不能把"许可没问题"当成已验证结论。
-> 2. **这项风险不完全取决于以后选什么模型**：`v0.1.5` 已发布、仓库公开，软件此刻正在引导用户下载 **u2netp**。所以"查清 u2netp 的许可"这件事**与模型调研无关，可以单独先做**。
+> **✅ u2netp 已查（2026-09-29，链条如下）**
 >
-> 要补的内容（届时）：每条模型记 **SPDX 标识 + 能否商用再分发**两个字段，与 `sha256` 同级作为准入证据；宽松（MIT/Apache/BSD）才可进安装包，Apache/BSD 还需在软件里保留版权声明；**非商用/仅研究用途**要单独判断能否引导下载；**条款不明或无 LICENSE 文件一律不列**（与"超分源不可信就不承诺"同一处理）。⚠ 注意**代码许可 ≠ 权重许可**，只看仓库根目录 LICENSE 会得出错误结论。
+> - **一手来源是干净的**：原始官方仓库 `xuebinqin/U-2-Net`（作者 Xuebin Qin 等，CVPR 2020）**有 LICENSE 文件，类型 Apache License 2.0**——直接查看仓库文件清单确认。Apache-2.0 允许商用与再分发。
+> - **二手环节不干净**：本软件正在引导用户下载的 `BritishWerewolf/U-2-Netp`，README 元数据自称 `apache-2.0`，但**仓库内没有 LICENSE 文件**（`siblings` 只有 `.gitattributes` / `README.md` / `config.json` / `onnx/model.onnx` / `preprocessor_config.json`），系个人账号 2025-03 所建。**那是二手声称，不是一手授权。**
+> - **同链条上更谨慎的一方**（rembg 是最广泛分发 `u2net.onnx` 的项目，其 issue #837 原文）：上游确为 `xuebinqin/U-2-Net` / Apache-2.0；但"**It does not cover the model files**"、"**I am not the rightsholder for those, so I cannot grant or confirm rights to them**"、"**I do not have a conversion record for that file**"，并建议"**If you need a verifiable chain of provenance, convert from the upstream checkpoint yourself**"；另明确指出离线交付时把模型打进包或引导下载属于"**redistributing them yourself**"。
+> - **还有一处解释空间**：原仓库 README 对 `u2netp.pth` 只给 GoogleDrive / 百度网盘链接，**未单独声明权重许可**；仓库根的 Apache-2.0 是否延伸到托管在仓库外的权重文件，存在解释空间——这正是 rembg 维护者不敢替作者确认的原因。
+>
+> **结论**：许可**类型**大概率可用（Apache-2.0，可商用），缺的是**来源链**——目前依赖一个个人镜像，且无法证明那份 ONNX 是作者权重的忠实转换。风险落在"来源与再分发"，不在"能不能商用"。
+>
+> **待办三项（按性价比排序，均未执行）**：
+> 1. 软件内放 **Apache-2.0 全文 + 上游归属声明**（原作者与论文）。这是 Apache 第 4 条对再分发的硬性要求；本项目当前完全没有第三方许可清单。
+> 2. **换成一手来源**：按上面那句建议，自己从 `xuebinqin/U-2-Net` 的 `u2netp.pth` 转导出 ONNX，让 sha256 与来源链都归本项目所有，不再依赖个人镜像。
+> 3. 清单里为每条模型加 **`license` + `provenance`** 两个字段，与 `sha256` 同级作为准入证据；**条款不明或无 LICENSE 文件一律不列**（与"超分源不可信就不承诺"同一处理）。⚠ **代码许可 ≠ 权重许可**，只看仓库根 LICENSE 会得出错误结论。
+>
+> **其余模型（BiRefNet / CLIP / SAM / GFPGAN / Depth Anything / Real-ESRGAN）一条都还没查**——引用本节时不要把"u2netp 查过了"读成"许可都查过了"。
+>
+> **边界声明**：本节是工程与来源核查，**不是法律意见**。上面第 2 条那个解释空间无法靠我们自己消除；要绝对稳妥需找法务确认。
 
 1. **定价值**：这个能力在产品里有明确入口吗？（对照 `docs/PRD.md`，没有就先补需求条目，不要先下模型）
 2. **验存在**：在 `hf-mirror` **和** `ModelScope` 上用 `?blobs=true` 查 `siblings.size`，确认体积合理、不是 LFS 指针。**两个源都要查**——ModelScope 按 HF 原名镜像但只覆盖热门仓库，u2netp 和 GFPGAN 在它上面都是 404。
