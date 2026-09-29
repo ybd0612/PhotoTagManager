@@ -5,7 +5,8 @@
 /* 全局主题变量（§7 样式分工：Tailwind 管布局间距，MUI 管交互组件与主题） */
 :root {
   --ptm-header-height: 56px;
-  --ptm-tree-width: 260px;
+  --ptm-tree-width: 280px;
+  --ptm-tree-collapse-ms: 180ms;
   --ptm-statusbar-height: 28px;
   /* 右上角最小化/最大化/关闭三个按钮由系统覆盖层绘制，宽度不受本文件控制，只能靠留白避让 */
   --ptm-wco-width: 138px;
@@ -68,4 +69,47 @@ body {
 .ptm-titlebar button,
 .ptm-titlebar [role='button'] {
   -webkit-app-region: no-drag;
+}
+
+/*
+ * 左栏目录树折叠。外层只管裁剪与动画，宽度取自 --ptm-tree-width，
+ * 用 width 过渡而不是 display:none 硬切——后者不可动画，280px 瞬间消失，
+ * 看到的就是"跳一下"，也就是被当成卡顿的那个观感。
+ *
+ * visibility 要延后一整个动画周期才置 hidden：width:0 + overflow:hidden
+ * 并不会把子节点移出 Tab 焦点与读屏范围，收起后树必须真的不可达；
+ * 展开时则反过来立刻可见，否则宽度已经走完了树还没画出来。
+ */
+.ptm-tree-pane {
+  width: var(--ptm-tree-width);
+  flex-shrink: 0;
+  overflow: hidden;
+  visibility: visible;
+  transition:
+    width var(--ptm-tree-collapse-ms) cubic-bezier(0.2, 0, 0, 1),
+    visibility 0s linear 0s;
+}
+
+.ptm-tree-pane--collapsed {
+  width: 0;
+  visibility: hidden;
+  transition:
+    width var(--ptm-tree-collapse-ms) cubic-bezier(0.2, 0, 0, 1),
+    visibility 0s linear var(--ptm-tree-collapse-ms);
+}
+
+/*
+ * 内层定宽是这条动画的性能前提：树里几十行文字若跟着外层一起变窄，
+ * 每一帧都要重新换行与测量，动画本身就成了卡顿的来源。
+ */
+.ptm-tree-inner {
+  width: var(--ptm-tree-width);
+}
+
+/* 系统层面关掉动画时退回原来的瞬时切换，同时保留折叠后不可达的语义 */
+@media (prefers-reduced-motion: reduce) {
+  .ptm-tree-pane,
+  .ptm-tree-pane--collapsed {
+    transition: none;
+  }
 }

@@ -244,13 +244,17 @@ export function AppLayout(): JSX.Element {
         <EmptyState onPick={() => void rootActions.addRoot()} />
       ) : (
         <Box className="flex min-h-0 flex-1">
-          {/* 收起=内联 display:none 而非卸载：FolderTree 的展开态要活过一次折叠 */}
-          <Paper
-            className="flex w-[280px] shrink-0 flex-col overflow-hidden rounded-none border-r border-slate-200"
-            style={{ display: treeCollapsed ? 'none' : undefined }}
-          >
-            <FolderTree rootActions={rootActions} />
-          </Paper>
+          {/*
+            折叠改成宽度过渡（样式见 styles/index.css 的 .ptm-tree-pane），不再用 display:none 硬切。
+            必须分两层：外层只负责裁剪与动画，内层 .ptm-tree-inner 定宽——否则树里几十行文字
+            每帧都要重新换行测量，动画本身就成了卡顿的来源。宽度只在 CSS 变量里声明一次。
+            FolderTree 始终挂载，展开态要活过一次折叠。
+          */}
+          <div className={treeCollapsed ? 'ptm-tree-pane ptm-tree-pane--collapsed' : 'ptm-tree-pane'}>
+            <Paper className="ptm-tree-inner flex h-full flex-col overflow-hidden rounded-none border-r border-slate-200">
+              <FolderTree rootActions={rootActions} />
+            </Paper>
+          </div>
 
           <Box className="flex min-w-0 flex-1 flex-col">
             <Paper className="flex shrink-0 items-center gap-2 rounded-none border-b border-slate-100 px-3 py-1" elevation={0}>
