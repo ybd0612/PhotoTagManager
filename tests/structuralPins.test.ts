@@ -115,6 +115,17 @@ describe('窗口控件自绘，原生覆盖层不许回来', () => {
     expect(code, 'titleBarStyle 同理会带出系统覆盖层').not.toMatch(/titleBarStyle\s*:/);
   });
 
+  it('顶栏让位的宽度就是控件的宽度（齿轮被压在关闭按钮底下的回归）', () => {
+    const css = read(join('src', 'styles', 'index.css'));
+    const pad = css.match(/\.ptm-titlebar\s*\{[^}]*padding-right:\s*([^;]+);/)?.[1] ?? '';
+    expect(pad, '读不到顶栏的 padding-right，这条断言在空转').not.toBe('');
+    expect(pad, '顶栏必须按控件整条宽度让位，不能退回固定值').toContain('--ptm-wc-width');
+    expect(
+      css,
+      '控件宽度必须来自同一个变量，否则让位宽度和实际宽度各漂各的'
+    ).toMatch(/\.ptm-window-controls button\s*\{[^}]*width:\s*var\(--ptm-wc-btn-width\)/);
+  });
+
   it('z-index 顺序：MUI 模态 < 窗口控件 < 预览覆盖层', () => {
     const css = read(join('src', 'styles', 'index.css'));
     const controls = Number(css.match(/\.ptm-window-controls\s*\{[\s\S]*?z-index:\s*(\d+)/)?.[1]);

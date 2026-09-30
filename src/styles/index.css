@@ -8,6 +8,9 @@
   --ptm-tree-width: 280px;
   --ptm-tree-collapse-ms: 180ms;
   --ptm-statusbar-height: 28px;
+  /* 自绘窗口控件：单颗 46px，三颗的合计宽度由它派生，顶栏按这个宽度让位 */
+  --ptm-wc-btn-width: 46px;
+  --ptm-wc-width: calc(var(--ptm-wc-btn-width) * 3);
   color-scheme: light;
 }
 
@@ -57,10 +60,12 @@ body {
 /*
  * 顶栏兼作窗口标题栏（主进程 frame:false，整条边框由网页自己画）：
  * 整条可拖动窗口，双击拖拽区由 Electron 的默认行为切换最大化/还原。
+ * 右侧必须让出 .ptm-window-controls 的整条宽度——它是 fixed 贴在右上角的，
+ * 不让位的话顶栏最右的「设置」齿轮会被压在关闭按钮底下（真机实测踩过一次）。
  */
 .ptm-titlebar {
   -webkit-app-region: drag;
-  padding-right: 1rem;
+  padding-right: calc(1rem + var(--ptm-wc-width));
 }
 
 /* 拖拽区会吞掉落在它上面的鼠标事件，顶栏里的可点控件必须显式排除 */
@@ -89,7 +94,7 @@ body {
 }
 
 .ptm-window-controls button {
-  width: 46px;
+  width: var(--ptm-wc-btn-width);
   display: grid;
   place-items: center;
   border: 0;

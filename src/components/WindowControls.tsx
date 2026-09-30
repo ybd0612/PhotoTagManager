@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import CloseIcon from '@mui/icons-material/Close';
-import CropSquareIcon from '@mui/icons-material/CropSquare';
+import CheckBoxOutlineBlankIcon from '@mui/icons-material/CheckBoxOutlineBlank';
 import FilterNoneIcon from '@mui/icons-material/FilterNone';
 import RemoveIcon from '@mui/icons-material/Remove';
 import { call, getApi } from '../api';
@@ -44,7 +44,7 @@ export function WindowControls(): JSX.Element {
         title={maximized ? '还原' : '最大化'}
         onClick={() => fire(getApi().windowToggleMaximize())}
       >
-        {maximized ? <FilterNoneIcon fontSize="small" /> : <CropSquareIcon fontSize="small" />}
+        {maximized ? <FilterNoneIcon fontSize="small" /> : <CheckBoxOutlineBlankIcon fontSize="small" />}
       </button>
       <button
         type="button"
