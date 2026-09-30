@@ -14,10 +14,17 @@ import type { CaptionTheme } from '../shared/types';
  */
 export const CAPTION_OVERLAY_HEIGHT = 56;
 
-/** 两套底色各自取自它所贴合的那块界面：light 是 MUI Paper 顶栏的纯白，dark 是 PreviewOverlay 的 rgb(2,6,23)。 */
+/**
+ * 两套底色各自取自它所贴合的那块界面：light 是 MUI Paper 顶栏的纯白，dark 是 PreviewOverlay 的 rgb(2,6,23)。
+ *
+ * dark 下图标与底色同色，等于让这三个按钮"看起来不存在"——全屏预览自己有「关闭预览」和 Esc，
+ * 最大化/最小化在遮罩层上也没有可操作的对象。Windows 侧没有把它们摘掉的 API
+ * （win.setWindowButtonVisibility 在 typings 里标的是 @platform darwin，只对 macOS 红绿灯生效），
+ * 只能这么藏。残留：鼠标悬停到那一片时，系统自绘的 hover 高亮会浮出淡淡的方块。
+ */
 const PALETTE: Record<CaptionTheme, { color: string; symbolColor: string }> = {
   light: { color: '#ffffff', symbolColor: '#0f172a' },
-  dark: { color: '#020617', symbolColor: '#ffffff' }
+  dark: { color: '#020617', symbolColor: '#020617' }
 };
 
 export function captionOverlay(theme: CaptionTheme): {

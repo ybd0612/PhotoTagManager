@@ -281,7 +281,8 @@ export interface TrashResult {
 
 /**
  * 右上角三个窗口控件由系统覆盖层绘制，底色只能由主进程整块指定，不能透明、也不能被网页盖住。
- * light = 与主界面白色顶栏同色；dark = 与全屏预览的近黑顶栏同色。
+ * light = 与主界面白色顶栏同色；dark = 与全屏预览的近黑顶栏同色，且图标同色等于视觉上藏掉
+ * （Windows 没有把它们摘掉的 API，见 electron/captionTheme.ts）。
  */
 export type CaptionTheme = 'light' | 'dark';
 
