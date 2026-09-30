@@ -18,9 +18,46 @@ import { ChildRunner, makeUtilityProcessSpawner } from './ai/runner';
 import { AiService, type MetadataGateway } from './ai/aiService';
 import { statfs, readFile } from 'fs/promises';
 import { readWholeGpuMemory } from './ai/gpuStats';
+import { spawn } from 'child_process';
+
 import { readGpuCapability, activeFakeGpu } from './ai/gpuCapability';
 import { APP_ICON_TRAY_DATA_URL, APP_ICON_WINDOW_DATA_URL } from './appIcon';
 import type { InferenceRunner } from './ai/runner';
+
+/**
+ * 把 Win11 给窗口画的圆角改成直角（用户要看直角效果；开关式，改一行即可回退）。
+ *
+ * 为什么不是 Electron 选项：`roundedCorners` 在本地 electron.d.ts 里标的是
+ * `@platform darwin`，Windows 侧根本不读它。
+ * 为什么不是 `thickFrame: false`：那条路确实能出直角，但会连带丢掉边缘拖拽缩放、
+ * 双击标题栏最大化、Aero Snap 和窗口阴影——这几样是 frame:false 下唯一还靠系统给的东西。
+ * 所以走系统正路：`DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE(33), DWMWCP_DONOTROUND(1))`。
+ * 用一条后台 PowerShell 的 P/Invoke 调它，是为了不为此引入 ffi/koffi 这类原生依赖。
+ *
+ * 命令里唯一插进去的值是我们自己从窗口句柄读出的整数，不含任何外部输入，没有注入面。
+ * 任何一步失败（PowerShell 被策略挡住、句柄拿不到）就保持系统默认圆角，不打扰用户也不报错。
+ */
+const SQUARE_WINDOW_CORNERS = true;
+
+function applySquareCorners(win: BrowserWindow | null): void {
+  if (!SQUARE_WINDOW_CORNERS || !win || process.platform !== 'win32') return;
+  try {
+    const hwnd = win.getNativeWindowHandle().readBigUInt64LE(0).toString();
+    const script = [
+      'Add-Type -Namespace PtmWin -Name Dwm -MemberDefinition ' +
+        "'[System.Runtime.InteropServices.DllImport(\"dwmapi.dll\")] public static extern int DwmSetWindowAttribute(System.IntPtr hwnd, int attr, ref int value, int size);'",
+      `$h=[IntPtr]${hwnd}`,
+      '$v=1',
+      '[PtmWin.Dwm]::DwmSetWindowAttribute($h,33,[ref]$v,4) | Out-Null'
+    ].join('; ');
+    spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', script], {
+      windowsHide: true,
+      stdio: 'ignore'
+    }).on('error', () => undefined);
+  } catch {
+    // 拿不到句柄就维持原样
+  }
+}
 
 electronLog.initialize();
 
@@ -198,6 +235,7 @@ function createWindow(): void {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow?.show();
+    applySquareCorners(mainWindow);
   });
 
   mainWindow.on('close', (event) => {
