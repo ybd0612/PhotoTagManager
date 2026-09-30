@@ -408,7 +408,11 @@ function BatchTagBar({ selectedIds }: BatchTagBarProps): JSX.Element {
   };
 
   return (
-    <Paper className="flex shrink-0 items-center gap-2 rounded-none border-b border-slate-200 px-3 py-1.5" data-testid="batch-tag-bar">
+    <Paper
+      className="flex shrink-0 items-center gap-2 rounded-none border-b border-slate-200 px-3 py-1.5"
+      sx={{ bgcolor: 'var(--ptm-chrome-bg)' }}
+      data-testid="batch-tag-bar"
+    >
       <TextField
         size="small"
         placeholder="输入标签，回车批量添加"

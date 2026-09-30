@@ -11,7 +11,27 @@
   /* 自绘窗口控件：单颗 46px，三颗的合计宽度由它派生，顶栏按这个宽度让位 */
   --ptm-wc-btn-width: 46px;
   --ptm-wc-width: calc(var(--ptm-wc-btn-width) * 3);
+  /*
+   * 工具带底色（顶栏 / 筛选栏 / 左栏 / 状态栏）：统一比画布暗一档，
+   * 区域靠色调分开，四条 border-slate-200 只做同色区块之间的收尾细分。
+   */
+  --ptm-chrome-bg: #f1f5f9;
   color-scheme: light;
+}
+
+/*
+ * 补回 preflight 的边框复位。tailwind.config.js 里 preflight:false（避开与 MUI CssBaseline 抢全局复位），
+ * 连带把这一条也关掉了，而它是 Tailwind 边框工具类能生效的前提：
+ * .border-b 只写 border-bottom-width:1px，CSS 规定 border-style 为 none 时实用宽度恒为 0，
+ * 所以本应用的分界线（顶栏下沿 / 筛选栏下沿 / 左栏右缘 / 状态栏上沿）此前一条都没渲染出来。
+ * border-width:0 必须与 border-style:solid 同写——只补样式的话，initial 的 medium（约 3px）
+ * 会让每个只带 border-color 的元素凭空长出边框。* 的特异性为 0，MUI 自己的类规则照样压得过它。
+ */
+*,
+::before,
+::after {
+  border-width: 0;
+  border-style: solid;
 }
 
 html,

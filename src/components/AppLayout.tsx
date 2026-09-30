@@ -27,6 +27,7 @@ import { useRootActions } from '../hooks/useRootActions';
 import { collectDirAndDescendants } from '../utils/folders';
 import { countImagesInDirs } from '../utils/treeRows';
 import { scanProgressPercent, scanStatusLabel } from '../utils/scanStatus';
+import { BrandLogo } from './BrandLogo';
 import { FolderTree } from './FolderTree';
 import { TagFilterBar } from './TagFilterBar';
 import { ThumbnailGrid } from './ThumbnailGrid';
@@ -204,14 +205,16 @@ export function AppLayout(): JSX.Element {
     update.status.state === 'downloaded';
   const updateNoticeAction = updatePrimaryAction(update.status);
   return (
-    <Box className="flex h-full flex-col bg-slate-50">
+    <Box className="flex h-full flex-col bg-white">
       {/* 顶部工具栏：同时是窗口标题栏（拖拽区与右侧控件避让见 index.css 的 .ptm-titlebar） */}
       <Paper
         component="header"
         className="ptm-titlebar flex h-14 shrink-0 items-center justify-between rounded-none border-b border-slate-200 pl-4"
+        sx={{ bgcolor: 'var(--ptm-chrome-bg)' }}
       >
         <Stack direction="row" spacing={1.5} alignItems="center" className="min-w-0">
-          <PhotoLibraryIcon color="primary" className="shrink-0" />
+          {/* 品牌位：与任务栏/托盘/安装包同源的那张图，不用 MUI 通用图标 */}
+          <BrandLogo />
           <Typography variant="h6" sx={{ fontWeight: 700 }} className="shrink-0">
             <Box component="span">
               图片管家
@@ -260,7 +263,10 @@ export function AppLayout(): JSX.Element {
             className={treeCollapsed ? 'ptm-tree-pane ptm-tree-pane--collapsed' : 'ptm-tree-pane'}
             aria-hidden={treeCollapsed || undefined}
           >
-            <Paper className="ptm-tree-inner flex h-full flex-col overflow-hidden rounded-none border-r border-slate-200">
+            <Paper
+              className="ptm-tree-inner flex h-full flex-col overflow-hidden rounded-none border-r border-slate-200"
+              sx={{ bgcolor: 'var(--ptm-chrome-bg)' }}
+            >
               <FolderTree rootActions={rootActions} />
             </Paper>
           </div>
@@ -306,7 +312,10 @@ export function AppLayout(): JSX.Element {
       )}
 
       {/* 底部状态栏：当前目录（名称 + 可复制的绝对路径）与浏览统计在左，扫描状态只播一次（G7） */}
-      <Paper className="flex h-7 shrink-0 items-center justify-between rounded-none border-t border-slate-200 px-3">
+      <Paper
+        className="flex h-7 shrink-0 items-center justify-between rounded-none border-t border-slate-200 px-3"
+        sx={{ bgcolor: 'var(--ptm-chrome-bg)' }}
+      >
         <Stack direction="row" spacing={1} alignItems="center" className="min-w-0">
           {selectedDirAbs && (
             <>

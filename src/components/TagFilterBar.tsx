@@ -88,7 +88,10 @@ export function TagFilterBar(): JSX.Element {
   const hasContext = selectedRootId !== null && selectedDir !== null;
 
   return (
-    <Paper className="shrink-0 rounded-none border-b border-slate-200 px-3 py-2">
+    <Paper
+      className="shrink-0 rounded-none border-b border-slate-200 px-3 py-2"
+      sx={{ bgcolor: 'var(--ptm-chrome-bg)' }}
+    >
       {/* 找图工具行：搜索 + 排序 + 标签筛选 + 缩略图档位（三档偏好持久化到 settings.json）。
           标签筛选原本独占一行，右侧大片留白；并进这一行后靠右的缩略图仍钉在行尾。
           整行 flex-wrap：窗口窄（左栏展开时约 1000px）或选中标签多，会自动折回两行。 */}
