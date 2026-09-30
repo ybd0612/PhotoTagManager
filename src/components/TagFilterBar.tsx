@@ -89,8 +89,9 @@ export function TagFilterBar(): JSX.Element {
 
   return (
     <Paper
-      className="shrink-0 rounded-none border-b border-hairline bg-chrome px-3 py-2"
-      sx={{ bgcolor: 'var(--ptm-chrome-bg)' }}
+      className="shrink-0 border-b border-hairline bg-chrome px-3 py-2"
+      // 与上下板块相接，四角必须是直的；写在 sx 里才压得住 MUI Paper 的默认圆角
+      sx={{ bgcolor: 'var(--ptm-chrome-bg)', borderRadius: 0 }}
     >
       {/* 找图工具行：搜索 + 排序 + 标签筛选 + 缩略图档位（三档偏好持久化到 settings.json）。
           标签筛选原本独占一行，右侧大片留白；并进这一行后靠右的缩略图仍钉在行尾。

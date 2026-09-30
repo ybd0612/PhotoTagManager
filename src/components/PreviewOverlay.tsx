@@ -429,7 +429,7 @@ export function PreviewOverlay(): JSX.Element | null {
               bgcolor: overlay.chip,
               px: 1,
               py: 0.25,
-              borderRadius: 1
+              borderRadius: tokens.radius.sm
             }}
           >
             {Math.round(zoom * 100)}% · 双击还原

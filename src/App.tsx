@@ -54,12 +54,15 @@ const theme = createTheme({
     MuiButton: {
       defaultProps: { disableElevation: true },
       styleOverrides: {
-        // 中文按钮全大写没有意义，以前是每个组件各写一遍 textTransform，现在收到主题里
-        root: { textTransform: 'none', fontWeight: 500, letterSpacing: '0.01em' }
+        // 中文按钮全大写没有意义，以前是每个组件各写一遍 textTransform，现在收到主题里。
+        // 按钮比容器小一档，显式给 sm 而不是吃 shape 的 md
+        root: { textTransform: 'none', fontWeight: 500, letterSpacing: '0.01em', borderRadius: radius.sm }
       }
     },
     MuiPaper: { defaultProps: { elevation: 0 } },
     MuiChip: { styleOverrides: { root: { borderRadius: radius.sm, fontWeight: 500 } } },
+    // 切换钮（排序、缩略图档位）是可点控件，跟按钮同档，不吃容器的 md
+    MuiToggleButton: { styleOverrides: { root: { borderRadius: radius.sm } } },
     MuiTooltip: {
       styleOverrides: {
         tooltip: { borderRadius: radius.sm, fontSize: font.caption, padding: `${tokens.space.s2}px ${tokens.space.s3}px`, backgroundColor: 'rgba(28, 32, 39, 0.94)', boxShadow: shadow.pop },

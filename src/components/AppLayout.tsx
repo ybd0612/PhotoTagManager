@@ -35,6 +35,7 @@ import { PreviewOverlay } from './PreviewOverlay';
 import { useUpdate } from '../hooks/useUpdate';
 import { updateActionLabel, updatePrimaryAction, updateStatusLabel } from '../utils/updateStatus';
 import { SettingsDialog } from './settings/SettingsDialog';
+import { tokens } from '../theme/tokens';
 
 /**
  * 折叠把手的唤出带与滞留带（相对分界线的横向距离，px）。
@@ -209,8 +210,9 @@ export function AppLayout(): JSX.Element {
       {/* 顶部工具栏：同时是窗口标题栏（拖拽区与右侧控件避让见 index.css 的 .ptm-titlebar） */}
       <Paper
         component="header"
-        className="ptm-titlebar flex h-14 shrink-0 items-center justify-between rounded-none border-b border-hairline bg-chrome pl-4"
-        sx={{ bgcolor: 'var(--ptm-chrome-bg)' }}
+        className="ptm-titlebar flex h-14 shrink-0 items-center justify-between border-b border-hairline bg-chrome pl-4"
+        // 通栏与上下板块相接，四角必须直；写在 sx 里才压得住 MUI Paper 的默认圆角
+        sx={{ bgcolor: 'var(--ptm-chrome-bg)', borderRadius: 0 }}
       >
         <Stack direction="row" spacing={1.5} alignItems="center" className="min-w-0">
           {/* 品牌位：与任务栏/托盘/安装包同源的那张图，不用 MUI 通用图标 */}
@@ -264,8 +266,9 @@ export function AppLayout(): JSX.Element {
             aria-hidden={treeCollapsed || undefined}
           >
             <Paper
-              className="ptm-tree-inner flex h-full flex-col overflow-hidden rounded-none border-r border-hairline bg-chrome"
-              sx={{ bgcolor: 'var(--ptm-chrome-bg)' }}
+              className="ptm-tree-inner flex h-full flex-col overflow-hidden border-r border-hairline bg-chrome"
+              // 通栏与上下板块相接，四角必须直；写在 sx 里才压得住 MUI Paper 的默认圆角
+        sx={{ bgcolor: 'var(--ptm-chrome-bg)', borderRadius: 0 }}
             >
               <FolderTree rootActions={rootActions} />
             </Paper>
@@ -313,8 +316,9 @@ export function AppLayout(): JSX.Element {
 
       {/* 底部状态栏：当前目录（名称 + 可复制的绝对路径）与浏览统计在左，扫描状态只播一次（G7） */}
       <Paper
-        className="flex h-7 shrink-0 items-center justify-between rounded-none border-t border-hairline bg-chrome px-3"
-        sx={{ bgcolor: 'var(--ptm-chrome-bg)' }}
+        className="flex h-7 shrink-0 items-center justify-between border-t border-hairline bg-chrome px-3"
+        // 通栏与上下板块相接，四角必须直；写在 sx 里才压得住 MUI Paper 的默认圆角
+        sx={{ bgcolor: 'var(--ptm-chrome-bg)', borderRadius: 0 }}
       >
         <Stack direction="row" spacing={1} alignItems="center" className="min-w-0">
           {selectedDirAbs && (
@@ -338,7 +342,7 @@ export function AppLayout(): JSX.Element {
                     maxWidth: 460,
                     px: 0.75,
                     py: 0,
-                    borderRadius: 0.5,
+                    borderRadius: tokens.radius.sm,
                     color: 'text.secondary',
                     '&:hover': { bgcolor: 'action.hover', color: 'text.primary' }
                   }}

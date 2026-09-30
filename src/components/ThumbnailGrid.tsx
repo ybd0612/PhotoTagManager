@@ -424,8 +424,9 @@ function BatchTagBar({ selectedIds }: BatchTagBarProps): JSX.Element {
 
   return (
     <Paper
-      className="flex shrink-0 items-center gap-2 rounded-none border-b border-hairline bg-chrome px-3 py-2"
-      sx={{ bgcolor: 'var(--ptm-chrome-bg)' }}
+      className="flex shrink-0 items-center gap-2 border-b border-hairline bg-chrome px-3 py-2"
+      // 多选条通栏压在网格上沿，属板块接缝：四角写死直角
+      sx={{ bgcolor: 'var(--ptm-chrome-bg)', borderRadius: 0 }}
       data-testid="batch-tag-bar"
     >
       <TextField
