@@ -295,7 +295,7 @@ describe('AiActionSplitButton —— 组合按钮', () => {
     expect(screen.getByRole('button', { name: /取消/ })).toBeTruthy();
   });
 
-  it('③ 下拉可纯键盘操作：打开即落在当前行、方向键换行、回车执行该行主动作', async () => {
+  it('③ 下拉可纯键盘操作：打开即落在选中行、方向键换行、回车选中该行', async () => {
     seedCatalog({
       ...baseCap,
       models: [
@@ -306,7 +306,7 @@ describe('AiActionSplitButton —— 组合按钮', () => {
     render(<AiActionSplitButton absPath="C:/photos/a.jpg" />);
     fireEvent.click(screen.getByRole('button', { name: /选择模型/ }));
     const menu = screen.getByRole('menu');
-    const items = within(menu).getAllByRole('menuitem');
+    const items = within(menu).getAllByRole('menuitemradio');
     expect(items).toHaveLength(2);
     // 只让当前行可被 Tab 落到，其余靠方向键换行
     expect(items[0].getAttribute('tabindex')).toBe('0');
@@ -319,9 +319,12 @@ describe('AiActionSplitButton —— 组合按钮', () => {
     fireEvent.keyDown(menu, { key: 'ArrowUp' });
     await waitFor(() => expect(document.activeElement).toBe(items[0]));
 
-    // 已下载未加载 → 主动作是删除；不静默什么都不做
+    // 回车 = 选中当前行（与鼠标点整行同义），执行的是 set-default 而不是行内主动作
+    fireEvent.keyDown(menu, { key: 'ArrowDown' });
+    await waitFor(() => expect(document.activeElement).toBe(items[1]));
     fireEvent.keyDown(menu, { key: 'Enter' });
-    expect(api.aiModelDelete).toHaveBeenCalledWith('u2netp');
+    expect(api.aiModelSetDefault).toHaveBeenCalledWith('portrait-cutout', 'birefnet');
+    expect(api.aiModelDelete).not.toHaveBeenCalled();
   });
 
   it('每行只有一个主动作：未加载的行不给「卸载」（点了只会拿到"该模型未加载，无需卸载"）', () => {
@@ -334,7 +337,7 @@ describe('AiActionSplitButton —— 组合按钮', () => {
     });
     render(<AiActionSplitButton absPath="C:/photos/a.jpg" />);
     fireEvent.click(screen.getByRole('button', { name: /选择模型/ }));
-    const items = within(screen.getByRole('menu')).getAllByRole('menuitem');
+    const items = within(screen.getByRole('menu')).getAllByRole('menuitemradio');
     // 状态与动作必须自洽：写"已加载"的给卸载，写"已下载"的给删除
     expect(items[0].textContent).toContain('已加载');
     expect(within(items[0]).getByRole('button', { name: '卸载' })).toBeTruthy();
@@ -347,7 +350,7 @@ describe('AiActionSplitButton —— 组合按钮', () => {
     expect(chipOf(items[1])).not.toContain('MuiChip-colorSuccess');
   });
 
-  it('默认模型由复选框表达：行内不再重复写「默认」，勾未默认那行发 set-default', () => {
+  it('整行即选项：点未选中那行就换默认，行内不再有复选框', () => {
     seedCatalog({
       ...baseCap,
       models: [
@@ -357,14 +360,21 @@ describe('AiActionSplitButton —— 组合按钮', () => {
     });
     render(<AiActionSplitButton absPath="C:/photos/a.jpg" />);
     fireEvent.click(screen.getByRole('button', { name: /选择模型/ }));
-    const items = within(screen.getByRole('menu')).getAllByRole('menuitem');
-    const boxes = screen.getAllByRole('checkbox', { name: /设为默认/ });
-    expect((boxes[0] as HTMLInputElement).checked).toBe(true);
-    expect((boxes[1] as HTMLInputElement).checked).toBe(false);
-    // 同一事实只说一次：默认与否只看复选框，行内不再挂「· 默认」后缀
+    const menu = screen.getByRole('menu');
+    const items = within(menu).getAllByRole('menuitemradio');
+    // 可见控件撤掉了，单选语义必须还在（读屏软件要能说出哪行是当前模型）
+    expect(items[0].getAttribute('aria-checked')).toBe('true');
+    expect(items[1].getAttribute('aria-checked')).toBe('false');
+    // 菜单里不该再有任何复选框（CPU 那颗在 ul 之外，不在本判据范围内）
+    expect(within(menu).queryAllByRole('checkbox')).toHaveLength(0);
     expect(items[0].textContent).not.toContain('· 默认');
-    fireEvent.click(boxes[1]);
+
+    fireEvent.click(items[1]);
     expect(api.aiModelSetDefault).toHaveBeenCalledWith('portrait-cutout', 'modnet');
+    // 点已选中的那行不动作：没有"无默认模型"这个状态
+    api.aiModelSetDefault.mockClear();
+    fireEvent.click(items[0]);
+    expect(api.aiModelSetDefault).not.toHaveBeenCalled();
   });
 
   it('下拉打开时焦点落在默认模型那一行（高亮与焦点不能分家）', async () => {
@@ -377,16 +387,34 @@ describe('AiActionSplitButton —— 组合按钮', () => {
     });
     render(<AiActionSplitButton absPath="C:/photos/a.jpg" />);
     fireEvent.click(screen.getByRole('button', { name: /选择模型/ }));
-    const items = within(screen.getByRole('menu')).getAllByRole('menuitem');
+    const items = within(screen.getByRole('menu')).getAllByRole('menuitemradio');
     await waitFor(() => expect(document.activeElement).toBe(items[1]));
   });
 
-  it('③ 未下载的模型，回车执行的是下载', () => {
+  it('③ 未下载的模型：行内「下载」按钮执行下载', () => {
     seedCatalog(capWith({}, { status: 'absent' }));
     render(<AiActionSplitButton absPath="C:/photos/a.jpg" />);
     fireEvent.click(screen.getByRole('button', { name: /选择模型/ }));
-    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Enter' });
+    fireEvent.click(screen.getByRole('button', { name: '下载' }));
     expect(api.aiModelDownload).toHaveBeenCalledWith('u2netp');
+  });
+
+  it('点行内动作按钮不能顺手换默认（动作与选中是两件事）', () => {
+    seedCatalog({
+      ...baseCap,
+      models: [
+        baseCap.models[0],
+        { ...baseCap.models[0], id: 'modnet', displayName: 'MODNet', isDefault: false }
+      ]
+    });
+    render(<AiActionSplitButton absPath="C:/photos/a.jpg" />);
+    fireEvent.click(screen.getByRole('button', { name: /选择模型/ }));
+    const btn = within(screen.getByRole('menu')).getAllByRole('menuitemradio')[1].querySelector('button') as HTMLButtonElement;
+    // 键盘可达：没被 tabindex=-1 摘出 Tab 序列（整行改成"点即选中"后，主动作只剩这条路）
+    expect(btn.getAttribute('tabindex')).not.toBe('-1');
+    fireEvent.click(btn);
+    expect(api.aiModelDelete).toHaveBeenCalledWith('modnet');
+    expect(api.aiModelSetDefault).not.toHaveBeenCalled();
   });
 
   it('③ Escape 关闭下拉并把焦点还给触发按钮', () => {
@@ -414,7 +442,7 @@ describe('AiActionSplitButton —— 组合按钮', () => {
     expect(overlay.contains(menu)).toBe(false);
     expect(container.contains(menu)).toBe(false);
     // 模型行的可见文字也不能继承到白色
-    const row = within(menu).getAllByRole('menuitem')[0];
+    const row = within(menu).getAllByRole('menuitemradio')[0];
     expect(overlay.contains(row)).toBe(false);
     expect(row.textContent).toContain('U²-Netp');
   });

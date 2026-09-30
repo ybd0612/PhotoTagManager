@@ -27,8 +27,9 @@ import type { AiCapabilityView, AiModelView } from '../../shared/types';
  *   进行中改用背景填充表达进度（D17）。
  * - **hover 不承载动作**：下拉只由点击或键盘（Enter/Space）打开，
  *   悬停出来的入口对键盘与触屏用户不可达。
- * - **下拉可纯键盘操作**：Tab 进入、↑↓ 换行、Enter 执行该行动作、Esc 关闭
- *   并把焦点还给触发按钮。
+ * - **下拉可纯键盘操作**：Tab 进入、↑↓ 换行、Enter/Space 选中该行（与点整行同义）、
+ *   Esc 关闭并把焦点还给触发按钮。行内的下载/卸载/删除按钮 Tab 一步可达，
+ *   到达后回车执行它。
  *
  * 下拉用自管的可导航列表而不是 MUI Menu：Menu 的按键语义在 jsdom 里测不准，
  * 而"必须可键盘导航"这条不能只靠肉眼验收。
@@ -247,10 +248,11 @@ function ModelMenu({
     return () => cancelAnimationFrame(raf);
   }, [active]);
 
-  const run = (index: number) => {
+  /** 整行即选项：点行、回车、空格都是"用这个模型"。已经是默认就不重发。 */
+  const select = (index: number) => {
     const model = models[index];
-    if (!model) return;
-    void modelAction(model.id, primaryActionOf(model).action).then(onClose);
+    if (!model || model.isDefault) return;
+    void modelAction(model.id, 'set-default');
   };
 
   const onKeyDown = (event: React.KeyboardEvent) => {
@@ -279,9 +281,9 @@ function ModelMenu({
       setActive(models.length - 1);
       return;
     }
-    if (event.key === 'Enter') {
+    if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
-      run(active);
+      select(active);
     }
   };
 
@@ -333,13 +335,15 @@ function ModelMenu({
             <Box
               component="li"
               key={model.id}
-              role="menuitem"
+              role="menuitemradio"
+              aria-checked={model.isDefault}
               ref={(el: HTMLLIElement | null) => {
                 itemRefs.current[index] = el;
               }}
               // 只让当前行可被 Tab 落到，其余靠方向键换行
               tabIndex={index === active ? 0 : -1}
               onFocus={() => setActive(index)}
+              onClick={() => select(index)}
               sx={{
                 px: 1,
                 py: 0.25,
@@ -348,12 +352,27 @@ function ModelMenu({
                 flexWrap: 'wrap',
                 alignItems: 'center',
                 gap: 0.75,
-                bgcolor: model.isDefault ? 'action.selected' : index === active ? 'action.hover' : 'transparent'
+                cursor: 'pointer',
+                // 选中行 = 主色底 + 左侧主色条；键盘焦点行 = 浅灰。两档必须看得出差别，
+                // 原来共用 action.selected 时"哪行是当前模型"根本读不出来
+                bgcolor: model.isDefault ? 'primary.50' : index === active ? 'action.hover' : 'transparent',
+                borderLeft: '3px solid',
+                borderLeftColor: model.isDefault ? 'primary.main' : 'transparent',
+                '&:hover': { bgcolor: model.isDefault ? 'primary.100' : 'action.hover' }
               }}
             >
-              <Typography variant="body2" noWrap sx={{ minWidth: 0, flex: 1, fontSize: '0.82rem' }}>
+              <Typography
+                variant="body2"
+                noWrap
+                sx={{
+                  minWidth: 0,
+                  flex: 1,
+                  fontSize: '0.82rem',
+                  ...(model.isDefault ? { color: 'primary.dark', fontWeight: 600 } : null)
+                }}
+              >
                 {model.displayName}
-                <Box component="span" sx={{ color: 'text.secondary', ml: 0.75 }}>
+                <Box component="span" sx={{ color: 'text.secondary', ml: 0.75, fontWeight: 400 }}>
                   {describeDownloadCost(model.sizeBytes).split('，')[0]}
                 </Box>
               </Typography>
@@ -369,27 +388,13 @@ function ModelMenu({
                 </Typography>
               ) : null}
               <Stack direction="row" spacing={0.5} alignItems="center">
-                {/* 默认是单选：勾别行即切换，点在已勾那行不动作——没有"无默认模型"这个状态。
-                    不关下拉，让用户亲眼看到高亮跟着换到新的那一行 */}
-                <FormControlLabel
-                  sx={{ mr: 0 }}
-                  control={
-                    <Checkbox
-                      size="small"
-                      data-testid={`model-is-default-${model.id}`}
-                      aria-label={`设为默认（${model.displayName}）`}
-                      checked={model.isDefault}
-                      onChange={() => {
-                        if (!model.isDefault) void modelAction(model.id, 'set-default');
-                      }}
-                      sx={{ p: 0.25, '& .MuiSvgIcon-root': { fontSize: 16 } }}
-                    />
-                  }
-                  label={<Typography variant="caption">默认</Typography>}
-                />
                 <Button
                   size="small"
-                  onClick={() => void modelAction(model.id, primary.action).then(onClose)}
+                  // 必须挡住冒泡：点「卸载」不该顺手把默认模型换成这一行
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void modelAction(model.id, primary.action).then(onClose);
+                  }}
                   data-testid={`model-action-${primary.label}`}
                   sx={{ textTransform: 'none', minWidth: 0, px: 0.75, fontSize: '0.78rem' }}
                 >
