@@ -20,7 +20,6 @@ import { statfs, readFile } from 'fs/promises';
 import { readWholeGpuMemory } from './ai/gpuStats';
 import { readGpuCapability, activeFakeGpu } from './ai/gpuCapability';
 import { APP_ICON_TRAY_DATA_URL, APP_ICON_WINDOW_DATA_URL } from './appIcon';
-import { captionOverlay } from './captionTheme';
 import type { InferenceRunner } from './ai/runner';
 
 electronLog.initialize();
@@ -165,15 +164,14 @@ function createWindow(): void {
     icon: nativeImage.createFromDataURL(APP_ICON_WINDOW_DATA_URL),
     backgroundColor: '#f8fafc',
     /**
-     * 原生标题栏由 Windows 的 DWM 绘制，浅色模式下涂的是近灰白，开了「透明效果」还会带上桌面的
-     * Mica 染色——这个颜色应用改不了，和界面顶栏的纯白之间必然留一条对不齐的缝。
-     * 改成 hidden 后整条标题栏交回网页自己画，只把右上角三个控件留作系统覆盖层，
-     * 覆盖层底色由 titleBarOverlay.color 指定，于是能和顶栏严格同色。
-     * 高度必须与顶栏的 h-14（56px）一致，否则三个控件会上下错位——两套配色和这个高度统一放在
-     * captionTheme.ts，全屏预览打开时由 window:set-caption-theme 换成深色那一套。
+     * 整条窗口边框交回网页自己画：顶栏本来就是自绘的，右上角三个控件原先留给了系统覆盖层
+     * （titleBarStyle: 'hidden' + titleBarOverlay），但那块由 DWM 画在网页之上——
+     * 全屏预览的遮罩盖不住它（右上角糊一块白），MUI 对话框也压不住它，
+     * 而 Windows 侧没有任何 API 能把它们隐藏（win.setWindowButtonVisibility 标的是 @platform darwin）。
+     * 改成 frame:false 自绘后它们就是一条普通内容：预览覆盖层一盖就没了，不需要任何切换逻辑。
+     * thickFrame 保持默认 true：阴影、Win11 圆角、边缘拖缩放和 Aero Snap 都靠它。
      */
-    titleBarStyle: 'hidden',
-    titleBarOverlay: captionOverlay('light'),
+    frame: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -205,6 +203,17 @@ function createWindow(): void {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
+  /**
+   * 自绘的最大化按钮要按当前状态换图标（最大化 ↔ 还原），所以状态一变就推给渲染层。
+   * 只推不拉不够：用户拖标题栏双击、Win+↑、点任务栏最大化都会绕过渲染层。
+   */
+  const pushMaximized = (): void => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    mainWindow.webContents.send('window:maximized-changed', mainWindow.isMaximized());
+  };
+  mainWindow.on('maximize', pushMaximized);
+  mainWindow.on('unmaximize', pushMaximized);
 
   // 自动更新状态推送到该窗口（窗口可能重建，故在 createWindow 内绑定）
   updater?.bind(mainWindow.webContents);

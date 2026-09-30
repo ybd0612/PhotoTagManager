@@ -219,19 +219,6 @@ export function PreviewOverlay(): JSX.Element | null {
     };
   }, [preview, closePreview, previewStep, compare, setHoldingOriginal]);
 
-  /**
-   * 右上角三个窗口控件由系统画在网页之上，预览这块近黑底压不住它，只能递回主进程整块换色。
-   * 依赖用布尔而不是 preview 对象：翻一张图 preview 就换一次引用，不该每张都重发一遍 IPC。
-   */
-  const previewOpen = !!preview;
-  useEffect(() => {
-    if (!previewOpen) return;
-    void getApi().setCaptionTheme('dark');
-    return () => {
-      void getApi().setCaptionTheme('light');
-    };
-  }, [previewOpen]);
-
   if (!preview) return null;
 
   const image = preview.image;
@@ -312,15 +299,15 @@ export function PreviewOverlay(): JSX.Element | null {
       aria-modal="true"
       aria-labelledby="preview-overlay-title"
       tabIndex={-1}
-      className="fixed inset-0 z-50 flex flex-col"
-      sx={{ bgcolor: 'rgb(2,6,23)', color: 'white' }}
+      className="fixed inset-0 flex flex-col"
+      sx={{ bgcolor: 'rgb(2,6,23)', color: 'white', zIndex: 1800 }} // 压过 .ptm-window-controls 的 1700：预览时那三个要消失
     >
       {/* 顶栏 */}
       <Stack
         direction="row"
         alignItems="center"
         spacing={1}
-        className="ptm-wco-inset h-14 shrink-0 pl-3"
+        className="h-14 shrink-0 px-3"
         sx={{ borderBottom: '1px solid rgba(255,255,255,0.12)' }}
       >
         <Tooltip title="上一张 (←)">

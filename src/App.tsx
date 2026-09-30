@@ -4,6 +4,7 @@ import { getApi } from './api';
 import { autoScanAllRoots, useScanSubscriptions } from './hooks/useScan';
 import { useAppStore } from './store/useAppStore';
 import { AppLayout } from './components/AppLayout';
+import { WindowControls } from './components/WindowControls';
 
 /** 现代化浅色主题（MUI 负责交互组件与主题，Tailwind 负责布局间距） */
 const theme = createTheme({
@@ -80,6 +81,8 @@ export default function App(): JSX.Element {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <AppLayout />
+      {/* 窗口级 chrome：不进三栏布局，挂在根上。z-index 见 index.css 的 .ptm-window-controls */}
+      <WindowControls />
     </ThemeProvider>
   );
 }

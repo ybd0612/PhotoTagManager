@@ -5,7 +5,6 @@ import type {
   AiGpuMemory,
   AiRunAck,
   AiRunRequest,
-  CaptionTheme,
   IpcResult,
   SortDir,
   SortKey,
@@ -18,7 +17,6 @@ import type {
 import { DEFAULT_UI_PREFS } from '../shared/types';
 import { isInsideRoot } from '../shared/pathGuard';
 import { settingsFile } from './ai/paths';
-import { applyCaptionTheme } from './captionTheme';
 import type { ScanService } from './services/scanService';
 import type { XmpService } from './services/xmpService';
 import type { ThumbnailService } from './services/thumbnailService';
@@ -259,11 +257,31 @@ export function registerIpc(deps: IpcDeps): void {
   });
 
   /**
-   * 右上角三个原生窗口控件的底色跟随最上层界面：主界面是纯白顶栏，全屏预览是近黑顶栏。
-   * 这块由 DWM 画在网页之上，渲染层既遮不住它也改不了它，只能把配色递回主进程整块换。
+   * 右上角三个按钮由渲染层自绘（系统那块画在网页之上，预览遮不住也藏不掉，见 main.ts 的 frame:false）。
+   * 这里只做动作转发，不判状态：close 特意走 win.close()，好让它经过主进程既有的
+   * "非退出即藏进托盘"逻辑，而不是渲染层自己 unmount 装作关掉了。
    */
-  handle('window:set-caption-theme', (theme: CaptionTheme): void => {
-    applyCaptionTheme(deps.getWindow(), theme === 'dark' ? 'dark' : 'light');
+  handle('window:minimize', (): void => {
+    const win = deps.getWindow();
+    if (win && !win.isDestroyed()) win.minimize();
+  });
+
+  handle('window:toggle-maximize', (): void => {
+    const win = deps.getWindow();
+    if (!win || win.isDestroyed()) throw new Error('主窗口不可用');
+    if (win.isMaximized()) win.unmaximize();
+    else win.maximize();
+  });
+
+  handle('window:close', (): void => {
+    const win = deps.getWindow();
+    if (!win || win.isDestroyed()) throw new Error('主窗口不可用');
+    win.close();
+  });
+
+  handle('window:is-maximized', (): boolean => {
+    const win = deps.getWindow();
+    return !!win && !win.isDestroyed() && win.isMaximized();
   });
 
   // 复制文件到剪贴板（FileNameW 格式，Windows 资源管理器可直接粘贴）
