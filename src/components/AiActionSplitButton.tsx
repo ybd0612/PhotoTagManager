@@ -18,7 +18,7 @@ import Typography from '@mui/material/Typography';
 import { describeDownloadCost, useAiStore } from '../store/useAiStore';
 import { downloadConsent } from '../utils/strings';
 import type { AiCapabilityView, AiModelView } from '../../shared/types';
-import { tokens } from '../theme/tokens';
+import { px, tokens } from '../theme/tokens';
 
 /**
  * 预览底栏的组合按钮（D13 / D17）：主按钮 + 右侧模型下拉。
@@ -138,7 +138,7 @@ function CapabilityButton({ cap, absPath, running }: { cap: AiCapabilityView; ab
         size="small"
         variant="contained"
         disableElevation
-        sx={{ borderRadius: tokens.radius.sm, '& .MuiButton-root': { textTransform: 'none', fontWeight: 600 } }}
+        sx={{ borderRadius: px(tokens.radius.sm), '& .MuiButton-root': { textTransform: 'none', fontWeight: 600 } }}
       >
         <Button
           onClick={() => requestRun(absPath, cap.id)}
@@ -326,7 +326,7 @@ function ModelMenu({
           color: 'text.primary',
           border: 1,
           borderColor: 'divider',
-          borderRadius: tokens.radius.sm,
+          borderRadius: px(tokens.radius.md),
           boxShadow: 3
         }
       }}

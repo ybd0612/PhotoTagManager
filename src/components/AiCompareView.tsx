@@ -8,7 +8,7 @@ import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Typography from '@mui/material/Typography';
 import { call, getApi, toFileUrl } from '../api';
 import { HOLD_TO_COMPARE } from '../utils/strings';
-import { overlay, tokens } from '../theme/tokens';
+import { overlay, px, tokens } from '../theme/tokens';
 import { useAiStore, type AiCompareMode } from '../store/useAiStore';
 import type { AiDonePayload, AiSaveResult } from '../../shared/types';
 
@@ -127,7 +127,7 @@ export function AiCompareStage({ absPath, alt, onError, viewStyle }: StageProps)
           bgcolor: overlay.chip,
           px: 1.25,
           py: 0.5,
-          borderRadius: tokens.radius.sm
+          borderRadius: px(tokens.radius.sm)
         }}
       >
         {HOLD_TO_COMPARE}

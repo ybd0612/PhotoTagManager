@@ -26,7 +26,7 @@ import { useAppStore } from '../store/useAppStore';
 import { useAiStore } from '../store/useAiStore';
 import { AiActionSplitButton } from './AiActionSplitButton';
 import { AiCompareActions, AiCompareStage, useCompareResult } from './AiCompareView';
-import { overlay, tokens } from '../theme/tokens';
+import { overlay, px, tokens } from '../theme/tokens';
 import type { ImageInfo } from '../../shared/types';
 
 /**
@@ -304,7 +304,11 @@ export function PreviewOverlay(): JSX.Element | null {
       // 留在 MUI 模态带上：预览里弹出的模型下拉、右键菜单、下载确认框都是 portal 挂 body、
       // 按这个带（1300）画的，覆盖层一旦抬到它之上就把自家浮层一起压住（2026-09-30 点三角没反应）。
       // 右上角窗口控件由 WindowControls 在预览开着时显式隐藏，不靠这里的层级压它。
-      sx={{ bgcolor: 'rgb(2,6,23)', color: 'white', zIndex: (theme) => theme.zIndex.modal }}
+      // no-drag 是必须的：主顶栏 .ptm-titlebar 把窗口顶部 0..44px 登记成了拖拽带，而**层级高不等于能命中**——
+      // 覆盖层不把自己减出去，落在带里的那排按钮（上一张 / 定位 / 复制 / 关闭）真实鼠标点击就会被当成
+      // "拖动窗口"吞掉（2026-09-30 实测：只有恰好压在顶栏「设置」那颗 no-drag 洞上的「下一张」侥幸能点）。
+      // 代价是预览开着时整窗不让拖，这符合全屏模态的惯例。
+      sx={{ bgcolor: 'rgb(2,6,23)', color: 'white', zIndex: (theme) => theme.zIndex.modal, WebkitAppRegion: 'no-drag' }}
     >
       {/* 顶栏 */}
       <Stack
@@ -432,7 +436,7 @@ export function PreviewOverlay(): JSX.Element | null {
               bgcolor: overlay.chip,
               px: 1,
               py: 0.25,
-              borderRadius: tokens.radius.sm
+              borderRadius: px(tokens.radius.sm)
             }}
           >
             {Math.round(zoom * 100)}% · 双击还原

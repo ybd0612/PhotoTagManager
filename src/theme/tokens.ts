@@ -116,6 +116,13 @@ const overlay = {
  */
 const radius = { sm: 8, md: 12, lg: 16, pill: 999 };
 
+/**
+ * 交给 MUI 的 sx 属性必须带单位：sx 里的裸数字是 theme.shape.borderRadius 的**倍率**，不是像素。
+ * 本项目基准是 12，所以 borderRadius: 8 实测算成 96px——模型下拉那版"角太圆"就是这么来的。
+ * 只有 styleOverrides 里的数字才是普通 CSS 数值（走 emotion 直接成 px），那一边不用套这个函数。
+ */
+export const px = (n: number): string => `${n}px`;
+
 /** 8pt 刻度：间距只允许这六档，杜绝 py-1 这种随手值 */
 const space = { s1: 4, s2: 8, s3: 12, s4: 16, s5: 24, s6: 32 };
 

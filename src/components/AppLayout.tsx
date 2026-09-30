@@ -34,7 +34,7 @@ import { PreviewOverlay } from './PreviewOverlay';
 import { useUpdate } from '../hooks/useUpdate';
 import { updateActionLabel, updatePrimaryAction, updateStatusLabel } from '../utils/updateStatus';
 import { SettingsDialog } from './settings/SettingsDialog';
-import { tokens } from '../theme/tokens';
+import { px, tokens } from '../theme/tokens';
 
 /**
  * 折叠把手的唤出带与滞留带（相对分界线的横向距离，px）。
@@ -340,7 +340,7 @@ export function AppLayout(): JSX.Element {
                     maxWidth: 460,
                     px: 0.75,
                     py: 0,
-                    borderRadius: tokens.radius.sm,
+                    borderRadius: px(tokens.radius.sm),
                     color: 'text.secondary',
                     '&:hover': { bgcolor: 'action.hover', color: 'text.primary' }
                   }}
