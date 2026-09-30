@@ -72,7 +72,7 @@
 | ① 查询方式与日期 | ✅ 2026-09-29，HF API `?blobs=true` 取 `siblings`；一手仓 GitHub 文件清单；rembg issue #837 原文 |
 | ② 文件清单原文 | ✅ §2 证据项 2 已列出镜像仓的 5 个文件，可直接看出无 LICENSE 项 |
 | ③ 标识出处 | ✅ 镜像仓 README 自称 `apache-2.0`，且**如实指回一手作者并说明"为与原模型一致"**（§2 已引原文） |
-| ④ 许可全文留存 | ❌ **未做**。`LICENSES/third-party/u2netp.txt` 不存在；一手仓 `xuebinqin/U-2-Net` 的 Apache-2.0 全文尚未抓取留存 → 见 §7 待办 |
+| ④ 许可全文留存 | ✅ **已做（2026-09-30）**。一手仓 `xuebinqin/U-2-Net` 的 `master:LICENSE` 全文 11,357 字节逐字留存为 `LICENSES/third-party/u2netp.apache-2.0.txt`（SHA-256 `c71d239d…e9c8c6`，与 MODNet 那份上游 LICENSE 逐字节相同）；取源 URL、日期与归属声明见 `LICENSES/third-party/README.md`，模型分节的披露见仓库根 `NOTICE`。留存文件名按 `<model>.<spdx>.txt` 命名（规范模板写的 `<model>.txt`，加 SPDX 是为了让"标识与正文对不对得上"可判定）。 |
 
 ## 3. 能力边界（别对用户说过头）
 
@@ -125,9 +125,9 @@
 
 | # | 项 | 阻塞什么 |
 |---|---|---|
-| 1 | 留存上游 Apache-2.0 全文到 `LICENSES/third-party/u2netp.txt`（§3.1.1 第 ④ 件，与 MODNet 同一批动作） | 不阻塞使用；不做则"许可已结案"缺最后一件留存物 |
+| 1 | ~~留存上游 Apache-2.0 全文~~ ✅ **已完成 2026-09-30**（§3.1.1 第 ④ 件，与 MODNet 同一批） | 无。留存物是 `LICENSES/third-party/u2netp.apache-2.0.txt`，由 `tests/modelLicense.test.ts` 守着 |
 | 2 | **结 P1：DirectML 到底选哪块卡**（`../design/gpu-self-probe.md` 第 0 步） | 阻塞 §4 全部耗时/显存数字变成准入依据；也阻塞 MODNet 是否改默认的判断精度 |
-| 3 | 补 `license` / `provenance` / `provenanceStatus: 'second-hand'` 字段（规范 §5 待办⑤的断言上线时，u2netp 与 MODNet **两条一起补**，豁免须逐条点名） | 断言上线即变红 |
+| 3 | ~~补 `license` / `provenance` / `provenanceStatus` 字段~~ ✅ **已完成 2026-09-30**：`ModelSpec` 新增 license / upstreamRepo / attribution / licenseEvidence / provenanceStatus / licenseFile 六个字段，u2netp 与 MODNet **两条都逐条点名填写**（`provenanceStatus: 'second-hand'`，不是"允许所有条目为空"的装饰断言），由 `tests/modelLicense.test.ts` 强制 | 无 |
 
 ## 8. 变更史
 

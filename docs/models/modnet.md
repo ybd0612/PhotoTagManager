@@ -57,7 +57,7 @@
 | ① 查询方式与日期 | ✅ 2026-09-29，HF API `?blobs=true` + GitHub `git/trees/master?recursive=1`，结果原文见 §1/§2 |
 | ② 文件清单原文 | ⚠ 部分——本卷宗记了"12 个文件里没有 LICENSE"的**结论**，未贴 `siblings` 全列表原文 |
 | ③ 标识出处 | ✅ `cardData.license = "apache-2.0"`（README 自称，非平台核验值） |
-| ④ 许可全文留存 | ❌ **未做**。`LICENSES/third-party/modnet.txt` 尚不存在——这是改判的代价项，见 §7 待办 1 |
+| ④ 许可全文留存 | ✅ **已做（2026-09-30）**。一手仓 `ZHKKKe/MODNet` 的 `master:LICENSE` 全文 11,357 字节逐字留存为 `LICENSES/third-party/modnet.apache-2.0.txt`（SHA-256 `c71d239d…e9c8c6`，与 u2netp 那份上游 LICENSE 逐字节相同）；取源与归属见同目录 `README.md`，披露见仓库根 `NOTICE`。改判的代价项已兑付 |
 
 ## 3. 能力边界
 
@@ -115,7 +115,7 @@
 
 | # | 项 | 阻塞什么 |
 |---|---|---|
-| 1 | **留存上游 Apache-2.0 全文到 `LICENSES/third-party/modnet.txt`**（§3.1.1 第 ④ 件） | 不阻塞使用，但**做了才叫按改判办事**；不做就是拿"找不到"当免查 |
+| 1 | ~~留存上游 Apache-2.0 全文~~ ✅ **已完成 2026-09-30**（§3.1.1 第 ④ 件） | 无。留存物是 `LICENSES/third-party/modnet.apache-2.0.txt`，`tests/modelLicense.test.ts` 会在文件缺失、标识与正文不符、NOTICE 与清单漂移时红 |
 | 2 | 一张真人**长发**照片眼验（用户出图，或指定库里哪张） | 阻塞"是否改成默认模型"与一切比较级文案 |
 | 3 | 决定是否把 `defaultModelId` 改成 `modnet` | 一行改动 + `ipc.test.ts:344` 那条断言同步；等第 2 项 |
 | 4 | 装机版端到端跑一次（真实 UI 点选 MODNet） | 阻塞 §4.3 的"已上线"定性 |

@@ -1,0 +1,62 @@
+PhotoTagManager（图片管家）— 第三方组件许可与归属声明（NOTICE）
+
+本文件由 scripts/gen-notice.cjs 从 electron/ai/capabilityCatalog.ts 生成，请勿手改。
+生成日期：2026-09-30
+
+1. 本项目自己的代码
+
+   源代码与可执行程序按仓库根 LICENSE 文件所列的「源码公开非商业使用许可 v1.0」提供：
+   仅供个人学习与非商业使用，禁止用于商业用途。该许可不覆盖下面列出的第三方组件。
+
+2. 代码依赖（React、Material UI、Electron、electron-builder、electron-updater、
+   exiftool-vendored、onnxruntime-node、sharp 等）
+
+   这些组件保持各自的原始许可，其许可正文随发行包内的 node_modules/<包名>/LICENSE
+   一同分发，本文件不重复抄录（抄第二遍就会与原件漂移）。
+   本项目的代码许可不改变、也不收紧它们授予你的权利。
+
+3. 模型权重
+
+   权重**不在安装包里**：应用按清单指定的公开模型源在你本机下载，落到配置目录
+   (%APPDATA%\photo-tag-manager)。下列每个模型的许可全文已按字节逐字留存于
+   LICENSES/third-party/，取源方式与校验值见该目录下的 README.md。
+
+   关于"许可依据"的一个事实，按规范 §3.1 必须写明：清单里用于取权重的那个仓库
+   （下面每个模型的「分发仓库」）**都不是许可全文的出处**——它们是第三方镜像，
+   仓库内没有 LICENSE 文件本体，只有一个 README 里自填的 `license:` 元数据（自填值，非核验值）。
+   本项目因此改从上面「一手出处」那个仓库逐字留存许可全文，见下一节每个模型的「许可依据」。
+
+   每个模型都附两条如实披露，请不要跳过：
+     · 许可依据来自哪个仓库（一手仓的 LICENSE 文件本体，还是镜像仓 README 自填标识）；
+     · 权重是否由上游作者本人发布。本项目当前全部为第三方转导出的 ONNX。
+
+──────────────────────────────────────────────────────────────────────────────
+U²-Netp（标识 u2netp，用于「人像抠图」）
+──────────────────────────────────────────────────────────────────────────────
+  许可：        Apache-2.0
+  许可全文：    LICENSES/third-party/u2netp.apache-2.0.txt
+  许可依据：    一手仓库 xuebinqin/U-2-Net 仓库内有 LICENSE 文件本体，本文件留存的即该文件逐字节副本
+  归属：        U²-Net: Xuebin Qin, Zichen Zhang, Chenyang Huang, Masood Dehghan, Osmar R. Zaiane, Martin Jagersand (CVPR 2020)
+  一手出处：    xuebinqin/U-2-Net（仅作出处与归属来源，不作分发来源）
+  分发仓库：    BritishWerewolf/U-2-Netp → onnx/model.onnx
+  文件名：      u2netp.onnx
+  体积：        4,574,861 字节
+  SHA-256：     309c8469258dda742793dce0ebea8e6dd393174f89934733ecc8b14c76f4ddd8
+  权重同一性：  ⚠ 系第三方转导出的 ONNX，非上游一手发布。本项目校验 SHA-256 只保证"下载到的就是清单写的那份"，不保证"那份来自原作者"。已知限制记录见 docs/design/model-licensing-and-survey.md §6.1。
+
+──────────────────────────────────────────────────────────────────────────────
+MODNet（标识 modnet，用于「人像抠图」）
+──────────────────────────────────────────────────────────────────────────────
+  许可：        Apache-2.0
+  许可全文：    LICENSES/third-party/modnet.apache-2.0.txt
+  许可依据：    一手仓库 ZHKKKe/MODNet 仓库内有 LICENSE 文件本体，本文件留存的即该文件逐字节副本
+  归属：        MODNet: ZHKKKe/MODNet（AAAI 2020, MODNet: Real-Time Trimap-Free Portrait Matting via Objective Decomposition）；作者名单未逐字核对原论文
+  一手出处：    ZHKKKe/MODNet（仅作出处与归属来源，不作分发来源）
+  分发仓库：    Xenova/modnet → onnx/model.onnx
+  文件名：      modnet.onnx
+  体积：        25,888,640 字节
+  SHA-256：     07c308cf0fc7e6e8b2065a12ed7fc07e1de8febb7dc7839d7b7f15dd66584df9
+  权重同一性：  ⚠ 系第三方转导出的 ONNX，非上游一手发布。本项目校验 SHA-256 只保证"下载到的就是清单写的那份"，不保证"那份来自原作者"。已知限制记录见 docs/design/model-licensing-and-survey.md §6.1。
+
+──────────────────────────────────────────────────────────────────────────────
+U²-Net 与 MODNet 的论文与代码版权归原作者；本文件只作许可与来源的披露，不代任何上游作出担保。
