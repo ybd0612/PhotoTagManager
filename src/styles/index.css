@@ -2,20 +2,22 @@
 @tailwind components;
 @tailwind utilities;
 
-/* 全局主题变量（§7 样式分工：Tailwind 管布局间距，MUI 管交互组件与主题） */
+/*
+ * 全局主题变量（§7 样式分工：Tailwind 管布局间距，MUI 管交互组件与主题）。
+ *
+ * 这里**只放布局与结构量**。所有颜色、圆角、字号、阴影、动效时长都来自
+ * src/theme/tokens.ts —— 它在首次渲染前把同名变量注入 :root，MUI 主题读的是同一批值。
+ * 颜色若在 CSS 里再写一遍字面值，就会出现"改了 CSS 没改主题"的漂移（此前正是这个原因）。
+ */
 :root {
   --ptm-header-height: 56px;
   --ptm-tree-width: 280px;
+  /* 与 tokens.motion.base 是同一个 180ms，两处写法：CSS 拿不到 TS 常量，改一处要记得改另一处 */
   --ptm-tree-collapse-ms: 180ms;
   --ptm-statusbar-height: 28px;
   /* 自绘窗口控件：单颗 46px，三颗的合计宽度由它派生，顶栏按这个宽度让位 */
   --ptm-wc-btn-width: 46px;
   --ptm-wc-width: calc(var(--ptm-wc-btn-width) * 3);
-  /*
-   * 工具带底色（顶栏 / 筛选栏 / 左栏 / 状态栏）：统一比画布暗一档，
-   * 区域靠色调分开，四条 border-slate-200 只做同色区块之间的收尾细分。
-   */
-  --ptm-chrome-bg: #f1f5f9;
   color-scheme: light;
 }
 
@@ -43,6 +45,7 @@ body,
 body {
   margin: 0;
   font-family:
+    'Segoe UI Variable Text',
     'Segoe UI',
     'Microsoft YaHei',
     -apple-system,
@@ -62,11 +65,12 @@ body {
   height: 8px;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(100, 116, 139, 0.35);
+  /* 由中性色阶的三级色算出来，不再单独记一个 rgba——滚动条深浅要跟着文字层级走 */
+  background: color-mix(in srgb, var(--ptm-ink-3) 42%, transparent);
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(100, 116, 139, 0.6);
+  background: color-mix(in srgb, var(--ptm-ink-3) 70%, transparent);
 }
 ::-webkit-scrollbar-track {
   background: transparent;
@@ -120,22 +124,23 @@ body {
   border: 0;
   border-radius: 0;
   background: transparent;
-  color: #0f172a;
+  color: var(--ptm-ink);
   cursor: default;
   -webkit-app-region: no-drag;
 }
 
+/* 悬停/按下底色走全站同一档，不再另算一个透明度 */
 .ptm-window-controls button:hover {
-  background: rgba(15, 23, 42, 0.08);
+  background: var(--ptm-hover);
 }
 
 .ptm-window-controls button:active {
-  background: rgba(15, 23, 42, 0.14);
+  background: var(--ptm-pressed);
 }
 
 /* 键盘走到哪儿必须看得出来：这些是真按钮，Tab 进得来 */
 .ptm-window-controls button:focus-visible {
-  outline: 2px solid #2563eb;
+  outline: 2px solid var(--ptm-accent);
   outline-offset: -3px;
 }
 

@@ -168,7 +168,7 @@ export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.E
         direction="row"
         alignItems="center"
         justifyContent="space-between"
-        className="shrink-0 border-b border-slate-200 px-2 py-1.5"
+        className="shrink-0 px-2 py-2"
       >
         <Typography variant="subtitle2" color="text.secondary" className="pl-1">
           图库 · {roots.length} 个根目录
@@ -349,7 +349,7 @@ function TreeRowItem({ row, scanned, scanning, onExpand, onSelect, onContextMenu
           </Typography>
         )}
       </Box>
-      {scanning && <Box className="h-2 w-2 shrink-0 animate-pulse self-center rounded-full bg-amber-400" />}
+      {scanning && <Box className="h-2 w-2 shrink-0 animate-pulse self-center rounded-full bg-warning" />}
       {row.isRoot && (
         <>
           <IconButton

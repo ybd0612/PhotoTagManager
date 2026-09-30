@@ -242,7 +242,7 @@ export function ThumbnailGrid(): JSX.Element {
           sx={selected ? { outline: '2px solid', outlineColor: 'primary.main' } : { '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main' } }}
         >
           {imageError ? (
-            <Stack alignItems="center" justifyContent="center" spacing={1} className="h-full w-full bg-slate-100">
+            <Stack alignItems="center" justifyContent="center" spacing={1} className="h-full w-full bg-surface-2">
               <Typography variant="caption" color="error" role="status">图片加载失败</Typography>
               <Button size="small" onClick={(event) => { event.stopPropagation(); retryImage(image.absPath); }}>重试</Button>
             </Stack>
@@ -409,7 +409,7 @@ function BatchTagBar({ selectedIds }: BatchTagBarProps): JSX.Element {
 
   return (
     <Paper
-      className="flex shrink-0 items-center gap-2 rounded-none border-b border-slate-200 px-3 py-1.5"
+      className="flex shrink-0 items-center gap-2 rounded-none bg-chrome px-3 py-2"
       sx={{ bgcolor: 'var(--ptm-chrome-bg)' }}
       data-testid="batch-tag-bar"
     >

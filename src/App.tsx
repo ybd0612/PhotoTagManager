@@ -1,33 +1,34 @@
 import { useEffect } from 'react';
 import { createTheme, CssBaseline, ThemeProvider } from '@mui/material';
+import { applyCssTokens, tokens } from './theme/tokens';
 import { getApi } from './api';
 import { autoScanAllRoots, useScanSubscriptions } from './hooks/useScan';
 import { useAppStore } from './store/useAppStore';
 import { AppLayout } from './components/AppLayout';
 import { WindowControls } from './components/WindowControls';
 
-/** 现代化浅色主题（MUI 负责交互组件与主题，Tailwind 负责布局间距） */
+// 必须在首次渲染前注入：手写 CSS 与 Tailwind 类靠这批变量取色，晚一步第一帧就没有值
+applyCssTokens();
+
+const { ink, surface, accent, radius, font, shadow, motion } = tokens;
+
+/**
+ * 现代化浅色主题（MUI 负责交互组件与主题，Tailwind 负责布局间距）。
+ * 所有色值、圆角、字号、动效都取自 src/theme/tokens.ts —— 这里不许再出现字面量。
+ */
 const theme = createTheme({
   palette: {
     mode: 'light',
-    primary: {
-      main: '#4f46e5',
-      light: '#818cf8',
-      dark: '#4338ca'
-    },
-    secondary: {
-      main: '#0ea5e9'
-    },
-    background: {
-      default: '#f8fafc',
-      paper: '#ffffff'
-    }
+    primary: { main: accent.main, light: accent.light, dark: accent.dark, contrastText: accent.onColor },
+    secondary: { main: '#0ea5e9' },
+    background: { default: surface.canvas, paper: surface.paper },
+    text: { primary: ink.primary, secondary: ink.secondary, disabled: ink.tertiary },
+    divider: ink.hairline
   },
-  shape: {
-    borderRadius: 10
-  },
+  shape: { borderRadius: radius.md },
   typography: {
     fontFamily: [
+      'Segoe UI Variable Text',
       'Segoe UI',
       'Microsoft YaHei',
       '-apple-system',
@@ -35,19 +36,39 @@ const theme = createTheme({
       'Helvetica Neue',
       'Arial',
       'sans-serif'
-    ].join(',')
+    ].join(','),
+    // 正文 13 而不是 MUI 默认的 16：信息密集型工具里，字号收一档比换字体更像"设计过"
+    fontSize: font.body,
+    h6: { fontSize: font.title, fontWeight: 600, letterSpacing: '-0.012em' },
+    subtitle1: { fontSize: font.subtitle, fontWeight: 600 },
+    subtitle2: { fontSize: font.body, fontWeight: 600, letterSpacing: '0.006em' },
+    body1: { fontSize: font.subtitle },
+    body2: { fontSize: font.body },
+    caption: { fontSize: font.caption, letterSpacing: '0.006em' }
+  },
+  transitions: {
+    easing: { easeOut: motion.ease, easeInOut: motion.ease },
+    duration: { short: motion.fast, standard: motion.base }
   },
   components: {
     MuiButton: {
-      defaultProps: {
-        disableElevation: true
+      defaultProps: { disableElevation: true },
+      styleOverrides: {
+        // 中文按钮全大写没有意义，以前是每个组件各写一遍 textTransform，现在收到主题里
+        root: { textTransform: 'none', fontWeight: 500, letterSpacing: '0.01em' }
       }
     },
-    MuiPaper: {
-      defaultProps: {
-        elevation: 0
+    MuiPaper: { defaultProps: { elevation: 0 } },
+    MuiChip: { styleOverrides: { root: { borderRadius: radius.sm, fontWeight: 500 } } },
+    MuiTooltip: {
+      styleOverrides: {
+        tooltip: { borderRadius: radius.sm, fontSize: font.caption, padding: `${tokens.space.s2}px ${tokens.space.s3}px`, backgroundColor: 'rgba(28, 32, 39, 0.94)', boxShadow: shadow.pop },
+        arrow: { color: 'rgba(28, 32, 39, 0.94)' }
       }
-    }
+    },
+    MuiDialog: { styleOverrides: { paper: { borderRadius: radius.lg, boxShadow: shadow.pop } } },
+    MuiMenu: { styleOverrides: { paper: { borderRadius: radius.md, boxShadow: shadow.pop } } },
+    MuiOutlinedInput: { styleOverrides: { root: { borderRadius: radius.sm, backgroundColor: surface.paper } } }
   }
 });
 

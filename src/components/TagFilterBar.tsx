@@ -89,7 +89,7 @@ export function TagFilterBar(): JSX.Element {
 
   return (
     <Paper
-      className="shrink-0 rounded-none border-b border-slate-200 px-3 py-2"
+      className="shrink-0 rounded-none bg-chrome px-3 py-2"
       sx={{ bgcolor: 'var(--ptm-chrome-bg)' }}
     >
       {/* 找图工具行：搜索 + 排序 + 标签筛选 + 缩略图档位（三档偏好持久化到 settings.json）。
