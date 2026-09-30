@@ -155,7 +155,7 @@ function createWindow(): void {
     minWidth: 920,
     minHeight: 620,
     show: false,
-    title: 'PhotoTagManager',
+    title: '图片管家 PhotoTagManager',
     /**
      * 不传 icon 时 Windows 取的是"当前可执行文件"的图标：装出来的包有 build/icon.ico，
      * 而 npm run dev / npx electron . 跑的是 electron.exe，任务栏就成了 Electron 默认蓝图标。
