@@ -33,10 +33,15 @@ import { updateActionLabel, updatePrimaryAction, updateStatusLabel } from '../ut
 import { SettingsDialog } from './settings/SettingsDialog';
 
 /**
- * 折叠把手的唤出宽度（内容区一侧，px）。必须 ≥ 按钮宽度 24 + 离分界线的间距 2，
- * 否则把手刚出现、指针往它身上挪一点就掉出判定带，自己把自己藏掉，点不着。
+ * 折叠把手的唤出带与滞留带（相对分界线的横向距离，px）。
+ * 把手本体压在分界线上、左右各 13px，左半正好盖住左栏那条 8px 滚动条，因此：
+ * - 唤出只认内容区一侧 6..26px：判定带一旦伸进滚动条，鼠标一碰滚动条把手就送到指针底下，滚动条再也拖不动；
+ * - 滞留放宽到 -14..34px：否则指针往把手左半挪一点就掉出唤出带，把手自己把自己藏掉，看着在眼前却点不着。
  */
-const TREE_HANDLE_HIT_PX = 26;
+const TREE_HANDLE_SHOW_FROM = 6;
+const TREE_HANDLE_SHOW_TO = 26;
+const TREE_HANDLE_KEEP_FROM = -14;
+const TREE_HANDLE_KEEP_TO = 34;
 
 /**
  * 三栏布局容器 + 顶部工具栏 + 底部状态栏（PRD §3.3 线框图，多根 R10）。
@@ -65,15 +70,19 @@ export function AppLayout(): JSX.Element {
   /**
    * 折叠把手只在鼠标贴近左栏右缘时出现。判定用坐标而不是铺一层 `:hover` 热区：
    * 热区层会盖住树右缘的 8px 滚动条和网格左缘，把这两处的点击吞掉。
-   * 判定带刻意做成非对称——把手本体放在分界线右侧（见 .ptm-tree-handle 的 left），
-   * 往左栏侧只留 4px 余量；再往左伸就会在鼠标碰到滚动条时把把手送到指针正下方，滚动条再也拖不动。
+   * 显隐分唤出带与滞留带两档，理由见 TREE_HANDLE_SHOW_FROM 那组常量。
    * 用 mousemove 而不是 pointermove：本机只有鼠标这一种指针，而 jsdom 造的 PointerEvent 不带 clientX。
    */
   const treePaneRef = useRef<HTMLDivElement>(null);
   const [treeHandleVisible, setTreeHandleVisible] = useState(false);
   const handleBodyMouseMove = (e: ReactMouseEvent<HTMLDivElement>): void => {
     const edge = treePaneRef.current?.getBoundingClientRect().right ?? 0;
-    setTreeHandleVisible(e.clientX >= edge - 4 && e.clientX <= edge + TREE_HANDLE_HIT_PX);
+    const offset = e.clientX - edge;
+    if (treeHandleVisible) {
+      if (offset < TREE_HANDLE_KEEP_FROM || offset > TREE_HANDLE_KEEP_TO) setTreeHandleVisible(false);
+    } else if (offset >= TREE_HANDLE_SHOW_FROM && offset <= TREE_HANDLE_SHOW_TO) {
+      setTreeHandleVisible(true);
+    }
   };
   /** 整应用唯一一份更新状态订阅：右下角通知卡与设置「关于与更新」分区共用 */
   const update = useUpdate();

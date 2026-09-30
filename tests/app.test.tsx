@@ -322,11 +322,18 @@ describe('左栏折叠与展开', () => {
     expect(handle.closest('header')).toBeNull();
     expect(handle.className).not.toContain('ptm-tree-handle--visible');
 
-    // jsdom 的 getBoundingClientRect 恒为 0，分界线就落在 x=0：判定带内现身、带外隐去。
-    // 事件用 mousemove——jsdom 造的 PointerEvent 压根不带 clientX，换成它判不出坐标。
+    // jsdom 的 getBoundingClientRect 恒为 0，clientX 就等于相对分界线的偏移
     const body = handle.parentElement as HTMLElement;
+    // 落在分界线上（滚动条那一侧）不唤出，否则把手会跑到指针底下抢走滚动条那一枪
+    fireEvent.mouseMove(body, { clientX: 0 });
+    expect(handle.className).not.toContain('ptm-tree-handle--visible');
+
     fireEvent.mouseMove(body, { clientX: 12 });
     expect(handle.className).toContain('ptm-tree-handle--visible');
+    // 已现身后退进滞留带：指针挪到把手左半不能把自己藏掉，否则看着在眼前却点不着
+    fireEvent.mouseMove(body, { clientX: 0 });
+    expect(handle.className).toContain('ptm-tree-handle--visible');
+
     fireEvent.mouseMove(body, { clientX: 400 });
     expect(handle.className).not.toContain('ptm-tree-handle--visible');
   });

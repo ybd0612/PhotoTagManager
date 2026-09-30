@@ -161,8 +161,10 @@ body {
 }
 
 /*
- * 左栏折叠把手：贴在分界线上、竖向居中，鼠标靠近才淡入（判定在 AppLayout 的 handleBodyMouseMove）。
- * 本体放在分界线右侧 2px，不往左压——左栏右缘那 8px 是滚动条，压上去就拖不动了。
+ * 左栏折叠把手：骑在分界线上、竖向居中，鼠标靠近才淡入（判定在 AppLayout 的 handleBodyMouseMove）。
+ * 它左半确实会盖住左栏右缘那 8px 滚动条——靠的是唤出带从分界线右侧 6px 起算：
+ * 指针落在滚动条上时压根进不了唤出带，把手不会跑到指针底下去抢那一枪。
+ * 收起态分界线贴在窗口左缘，往右让开半个把手（13px），否则左半截被裁到窗口外点不到。
  *
  * 隐藏用 visibility 而不只是 opacity:0：一个看不见的按钮如果仍可命中，
  * 会常年吃掉网格左缘那 24px 的点击，也仍留在 Tab 顺序里。
@@ -174,9 +176,9 @@ body {
 .ptm-tree-handle {
   position: absolute;
   top: 50%;
-  left: calc(var(--ptm-tree-width) + 2px);
+  left: var(--ptm-tree-width);
   z-index: 3;
-  transform: translateY(-50%);
+  transform: translate(-50%, -50%);
   visibility: hidden;
   opacity: 0;
   transition:
@@ -186,7 +188,7 @@ body {
 }
 
 .ptm-tree-handle--collapsed {
-  left: 2px;
+  left: 13px;
 }
 
 .ptm-tree-handle--visible {
