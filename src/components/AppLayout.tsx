@@ -178,7 +178,7 @@ export function AppLayout(): JSX.Element {
           <PhotoLibraryIcon color="primary" className="shrink-0" />
           <Typography variant="h6" sx={{ fontWeight: 700 }} className="shrink-0">
             <Box component="span">
-              照片标签管家
+              图片管家
               <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.75 }}>
                 PhotoTagManager
               </Typography>

@@ -96,11 +96,11 @@ function createTray(): void {
   // 既不依赖外部文件，也不会再出现"托盘一张图、主界面另一张图"。
   const trayIcon = nativeImage.createFromDataURL(APP_ICON_TRAY_DATA_URL);
   tray = new Tray(trayIcon);
-  tray.setToolTip('PhotoTagManager');
+  tray.setToolTip('图片管家');
   tray.setContextMenu(
     Menu.buildFromTemplate([
       {
-        label: '退出 PhotoTagManager',
+        label: '退出 图片管家（PhotoTagManager）',
         click: () => {
           isQuitting = true;
           app.quit();

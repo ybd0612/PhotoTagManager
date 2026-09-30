@@ -1,9 +1,10 @@
-# PhotoTagManager 系统架构设计（ARCHITECTURE）
+# 图片管家 PhotoTagManager 系统架构设计（ARCHITECTURE）
 
 > 版本：v0.1（初稿） · 作者：架构师 高见远（Gao） · 状态：待评审
 > 依据：`docs/PRD.md`（v0.1）
 > 面向对象：工程师（照此实现）、QA（照此验证）
 > 团队任务对应：本文 T01–T05 为实施批次（对应团队任务 #3 工程师批量实现）；QA 验证对应团队任务 #4
+> 2026-09-30 修订：产品口径已从「标签管理工具」扩为本机图片管理工具，执行体从三个增到四个（新增 AI 推理子进程）。本文 §2 模块清单、§3 接口签名、§4 时序**尚未覆盖 AI 与自动更新**，权威规格见 `docs/design/ai-photo-processing.md` 与 `electron/ai/`。
 
 ---
 
@@ -11,15 +12,16 @@
 
 ### 1.1 架构一句话
 
-Electron 三进程架构：**主进程**持有全部文件系统/XMP/缩略图能力并做 IPC 路由，**Worker 线程**负责后台目录扫描（批推送），**渲染进程**只做 React UI 与内存状态管理（zustand），三者通过预定义 IPC 通道协作，保证万级图片不卡顿。
+Electron 四执行体架构：**主进程**持有全部文件系统 / XMP / 缩略图 / 回收站 / 模型下载与写盘能力并做 IPC 路由，**Worker 线程**负责后台目录扫描（批推送），**AI 推理子进程**（`utilityProcess`）只加载 ONNX 模型做推理并把结果回传，**渲染进程**只做 React UI 与内存状态管理（zustand），四者通过预定义 IPC 通道协作，保证万级图片不卡顿、一张坏照片不拖垮窗口。
 
-### 1.2 进程职责划分
+### 1.2 执行体职责划分
 
-| 进程/线程 | 职责 | 关键技术点 |
+| 执行体 | 职责 | 关键技术点 |
 |---|---|---|
-| **主进程**（`electron/`，Node 环境） | 创建窗口；注册所有 IPC Handler；编排扫描（启动/取消 Worker）；持有 exiftool 队列（XMP 读写）；缩略图生成队列 + 磁盘缓存；hiddenFolders.json 持久化 | `contextIsolation: true, nodeIntegration: false`；所有磁盘操作只在主进程 |
+| **主进程**（`electron/`，Node 环境） | 创建窗口；注册所有 IPC Handler；编排扫描（启动/取消 Worker）；持有 exiftool 队列（XMP 读写）；缩略图生成队列 + 磁盘缓存；回收站守卫（只放行根目录内路径）；hiddenFolders.json / roots.json / settings.json 持久化；AI 暂存写盘与 LRU 清理；模型下载与多源切换；electron-updater | `contextIsolation: true, nodeIntegration: false`；**所有磁盘写入只在主进程** |
 | **Worker 线程**（`scanWorker.ts`，worker_threads） | 递归遍历目录；识别图片扩展名；统计每目录 `directCount` / `totalCount`；每 ~200 文件推送一批结果；响应取消 | 只读文件系统，不触碰 XMP（性能） |
-| **渲染进程**（`src/`，React） | 三栏 UI；目录树渲染与懒加载；虚拟滚动缩略图网格；预览覆盖层；标签筛选；调用 `window.api`；内存状态管理 | 无 Node 权限，仅通过 preload 暴露的 `window.api` 通信 |
+| **AI 推理子进程**（`electron/ai/inferenceChild.ts`，`utilityProcess`） | 加载 ONNX 模型（DirectML / CPU 后端）；按清单做预处理→推理→回传掩码；**不写盘**，命名与落库都由主进程 `aiService` 负责 | 原生推理库的失败方式是**进程级崩溃**，隔离后一张坏照片不会干掉窗口；CPU 路径必须显式限线程（默认 2，实测不限会吃满 32 核并把进程撑到 6.3GB）；模型形状一律从 `capabilityCatalog.ts` 取 |
+| **渲染进程**（`src/`，React） | 顶栏（兼自绘标题栏）+ 左目录树 + 右网格的界面主体；目录树渲染与懒加载；虚拟滚动缩略图网格；预览覆盖层（含 AI 对比视图）；标签筛选、文件名搜索与排序；设置对话框四个分区；调用 `window.api`；内存状态管理 | 无 Node 权限，仅通过 preload 暴露的 `window.api` 通信 |
 
 ### 1.3 进程间通信（IPC）设计
 

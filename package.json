@@ -1,7 +1,7 @@
 {
   "name": "photo-tag-manager",
   "version": "0.1.5",
-  "description": "PhotoTagManager - Windows 桌面图片 XMP 标签管理器（Electron + React + Vite + MUI + Tailwind）",
+  "description": "图片管家 PhotoTagManager - Windows 本机图片管理工具（多根浏览、文件内 XMP 标签整理、回收站清理、本机 AI 人像抠图；Electron + React + Vite + MUI + Tailwind）",
   "main": "./out/main/index.js",
   "author": "PhotoTagManager Team",
   "license": "MIT",

@@ -35,10 +35,10 @@ export function AboutUpdatePane({
     <Stack spacing={2} data-testid="settings-about">
       <Box>
         <Typography variant="h6" gutterBottom>
-          照片标签管家 PhotoTagManager
+          图片管家 PhotoTagManager
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          一款面向 Windows 的本地图片标签管理工具，帮助你整理、标记和快速查找照片。
+          一款 Windows 本机图片管理工具：浏览、搜索、打标、清理，并在本机做 AI 处理。标签直接写进图片文件自身的 XMP 元数据——不搬文件、不建数据库，图片复制或移动后标签跟着走，照片内容不出本机。
         </Typography>
       </Box>
       <Divider />
@@ -49,7 +49,7 @@ export function AboutUpdatePane({
         </Typography>
         <Typography variant="body2">当前版本：{packageJson.version}</Typography>
         <Typography variant="body2" color="text.secondary">
-          程序名：PhotoTagManager（安装目录、进程与配置文件夹同名）
+          程序名：PhotoTagManager（安装目录、进程与快捷方式同名；配置文件夹为 <code>%APPDATA%\photo-tag-manager</code>）
         </Typography>
         <Typography variant="body2">
           开源地址：{' '}
@@ -109,10 +109,13 @@ export function AboutUpdatePane({
             <ListItemText primary="2. 选择根目录后启动扫描，等待扫描完成。" />
           </ListItem>
           <ListItem disableGutters>
-            <ListItemText primary="3. 使用标签管理和筛选功能整理照片，点击缩略图可预览。" />
+            <ListItemText primary="3. 用标签筛选、文件名搜索和排序找图，点击缩略图可放大预览。" />
           </ListItem>
           <ListItem disableGutters>
             <ListItemText primary="4. 右键图片，或在放大图里点「在资源管理器中定位」即可打开所在文件夹。" />
+          </ListItem>
+          <ListItem disableGutters>
+            <ListItemText primary="5. 放大图底栏点「人像抠图」，结果先进暂存，按住空格对比确认后再保存为派生文件——原图不会被改。" />
           </ListItem>
         </List>
       </Box>
