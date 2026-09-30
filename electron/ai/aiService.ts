@@ -145,7 +145,19 @@ export interface AiServiceDeps {
   onError?: (e: { taskId: string; code: string; message: string }) => void;
   /** 便于测试注入 */
   catalog?: CapabilitySpec[];
+  /**
+   * 连续空闲多久自动释放驻留模型（§5.2 末条）。默认 `IDLE_UNLOAD_MS`；
+   * 注入更短的值只是为了让单测跑得起，不代表线上可以调成 0。
+   */
+  idleUnloadMs?: number;
 }
+
+/**
+ * 空闲自动卸载的时长。取 5 分钟是"人还在挑图"与"走开了"的分界：
+ * 比一次完整眼验长不了多少，又足够长到不会在连续处理中把会话抽走。
+ * 代价上限就是重新加载那一下（实测 0.96~3.14 秒），而加载对用户本来就是静默的（D14）。
+ */
+const IDLE_UNLOAD_MS = 5 * 60 * 1000;
 
 /** settings.json 里的 AI 段（§5.0）。M1 只有默认模型覆盖与暂存保留配置。 */
 export interface AiSettings {
@@ -203,6 +215,11 @@ export class AiService {
    * 否则界面写着走 CPU、实际还在 GPU 会话上跑（§8-16 / D12 禁止无声降级）。
    */
   private loadedBackend: 'dml' | 'cpu' | null = null;
+  /**
+   * 空闲自动卸载的定时器。每次提交任务与每次任务结束都重新武装，
+   * 所以它量的是"距离最后一次 AI 活动多久"，不是"启动多久"。
+   */
+  private idleTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(deps: AiServiceDeps) {
     this.deps = deps;
@@ -218,6 +235,8 @@ export class AiService {
     const taskId = `ai-${++this.seq}`;
     const controller = new AbortController();
     this.controllers.set(taskId, controller);
+    // 排队与在跑期间不该抽走在用的会话：先把空闲计时推后
+    this.rearmIdleUnload();
 
     // 事件必须在 promise settle 之前同步触发，否则调用方拿到拒绝时事件还没落地。
     const run = async (): Promise<RunResult> => {
@@ -233,6 +252,8 @@ export class AiService {
         throw mapped;
       } finally {
         this.controllers.delete(taskId);
+        // 顺序要紧：先摘掉在途标记，再武装定时器，让到点时"有没有任务在跑"判得准
+        this.rearmIdleUnload();
       }
     };
 
@@ -255,6 +276,31 @@ export class AiService {
     this.cancelled.add(taskId);
     this.controllers.get(taskId)?.abort();
     return true;
+  }
+
+  /** 重新武装空闲卸载计时（§5.2：连续空闲一段时间自动释放显存） */
+  private rearmIdleUnload(): void {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    const ms = this.deps.idleUnloadMs ?? IDLE_UNLOAD_MS;
+    this.idleTimer = setTimeout(() => {
+      this.idleTimer = null;
+      this.unloadIfIdle();
+    }, ms);
+    // 一个待触发的定时器不该成为"进程不肯退出"的理由
+    this.idleTimer.unref?.();
+  }
+
+  private unloadIfIdle(): void {
+    // 还有任务在跑或排队：从它结束再起算，不抽走在用的会话
+    if (this.controllers.size > 0) {
+      this.rearmIdleUnload();
+      return;
+    }
+    // 本来就没驻留（没跑过、或已被手动卸载）：不去敲一个空会话
+    if (this.deps.runner.loadedModelId === null) return;
+    this.loadedBackend = null;
+    // 释放失败不弹提示：下次点主按钮时 loadedModelId 对不上，execute 会自己走重建路径
+    void this.deps.runner.unload().catch(() => undefined);
   }
 
   /** 用户选定的默认模型（下拉里「设为默认」）；没有覆盖时回清单自带的默认值。 */
@@ -313,6 +359,8 @@ export class AiService {
   }
 
   async dispose(): Promise<void> {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = null;
     for (const id of Array.from(this.controllers.keys())) this.cancel(id);
     await this.deps.runner.dispose();
   }

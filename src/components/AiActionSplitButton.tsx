@@ -223,6 +223,7 @@ function ModelMenu({
   onClose: () => void;
 }) {
   const modelAction = useAiStore((s) => s.modelAction);
+  const refreshCatalog = useAiStore((s) => s.refreshCatalog);
   const backend = useAiStore((s) => s.backend);
   const setBackend = useAiStore((s) => s.setBackend);
   const models = cap.models;
@@ -232,6 +233,12 @@ function ModelMenu({
     const defaultIndex = models.findIndex((m) => m.isDefault);
     return defaultIndex < 0 ? 0 : defaultIndex;
   });
+
+  // 驻留状态是从主进程拉的快照，而主进程的空闲自动卸载不会推给渲染层：
+  // 开菜单时重取一次，否则空闲过后这行仍会挂着绿色的"已加载"
+  useEffect(() => {
+    void refreshCatalog();
+  }, []);
 
   useEffect(() => {
     // Modal 挂载时会自己动一次焦点，把"打开即落在当前行"那次冲掉；晚一帧再落位，

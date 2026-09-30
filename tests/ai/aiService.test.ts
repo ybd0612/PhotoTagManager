@@ -23,6 +23,7 @@ class FakeRunner implements InferenceRunner {
   inferDelayMs = 0;
   lastDims: number[] | null = null;
   loadedModelId: string | null = null;
+  unloadCalls = 0;
   restartCount = 0;
 
   async load(req: { model: { id: string }; backend?: string }): Promise<number> {
@@ -48,6 +49,7 @@ class FakeRunner implements InferenceRunner {
   }
 
   async unload(): Promise<void> {
+    this.unloadCalls += 1;
     this.loadedModelId = null;
   }
 
@@ -108,6 +110,18 @@ function dedupe<T>(items: T[]): T[] {
 async function jpegOf(width: number, height: number, value: number): Promise<Buffer> {
   const px = Buffer.alloc(width * height * 3, value);
   return sharp(px, { raw: { width, height, channels: 3 } }).jpeg().toBuffer();
+}
+
+/** 用更短的空闲阈值重建服务（默认 5 分钟在测试里等不起），其余注入与 beforeEach 一致 */
+function makeService(idleUnloadMs: number): AiService {
+  return new AiService({
+    runner,
+    store,
+    idleUnloadMs,
+    onProgress: (p) => progress.push(p),
+    onDone: (d) => done.push({ taskId: d.taskId, cacheHit: d.cacheHit }),
+    onError: (e) => errored.push(e)
+  });
 }
 
 beforeEach(async () => {
@@ -349,5 +363,71 @@ describe('ai/aiService —— 模型可用性判定（§4.3）', () => {
 
   it('行为本身不在清单里报 CAPABILITY_UNAVAILABLE', () => {
     expect(codeOf(() => resolveModel([realCap], 'no-such', 'u2netp'))).toBe('CAPABILITY_UNAVAILABLE');
+  });
+});
+
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+describe('ai/aiService —— 连续空闲自动释放驻留模型（§5.2 末条）', () => {
+  it('超过阈值没再动它：会话被释放，显存还回来', async () => {
+    await store.markPresent();
+    service = makeService(150);
+    await service.run({ absPath: photoPath, capabilityId: 'portrait-cutout' });
+    expect(runner.loadedModelId).toBe('u2netp');
+    await wait(450);
+    expect(runner.loadedModelId).toBeNull();
+    expect(runner.unloadCalls).toBe(1);
+    await service.dispose();
+  });
+
+  it('阈值内又来一次：从最后一次活动重新计时，不会在连续处理中把会话抽走', async () => {
+    await store.markPresent();
+    service = makeService(400);
+    await service.run({ absPath: photoPath, capabilityId: 'portrait-cutout' });
+    await wait(250);
+    await service.run({ absPath: photoPath2, capabilityId: 'portrait-cutout' });
+    await wait(250); // 距第一次早已超过 400，距第二次只有 250
+    expect(runner.loadedModelId).toBe('u2netp');
+    expect(runner.unloadCalls).toBe(0);
+    await wait(500);
+    expect(runner.loadedModelId).toBeNull();
+    await service.dispose();
+  });
+
+  it('任务还在跑就撞到了计时点：不抽走在用会话，等它结束再重新计', async () => {
+    await store.markPresent();
+    runner.inferDelayMs = 260;
+    service = makeService(80);
+    const pending = service.startRun({ absPath: photoPath, capabilityId: 'portrait-cutout' }).promise;
+    await wait(160); // 计时点早已到，但任务在途
+    expect(runner.unloadCalls).toBe(0);
+    expect(runner.loadedModelId).toBe('u2netp');
+    await pending;
+    await wait(300); // 从任务结束起算才满 80ms
+    expect(runner.unloadCalls).toBe(1);
+    await service.dispose();
+  });
+
+  it('到点时本来就没有驻留模型：不去敲一个空会话', async () => {
+    service = makeService(100);
+    // 未下载且没确认 → 在加载之前就失败，清单里没有任何驻留
+    await service.run({ absPath: photoPath, capabilityId: 'portrait-cutout' }).catch(() => undefined);
+    expect(runner.loadedModelId).toBeNull();
+    await wait(350);
+    expect(runner.unloadCalls).toBe(0);
+    await service.dispose();
+  });
+
+  it('自动释放之后再点一次：自己重新加载，用户不需要任何手动步骤', async () => {
+    await store.markPresent();
+    service = makeService(150);
+    await service.run({ absPath: photoPath, capabilityId: 'portrait-cutout' });
+    expect(runner.loadCalls).toEqual(['u2netp']);
+    await wait(450);
+    expect(runner.loadedModelId).toBeNull();
+    await service.run({ absPath: photoPath3, capabilityId: 'portrait-cutout' });
+    expect(runner.loadCalls).toEqual(['u2netp', 'u2netp']);
+    expect(runner.loadedModelId).toBe('u2netp');
+    await service.dispose();
   });
 });

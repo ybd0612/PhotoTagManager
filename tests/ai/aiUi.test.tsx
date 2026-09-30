@@ -111,7 +111,10 @@ function fireDone(payload: Partial<AiDonePayload> = {}): void {
 
 beforeEach(async () => {
   vi.stubGlobal('api', api);
-  api.aiCatalog.mockReset().mockResolvedValue(ok(catalogFixture));
+  // 假清单必须忠实：aiCatalog 每次返回"当前那份"，等价于服务端状态未变时重取拿到同样数据。
+  // 写死 catalogFixture 的话，下拉一打开就重取清单，把用例刚 seed 的场景刷回默认，
+  // 表现为"第二行模型不见了"的假失败（假件自己不忠实，不是被测代码错）
+  api.aiCatalog.mockReset().mockImplementation(async () => ok(useAiStore.getState().catalog ?? catalogFixture));
   api.aiRun.mockReset().mockResolvedValue(ok({ taskId: 'ai-1' }));
   api.aiCancel.mockReset().mockResolvedValue(ok(true));
   api.aiSave.mockReset().mockResolvedValue(ok({ savedPath: 'C:/p/a.cutout.png', targetName: 'a.cutout.png', renamed: false, tagsWritten: [] }));
@@ -414,6 +417,13 @@ describe('AiActionSplitButton —— 组合按钮', () => {
     const row = within(menu).getAllByRole('menuitem')[0];
     expect(overlay.contains(row)).toBe(false);
     expect(row.textContent).toContain('U²-Netp');
+  });
+
+  it('打开下拉要重取清单：驻留是主进程快照，空闲自动卸载不会推给渲染层', async () => {
+    render(<AiActionSplitButton absPath="C:/photos/a.jpg" />);
+    api.aiCatalog.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: /选择模型/ }));
+    await waitFor(() => expect(api.aiCatalog).toHaveBeenCalled());
   });
 
   it('hover 不承载动作：悬停不出现浮层，按钮数恒定两个', () => {
