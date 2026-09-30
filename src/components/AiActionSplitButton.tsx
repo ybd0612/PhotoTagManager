@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { alpha, useTheme } from '@mui/material/styles';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import ButtonGroup from '@mui/material/ButtonGroup';
@@ -227,6 +228,7 @@ function ModelMenu({
   const refreshCatalog = useAiStore((s) => s.refreshCatalog);
   const backend = useAiStore((s) => s.backend);
   const setBackend = useAiStore((s) => s.setBackend);
+  const theme = useTheme();
   const models = cap.models;
   const itemRefs = useRef<Array<HTMLLIElement | null>>([]);
 
@@ -354,11 +356,21 @@ function ModelMenu({
                 gap: 0.75,
                 cursor: 'pointer',
                 // 选中行 = 主色底 + 左侧主色条；键盘焦点行 = 浅灰。两档必须看得出差别，
-                // 原来共用 action.selected 时"哪行是当前模型"根本读不出来
-                bgcolor: model.isDefault ? 'primary.50' : index === active ? 'action.hover' : 'transparent',
+                // 原来共用 action.selected 时"哪行是当前模型"根本读不出来。
+                // 底色只能从 theme.palette.primary.main 现算：本主题只声明了 main/light/dark，
+                // 写 'primary.50' 会解析成 undefined → 实测底色是透明（真机读数抓到）
+                bgcolor: model.isDefault
+                  ? alpha(theme.palette.primary.main, 0.12)
+                  : index === active
+                    ? theme.palette.action.hover
+                    : 'transparent',
                 borderLeft: '3px solid',
-                borderLeftColor: model.isDefault ? 'primary.main' : 'transparent',
-                '&:hover': { bgcolor: model.isDefault ? 'primary.100' : 'action.hover' }
+                borderLeftColor: model.isDefault ? theme.palette.primary.main : 'transparent',
+                '&:hover': {
+                  bgcolor: model.isDefault
+                    ? alpha(theme.palette.primary.main, 0.18)
+                    : theme.palette.action.hover
+                }
               }}
             >
               <Typography
