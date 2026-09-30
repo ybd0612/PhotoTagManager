@@ -149,7 +149,7 @@ describe('hideFolderLocal 与内容视图联动', () => {
 
 /**
  * 右键菜单的「取消隐藏」清单怎么来：持久层逐条记隐藏不级联，子树范围靠 relPath 前缀扫隐藏集。
- * 这里盯住三个容易出错的点：同前缀兄弟目录（2024 vs 20241）、跨根串桶、层级顺序。
+ * 这里盯住三个容易出错的点：同前缀兄弟目录（2024 与 2024-旅行）、跨根串桶、层级顺序。
  */
 describe('listHiddenUnder 子树隐藏项清点', () => {
   const hidden = new Set([
@@ -161,14 +161,14 @@ describe('listHiddenUnder 子树隐藏项清点', () => {
     rootKey('r2', '2024')
   ]);
 
-  it('右键目录：含自身与全部后代，同前缀的兄弟目录不误收', () => {
-    expect(listHiddenUnder(hidden, 'r1', '2024')).toEqual(['2024', '2024/01', '2024/01/上午']);
+  it('右键目录：只列真后代，既不含自身也不收同前缀的兄弟目录', () => {
+    expect(listHiddenUnder(hidden, 'r1', '2024')).toEqual(['2024/01', '2024/01/上午']);
   });
 
-  it('跨根隔离：r2 的隐藏项不出现在 r1 的任何结果里', () => {
-    expect(listHiddenUnder(hidden, 'r1', '2024')).not.toContain('2024-旅行');
-    expect(listHiddenUnder(hidden, 'r2', '2024')).toEqual(['2024']);
-    expect(listHiddenUnder(hidden, 'r2', '2024/01')).toEqual([]);
+  it('跨根隔离：r2 只隐藏了 2024 自身，它的子树清单为空，也拿不到 r1 的同名后代', () => {
+    expect(listHiddenUnder(hidden, 'r2', '2024')).toEqual([]);
+    expect(listHiddenUnder(hidden, 'r2', '')).toEqual(['2024']);
+    expect(listHiddenUnder(hidden, 'r1', '2024/01')).toEqual(['2024/01/上午']);
   });
 
   it('根行（relPath 为空）返回该根全部隐藏项，按层级浅→深', () => {

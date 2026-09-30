@@ -4,6 +4,7 @@ import type { FolderNode, ImageFile, RootEntry } from '../../shared/types';
 /**
  * 批次2 G5：把「根目录列表」与「目录树」合成一棵树的行序列（纯结构，不碰 React）。
  * 所有状态（展开、隐藏、选中）都以 rootKey(rootId, relPath) 为键，保证不同根下的同名目录互不串桶。
+ * 隐藏目录不进树（没有"显示已隐藏目录"的查看开关）：恢复入口在树行右键菜单，见 listHiddenUnder。
  */
 
 export interface TreeRow {
@@ -20,7 +21,6 @@ export interface TreeRow {
   totalCount: number;
   hasChildren: boolean;
   expanded: boolean;
-  hidden: boolean;
   /** 网格正在浏览这一层 */
   selected: boolean;
   /** 属于当前选中根（弱化标记用） */
@@ -37,14 +37,12 @@ export interface BuildTreeRowsInput {
   expanded: Record<string, boolean>;
   selectedRootId: string | null;
   selectedDir: string | null;
-  showHidden: boolean;
 }
 
 export function buildTreeRows(input: BuildTreeRowsInput): TreeRow[] {
   const rows: TreeRow[] = [];
-  const isHidden = (rootId: string, node: FolderNode): boolean =>
-    node.hidden || input.hiddenSet.has(rootKey(rootId, node.relPath));
-  const visible = (rootId: string, node: FolderNode): boolean => input.showHidden || !isHidden(rootId, node);
+  const visible = (rootId: string, node: FolderNode): boolean =>
+    !node.hidden && !input.hiddenSet.has(rootKey(rootId, node.relPath));
 
   const walk = (rootId: string, nodes: FolderNode[], depth: number): void => {
     for (const node of nodes) {
@@ -62,7 +60,6 @@ export function buildTreeRows(input: BuildTreeRowsInput): TreeRow[] {
         totalCount: node.totalCount,
         hasChildren: children.length > 0,
         expanded,
-        hidden: isHidden(rootId, node),
         selected: rootId === input.selectedRootId && node.relPath === input.selectedDir,
         rootSelected: rootId === input.selectedRootId
       });
@@ -84,7 +81,6 @@ export function buildTreeRows(input: BuildTreeRowsInput): TreeRow[] {
       totalCount: children.reduce((sum, child) => sum + child.totalCount, 0) + (input.rootDirectCounts.get(root.id) ?? 0),
       hasChildren: children.length > 0,
       expanded,
-      hidden: false,
       selected: root.id === input.selectedRootId && (input.selectedDir ?? '') === '',
       rootSelected: root.id === input.selectedRootId
     });
@@ -94,10 +90,11 @@ export function buildTreeRows(input: BuildTreeRowsInput): TreeRow[] {
 }
 
 /**
- * 列出某目录子树内的已隐藏 relPath（含该目录自己被隐藏的那一条）。
- * 持久层逐条记录隐藏、不级联（见 folderStore.unhide：取消隐藏只清自身），所以「这个目录下
- * 还有几个目录被单独隐藏」只能在渲染端按 relPath 前缀扫隐藏集得出。
- * 结果按层级浅→深排序；relPath 传 '' 表示该根的全部隐藏项。
+ * 列出某目录子树内被单独隐藏的**后代** relPath。
+ * 隐藏目录不进树（没有"显示已隐藏目录"的查看开关），能右键到的行本身必然不在隐藏集里，所以不含自身；
+ * 根行（relPath 传 ''）则覆盖该根全部隐藏项。持久层逐条记录隐藏、不级联（见 folderStore.unhide：
+ * 取消隐藏只清自身），所以「这个目录下还有几个被单独隐藏」只能在渲染端按 relPath 前缀扫隐藏集得出。
+ * 结果按层级浅→深排序。
  */
 export function listHiddenUnder(hiddenSet: Set<string>, rootId: string, relPath: string): string[] {
   const bucket = rootKey(rootId, '');
@@ -106,8 +103,8 @@ export function listHiddenUnder(hiddenSet: Set<string>, rootId: string, relPath:
   for (const key of hiddenSet) {
     if (!key.startsWith(bucket)) continue;
     const path = key.slice(bucket.length);
-    // 根自身不参与隐藏；scope 为空时该根下所有隐藏项都算，非空时要求等于自身或落在自身子树内
-    if (path !== '' && (scope === '' || path === relPath || path.startsWith(scope))) out.push(path);
+    // 根自身不参与隐藏；scope 为空表示该根全部隐藏项，非空时要求落在自身子树内（带斜杠，不误收 20241 这类同前缀兄弟）
+    if (path !== '' && (scope === '' || path.startsWith(scope))) out.push(path);
   }
   return out.sort(
     (a, b) => a.split('/').length - b.split('/').length || a.localeCompare(b, 'zh-Hans-CN')

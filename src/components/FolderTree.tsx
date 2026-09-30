@@ -4,15 +4,13 @@ import AddIcon from '@mui/icons-material/Add';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import DriveFileRenameOutlineIcon from '@mui/icons-material/DriveFileRenameOutline';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import FolderIcon from '@mui/icons-material/Folder';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import { call, getApi } from '../api';
 import { rootKey, useAppStore } from '../store/useAppStore';
-import { rescan, startScan } from '../hooks/useScan';
+import { startScan } from '../hooks/useScan';
 import { buildTreeRows, listHiddenUnder, type TreeRow } from '../utils/treeRows';
 import type { RootActions } from '../hooks/useRootActions';
 
@@ -20,19 +18,16 @@ import type { RootActions } from '../hooks/useRootActions';
  * 左栏单棵树（批次2 G5，R03/R04/R05 + 多根 R10）：
  * - 根作为顶层节点，子目录缩进在所属根下；同名根与同名子目录不再分处两块面板
  * - 展开态与隐藏集一律以 rootKey(rootId, relPath) 为键，按根分桶不互串
- * - 隐藏集全量清单与「在树中显示已隐藏目录」开关在顶栏的 HiddenFoldersButton（左栏可整条收起，入口不能留在树里）
- * - 树头两个常驻图标：添加根目录、重新扫描当前选中根（批次4 从顶栏搬来）
- * - 右键菜单：在资源管理器中打开 / 隐藏 / 取消隐藏 / 重新扫描（都针对该行所属根）；
- *   根行额外给改别名与删除，作为 hover 图标之外的同等入口
- * - 右键菜单里的「取消隐藏」按该目录子树内的实际隐藏项渲染：0 项整块不出现（旧版是永久灰掉的哑项——
- *   默认不显示隐藏目录时，能右键到的行必然不在隐藏集里）、1 项单行、≥2 项平铺成「全部恢复（N）」+ 逐项
+ * - 隐藏与恢复全部在右键菜单里：树不显示隐藏目录（没有查看开关），右键某行就列出它子树内的隐藏项
+ * - 树头只留「添加根目录」；重新扫描由每行右键菜单发起，对那一行所属的根生效
+ * - 右键菜单按行类型渲染，不给点不到的灰项：根行没有「隐藏文件夹」，目录行没有「改别名」「删除根目录」
+ * - 「取消隐藏」按子树实际隐藏项渲染：0 项整块不出现（旧版是永久灰掉的哑项——能右键到的行必然不在
+ *   隐藏集里）、1 项单行、≥2 项平铺成「全部恢复（N）」+ 逐项
  */
 export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.Element {
   const roots = useAppStore((s) => s.roots);
   const treesByRoot = useAppStore((s) => s.treesByRoot);
   const hiddenSet = useAppStore((s) => s.hiddenSet);
-  /** 是否在树里显示已隐藏目录：开关在顶栏的 HiddenFoldersButton，这里只读 */
-  const showHidden = useAppStore((s) => s.showHidden);
   const imagesByDir = useAppStore((s) => s.imagesByDir);
   const selectedRootId = useAppStore((s) => s.selectedRootId);
   const selectedDir = useAppStore((s) => s.selectedDir);
@@ -48,11 +43,6 @@ export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.E
   const [menu, setMenu] = useState<{ rootId: string; relPath: string; isRoot: boolean; mouseX: number; mouseY: number } | null>(null);
 
   const rootById = useMemo(() => new Map(roots.map((root) => [root.id, root])), [roots]);
-
-  /** 树头刷新按钮的作用对象：当前选中的根（磁盘上新增/删除照片只能靠重扫进界面，没有目录监听） */
-  const selectedRoot = selectedRootId ? (rootById.get(selectedRootId) ?? null) : null;
-  const selectedRootScanning =
-    selectedRootId !== null && scanStateByRoot.get(selectedRootId) === 'scanning';
 
   /** 根目录直属图片不属于任何子目录节点，得单独按根数一遍给根行计数 */
   const rootDirectCounts = useMemo(() => {
@@ -70,13 +60,12 @@ export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.E
         rootDirectCounts,
         expanded,
         selectedRootId,
-        selectedDir,
-        showHidden
+        selectedDir
       }),
-    [roots, treesByRoot, hiddenSet, rootDirectCounts, expanded, selectedRootId, selectedDir, showHidden]
+    [roots, treesByRoot, hiddenSet, rootDirectCounts, expanded, selectedRootId, selectedDir]
   );
 
-  /** 右键那行的子树内（含它自己）被单独隐藏的目录，浅→深；决定菜单里「取消隐藏」这一区怎么渲染 */
+  /** 右键那行的子树内被单独隐藏的目录（浅→深）；决定菜单里「取消隐藏」这一区怎么渲染 */
   const unhideTargets = useMemo(
     () => (menu === null ? [] : listHiddenUnder(hiddenSet, menu.rootId, menu.relPath)),
     [menu, hiddenSet]
@@ -170,12 +159,9 @@ export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.E
     else void startScan(root);
   };
 
-  /** 菜单里的隐藏项标签：子目录显示相对右键目录的路径，右键目录自身那条标注出来免得和子项混淆 */
-  const hiddenItemLabel = (path: string): string => {
-    if (menu === null) return path;
-    if (path === menu.relPath) return `${path.split('/').pop() ?? path}（本目录）`;
-    return menu.relPath === '' ? path : path.slice(menu.relPath.length + 1);
-  };
+  /** 菜单里的隐藏项标签：相对右键目录显示，免得列出一串重复的祖先路径 */
+  const hiddenItemLabel = (path: string): string =>
+    menu === null || menu.relPath === '' ? path : path.slice(menu.relPath.length + 1);
   return (
     <Box className="flex h-full flex-col">
       <Stack
@@ -188,26 +174,6 @@ export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.E
           图库 · {roots.length} 个根目录
         </Typography>
         <Stack direction="row" alignItems="center" spacing={0.25}>
-          <Tooltip
-            title={
-              selectedRoot === null
-                ? '还没有根目录可扫描'
-                : selectedRootScanning
-                  ? `「${selectedRoot.alias}」正在扫描，请等待`
-                  : `重新扫描「${selectedRoot.alias}」（磁盘上的增删要重扫才会更新）`
-            }
-          >
-            <span>
-              <IconButton
-                size="small"
-                aria-label="重新扫描当前根目录"
-                disabled={selectedRoot === null || selectedRootScanning}
-                onClick={() => void rescan()}
-              >
-                <RefreshIcon fontSize="small" />
-              </IconButton>
-            </span>
-          </Tooltip>
           <Tooltip title="添加根目录">
             <IconButton size="small" aria-label="添加根目录" onClick={() => void rootActions.addRoot()}>
               <AddIcon fontSize="small" />
@@ -255,26 +221,30 @@ export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.E
           <FolderOpenIcon fontSize="small" sx={{ mr: 1 }} />
           在资源管理器中打开
         </MenuItem>
-        <Divider />
-        <MenuItem disabled={menu?.relPath === ''} onClick={() => handleMenuAction('hide')}>
-          隐藏文件夹
-        </MenuItem>
-        {menu !== null && unhideTargets.length === 1 && (
-          <MenuItem onClick={() => void handleUnhide(menu.rootId, unhideTargets[0])}>取消隐藏</MenuItem>
-        )}
-        {menu !== null && unhideTargets.length >= 2 && (
+        {(menu !== null && (!menu.isRoot || unhideTargets.length > 0)) && (
           <>
-            <MenuItem color="primary" onClick={() => void handleUnhideMany(menu.rootId, unhideTargets)}>
-              全部恢复（{unhideTargets.length} 个）
-            </MenuItem>
-            <ListSubheader component="div" sx={{ lineHeight: '24px', fontSize: 12, fontWeight: 600 }}>
-              已隐藏
-            </ListSubheader>
-            {unhideTargets.map((path) => (
-              <MenuItem key={path} sx={{ pl: 3 }} onClick={() => void handleUnhide(menu.rootId, path)}>
-                {hiddenItemLabel(path)}
-              </MenuItem>
-            ))}
+            <Divider />
+            {menu !== null && !menu.isRoot && (
+              <MenuItem onClick={() => handleMenuAction('hide')}>隐藏文件夹</MenuItem>
+            )}
+            {menu !== null && unhideTargets.length === 1 && (
+              <MenuItem onClick={() => void handleUnhide(menu.rootId, unhideTargets[0])}>取消隐藏</MenuItem>
+            )}
+            {menu !== null && unhideTargets.length >= 2 && (
+              <>
+                <MenuItem color="primary" onClick={() => void handleUnhideMany(menu.rootId, unhideTargets)}>
+                  全部恢复（{unhideTargets.length} 个）
+                </MenuItem>
+                <ListSubheader component="div" sx={{ lineHeight: '24px', fontSize: 12, fontWeight: 600 }}>
+                  已隐藏
+                </ListSubheader>
+                {unhideTargets.map((path) => (
+                  <MenuItem key={path} sx={{ pl: 3 }} onClick={() => void handleUnhide(menu.rootId, path)}>
+                    {hiddenItemLabel(path)}
+                  </MenuItem>
+                ))}
+              </>
+            )}
           </>
         )}
         <Divider />
@@ -282,13 +252,15 @@ export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.E
           <RefreshIcon fontSize="small" sx={{ mr: 1 }} />
           重新扫描
         </MenuItem>
-        {/* 根行专属：改名与删除不只挂在 hover 上，键盘用户从菜单同样能触发 */}
-        <MenuItem disabled={menu?.isRoot !== true} onClick={() => handleMenuAction('rename')}>
-          改别名
-        </MenuItem>
-        <MenuItem disabled={menu?.isRoot !== true} color="error" onClick={() => handleMenuAction('remove')}>
-          删除根目录
-        </MenuItem>
+        {/* 根行专属：改名与删除不只挂在 hover 上，键盘用户从菜单同样能触发；目录行整条不出现，不给点不到的灰项 */}
+        {menu !== null && menu.isRoot && (
+          <>
+            <MenuItem onClick={() => handleMenuAction('rename')}>改别名</MenuItem>
+            <MenuItem color="error" onClick={() => handleMenuAction('remove')}>
+              删除根目录
+            </MenuItem>
+          </>
+        )}
       </Menu>
     </Box>
   );
@@ -341,15 +313,19 @@ function TreeRowItem({ row, scanned, scanning, onExpand, onSelect, onContextMenu
           : {
               '&:hover': { bgcolor: 'action.hover' },
               '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main' },
-              ...(row.rootSelected ? { bgcolor: 'action.selected' } : {}),
-              ...(row.hidden ? { opacity: 0.55 } : {})
+              ...(row.rootSelected ? { bgcolor: 'action.selected' } : {})
             }
       }
     >
       {row.hasChildren ? (
         <IconButton
           size="small"
-          className="p-0.5"
+          className={`!min-w-0 shrink-0 transition-opacity ${
+            row.expanded
+              ? 'opacity-100'
+              : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
+          }`}
+          sx={{ width: 26, height: 26, padding: 1, transform: row.expanded ? 'rotate(90deg)' : undefined, transition: 'opacity 120ms, transform 120ms' }}
           aria-label={row.expanded ? `收起${row.name}` : `展开${row.name}`}
           aria-expanded={row.expanded}
           onClick={(e) => {
@@ -357,18 +333,12 @@ function TreeRowItem({ row, scanned, scanning, onExpand, onSelect, onContextMenu
             onExpand();
           }}
         >
-          {row.expanded ? <ExpandMoreIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
+          <ChevronRightIcon fontSize="small" />
         </IconButton>
       ) : (
-        <Box className="w-6 shrink-0" />
+        <Box className="shrink-0" sx={{ width: 26 }} />
       )}
-      {row.isRoot ? (
-        <PhotoLibraryIcon fontSize="small" className="shrink-0" />
-      ) : row.hidden ? (
-        <VisibilityOffIcon fontSize="small" className="shrink-0" />
-      ) : (
-        <FolderIcon fontSize="small" className="shrink-0" />
-      )}
+      {row.isRoot ? <PhotoLibraryIcon fontSize="small" className="shrink-0" /> : <FolderIcon fontSize="small" className="shrink-0" />}
       <Box className="min-w-0 flex-1">
         <Typography noWrap variant="body2" sx={row.isRoot ? { fontWeight: 600 } : undefined} title={row.name}>
           {row.name}

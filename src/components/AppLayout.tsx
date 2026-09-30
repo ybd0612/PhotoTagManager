@@ -24,7 +24,6 @@ import { collectDirAndDescendants } from '../utils/folders';
 import { countImagesInDirs } from '../utils/treeRows';
 import { scanProgressPercent, scanStatusLabel } from '../utils/scanStatus';
 import { FolderTree } from './FolderTree';
-import { HiddenFoldersButton } from './HiddenFoldersButton';
 import { TagFilterBar } from './TagFilterBar';
 import { ThumbnailGrid } from './ThumbnailGrid';
 import { PreviewOverlay } from './PreviewOverlay';
@@ -168,7 +167,7 @@ export function AppLayout(): JSX.Element {
         className="ptm-titlebar flex h-14 shrink-0 items-center justify-between rounded-none border-b border-slate-200 pl-4"
       >
         <Stack direction="row" spacing={1.5} alignItems="center" className="min-w-0">
-          {/* 侧栏开关与隐藏集入口：左栏收起后这两个必须还在，否则目录管理没有出口 */}
+          {/* 侧栏开关：左栏收起后必须还在，否则整棵树没有出口 */}
           {hasRoot && (
             <Tooltip title={treeCollapsed ? '展开目录树（Ctrl + B）' : '收起目录树（Ctrl + B）'}>
               <IconButton size="small" aria-label={treeCollapsed ? '展开侧栏' : '折叠侧栏'} onClick={toggleTreeCollapsed} className="shrink-0">
@@ -176,7 +175,6 @@ export function AppLayout(): JSX.Element {
               </IconButton>
             </Tooltip>
           )}
-          {hasRoot && <HiddenFoldersButton />}
           <PhotoLibraryIcon color="primary" className="shrink-0" />
           <Typography variant="h6" sx={{ fontWeight: 700 }} className="shrink-0">
             <Box component="span">

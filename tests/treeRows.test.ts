@@ -41,7 +41,6 @@ function rows(overrides: Partial<Parameters<typeof buildTreeRows>[0]> = {}) {
     expanded: {},
     selectedRootId: 'r1',
     selectedDir: '',
-    showHidden: false,
     ...overrides
   });
 }
@@ -86,17 +85,6 @@ describe('buildTreeRows 合并树结构', () => {
     expect(list.some((r) => r.rootId === 'r2')).toBe(true);
   });
 
-  it('showHidden 下隐藏节点回到树上并标记 hidden（其后代仍需该节点展开）', () => {
-    const list = rows({
-      hiddenSet: new Set([rootKey('r1', '截图')]),
-      showHidden: true,
-      expanded: { [rootKey('r1', '截图')]: true }
-    });
-    const hiddenRow = list.find((r) => r.rootId === 'r1' && r.relPath === '截图');
-    expect(hiddenRow?.hidden).toBe(true);
-    expect(keys(list)).toContain('r1:截图/2024');
-  });
-
   it('选中判定只在所属根内进行：r1 的「截图」选中时 r2 的同名行不算选中', () => {
     const list = rows({ selectedDir: '截图', expanded: { [rootKey('r2', '')]: true } });
     const selected = list.filter((r) => r.selected).map((r) => `${r.rootId}:${r.relPath}`);
@@ -115,7 +103,6 @@ describe('buildTreeRows 合并树结构', () => {
       expanded: {},
       selectedRootId: 'r1',
       selectedDir: '',
-      showHidden: false,
       rootDirectCounts: new Map([['r1', 3392]])
     });
     expect(flat[0]).toMatchObject({ totalCount: 3392, hasChildren: false });
@@ -134,7 +121,6 @@ describe('buildTreeRows 合并树结构', () => {
       expanded: {},
       selectedRootId: 'r1',
       selectedDir: '',
-      showHidden: false
     });
     expect(onlyHidden[0]).toMatchObject({ totalCount: 0, hasChildren: false });
     expect(onlyHidden[0].expanded).toBe(true);

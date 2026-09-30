@@ -126,7 +126,6 @@ beforeEach(() => {
     preview: null,
     snackbar: null,
     treeCollapsed: false,
-    showHidden: false
   });
 });
 
@@ -220,17 +219,20 @@ describe('批次2 G6 顶栏', () => {
     await waitFor(() => expect(screen.queryByTestId('settings-about')).toBeNull());
   });
 
-  it('批次4：顶栏不再放添加根目录与重新扫描，两个入口归到左栏树头', () => {
+  it('批次4 整改后：添加根目录在树头，重新扫描改由树行右键菜单发起（常驻图标已撤）', () => {
     seedGallery();
     render(<AppLayout />);
     const header = screen.getByRole('banner');
     expect(within(header).queryByRole('button', { name: '添加根目录' })).toBeNull();
     expect(within(header).queryByRole('button', { name: /重新扫描/ })).toBeNull();
 
-    // 左栏树头：加号与刷新常驻
+    // 树头只剩加号；那颗常驻刷新图标不再存在
     expect(screen.getByRole('button', { name: '添加根目录' })).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: '重新扫描当前根目录' }));
-    // 关键：真的发起对当前根 r1 的重扫，而不是只留一个图标
+    expect(screen.queryByRole('button', { name: '重新扫描当前根目录' })).toBeNull();
+
+    fireEvent.contextMenu(screen.getByRole('treeitem', { name: /根目录 截图/ }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '重新扫描' }));
+    // 关键：真的发起对该行所属根 r1 的重扫，而不是只留一个菜单项
     const scanStart = (window as unknown as { api: PhotoTagApi }).api.scanStart as ReturnType<
       typeof vi.fn
     >;
@@ -319,20 +321,6 @@ describe('左栏折叠与展开', () => {
     expect(queryTree()).toBeTruthy();
   });
 
-  it('收起左栏后隐藏集管理仍能从顶栏打开，入口不随左栏消失', () => {
-    seedGallery();
-    render(<AppLayout />);
-    fireEvent.click(screen.getByRole('button', { name: '折叠侧栏' }));
-    fireEvent.click(screen.getByRole('button', { name: /已隐藏 0 个目录，点击管理/ }));
-    expect(screen.getByRole('menuitem', { name: /在树中显示已隐藏目录/ })).toBeTruthy();
-  });
-
-  it('隐藏集入口全应用只有一处，折叠不该让它变成两份', () => {
-    seedGallery();
-    render(<AppLayout />);
-    expect(screen.getAllByRole('button', { name: /已隐藏 \d+ 个目录，点击管理/ })).toHaveLength(1);
-  });
-
   it('快捷键表列出 Ctrl + B（表里只许有已实现的键位）', () => {
     expect(SHORTCUTS.some((s) => s.keys === 'Ctrl + B')).toBe(true);
   });
@@ -375,7 +363,7 @@ describe('左栏右键菜单的「取消隐藏」区', () => {
       scanId: 's1',
       kind: 'data',
       batchIndex: 0,
-      folders: [nested('2024', [nested('2024/01')]), nested('2025')],
+      folders: [nested('2024', [nested('2024/01', [nested('2024/01/上午')])]), nested('2025')],
       images: [
         image('', 'root.jpg'),
         image('2024', 'a.jpg'),
@@ -389,13 +377,25 @@ describe('左栏右键菜单的「取消隐藏」区', () => {
 
   const rootRow = (): HTMLElement => screen.getByRole('treeitem', { name: /根目录 照片/ });
 
-  it('子树里没有隐藏项时，菜单不出现「取消隐藏」（旧版是点不亮的永久灰项）', () => {
+  it('根行菜单：没有「隐藏文件夹」（根本身不许隐藏），有改别名与删除根目录', () => {
     seedScannedRoot();
     render(<AppLayout />);
     fireEvent.contextMenu(rootRow());
-    expect(screen.getByRole('menuitem', { name: '隐藏文件夹' })).toBeTruthy();
+    expect(screen.queryByRole('menuitem', { name: '隐藏文件夹' })).toBeNull();
+    expect(screen.getByRole('menuitem', { name: '改别名' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: '删除根目录' })).toBeTruthy();
+    // 子树里没有隐藏项时，「取消隐藏」整块也不出现（旧版是点不亮的永久灰项）
     expect(screen.queryByRole('menuitem', { name: '取消隐藏' })).toBeNull();
     expect(screen.queryByRole('menuitem', { name: /全部恢复/ })).toBeNull();
+  });
+
+  it('目录行菜单：有「隐藏文件夹」，不出现改别名与删除根目录', () => {
+    seedScannedRoot();
+    render(<AppLayout />);
+    fireEvent.contextMenu(screen.getByRole('treeitem', { name: /2024，/ }));
+    expect(screen.getByRole('menuitem', { name: '隐藏文件夹' })).toBeTruthy();
+    expect(screen.queryByRole('menuitem', { name: '改别名' })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: '删除根目录' })).toBeNull();
   });
 
   it('子树里只有一个隐藏项时给单行「取消隐藏」，不铺分组', () => {
@@ -436,15 +436,15 @@ describe('左栏右键菜单的「取消隐藏」区', () => {
     expect(screen.getByRole('treeitem', { name: /2024，/ })).toBeTruthy();
   });
 
-  it('右键子目录时标签按相对路径显示，自身那条标注「本目录」', () => {
+  it('右键子目录时隐藏后代标签按相对该目录的路径显示，不重复带祖先前缀', () => {
     seedScannedRoot();
-    useAppStore.getState().hideFolderLocal('r1', '2024');
     useAppStore.getState().hideFolderLocal('r1', '2024/01');
-    useAppStore.getState().toggleShowHidden();
+    useAppStore.getState().hideFolderLocal('r1', '2024/01/上午');
     render(<AppLayout />);
     fireEvent.contextMenu(screen.getByRole('treeitem', { name: /2024，/ }));
-    expect(screen.getByRole('menuitem', { name: '2024（本目录）' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: '全部恢复（2 个）' })).toBeTruthy();
     expect(screen.getByRole('menuitem', { name: '01' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: '01/上午' })).toBeTruthy();
     expect(screen.queryByRole('menuitem', { name: '2024/01' })).toBeNull();
   });
 });
