@@ -42,7 +42,7 @@ function GeneralPane(): JSX.Element {
       <Stack direction="row" spacing={1.5} alignItems="center">
         <Stack direction="row" spacing={0.5} alignItems="center" sx={{ width: 96, flexShrink: 0 }}>
           <Typography variant="body2">扫描完成</Typography>
-          <Hint text="默认关闭：状态栏已常驻「已扫描 N 个文件」，打开它只是再弹一条 snackbar 播报同一个数字，不改变扫描行为。" />
+          <Hint text="默认关闭：状态栏已常驻「已扫描 N 张图片」，打开它只是再弹一条 snackbar 播报同一个数字，不改变扫描行为。" />
         </Stack>
         <FormControlLabel
           control={

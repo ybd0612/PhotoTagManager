@@ -117,7 +117,7 @@ describe('G8 新偏好 scanDoneToast —— 必须真接上扫描完成这条链
     render(<ScanProbe />);
     useAppStore.getState().setSnackbar(null);
     fireScanDone!({ rootId: 'r1', scanId: 's1', stats: stats() });
-    expect(useAppStore.getState().snackbar).toContain('已扫描 3,392 个文件');
+    expect(useAppStore.getState().snackbar).toContain('已扫描 3,392 张图片');
   });
 
   it('反面腿：默认关闭时同样完成一次扫描，一条提示都不发（状态栏已常驻计数）', () => {

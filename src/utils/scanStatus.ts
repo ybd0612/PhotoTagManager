@@ -20,7 +20,7 @@ export function scanStatusLabel(state: ScanState, stats: ScanStats | null): stri
   if (state === 'scanning') {
     return `正在扫描 ${stats.scannedFiles.toLocaleString()} / ${stats.totalFiles.toLocaleString()} 个文件 · ${scanProgressPercent(stats)}%`;
   }
-  // scannedFiles 含非图片，与状态栏左侧「共 N 张」不是一个分母——把口径写在脸上，省得用户以为漏扫
-  if (state === 'done') return `已扫描 ${stats.scannedFiles.toLocaleString()} 个文件（含非图片）`;
+  // 完成后只报入库图片数：与状态栏左侧「共 N 张」同分母，扫描遍历到的文件总数（含非图片）不再出现在文案里
+  if (state === 'done') return `已扫描 ${stats.imageCount.toLocaleString()} 张图片`;
   return '';
 }
