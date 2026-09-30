@@ -40,9 +40,10 @@ function GeneralPane(): JSX.Element {
   return (
     <Stack spacing={2} data-testid="settings-general">
       <Stack direction="row" spacing={1.5} alignItems="center">
-        <Typography variant="body2" sx={{ width: 96 }} className="shrink-0">
-          扫描完成
-        </Typography>
+        <Stack direction="row" spacing={0.5} alignItems="center" sx={{ width: 96, flexShrink: 0 }}>
+          <Typography variant="body2">扫描完成</Typography>
+          <Hint text="默认关闭：状态栏已常驻「已扫描 N 个文件」，打开它只是再弹一条 snackbar 播报同一个数字，不改变扫描行为。" />
+        </Stack>
         <FormControlLabel
           control={
             <Switch
@@ -53,7 +54,6 @@ function GeneralPane(): JSX.Element {
           }
           label="扫描完成后弹出提示"
         />
-        <Hint text="默认关闭：状态栏已常驻「已扫描 N 个文件」，打开它只是再弹一条 snackbar 播报同一个数字，不改变扫描行为。" />
       </Stack>
       <Divider />
       <ProxyRow />
@@ -76,9 +76,17 @@ function ProxyRow(): JSX.Element {
 
   return (
     <Stack direction="row" spacing={1.5} alignItems="flex-start">
-      <Typography variant="body2" sx={{ width: 96 }} className="shrink-0" >
-        网络代理
-      </Typography>
+      <Stack
+        direction="row"
+        spacing={0.5}
+        alignItems="center"
+        sx={{ width: 96, flexShrink: 0 }}
+      >
+        <Typography variant="body2" sx={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
+          网络代理
+        </Typography>
+        <Hint text="只影响「模型下载」与「检查更新」两件事；照片始终不出本机，本应用没有任何上传照片的请求。不支持带账号密码的代理地址（那会明文存在配置文件里）。" />
+      </Stack>
       <Stack spacing={0.5} sx={{ flex: 1, minWidth: 0 }}>
         <Stack direction="row" spacing={1} alignItems="center">
           <TextField
@@ -108,7 +116,6 @@ function ProxyRow(): JSX.Element {
               : `将使用代理 ${checked.value}`}
         </Typography>
       </Stack>
-      <Hint text="只影响「模型下载」与「检查更新」两件事；照片始终不出本机，本应用没有任何上传照片的请求。不支持带账号密码的代理地址（那会明文存在配置文件里）。" />
     </Stack>
   );
 }
