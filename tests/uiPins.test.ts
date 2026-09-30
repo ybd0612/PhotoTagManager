@@ -24,6 +24,18 @@ describe('树行操作图标的显示机制', () => {
     expect(tree).toContain('ptm-tree-row');
   });
 
+  it('MUI 的 sx 里不许出现无单位的 height/width/borderRadius 数字 1（会被当成 100% 与主题倍数）', () => {
+    const offenders: string[] = [];
+    for (const f of ['src/components/FolderTree.tsx', 'src/components/TagFilterBar.tsx', 'src/components/ThumbnailGrid.tsx', 'src/components/AppLayout.tsx']) {
+      const src = withoutComments(read(...f.split('/')));
+      // 这里刻意不用词首断言转义写法：它在本文件里曾被写成退格控制符，判据会静默失效（反证时才发现）
+      for (const m of src.matchAll(/(^|[^A-Za-z])(height|width|borderRadius):\s*1\s*[,}]/g)) {
+        offenders.push(`${f}: ${m[2]}: 1`);
+      }
+    }
+    expect(offenders, '这些值在 MUI sx 里不是 1px：' + offenders.join(' | ')).toEqual([]);
+  });
+
   it('CSS 里悬停与键盘聚焦两条规则都在，缺一条就会退回"常驻"或"键盘够不着"', () => {
     expect(css).toMatch(/\.ptm-tree-row:hover \.ptm-row-actions/);
     expect(css).toMatch(/\.ptm-tree-row:has\(:focus-visible\) \.ptm-row-actions/);

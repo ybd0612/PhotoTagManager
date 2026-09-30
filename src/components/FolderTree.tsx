@@ -188,7 +188,13 @@ export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.E
        * 居中的窄线不声称"整行到此为止"，所以不参与跨栏对齐，怎么都不会打架。
        */}
       <Box className="flex shrink-0 justify-center" sx={{ height: 11 }}>
-        <Box sx={{ width: 20, height: 1, borderRadius: 1, bgcolor: 'var(--ptm-hairline)' }} />
+        {/**
+         * 尺寸必须带单位。MUI 的 sx 里 `height: 1` / `width: 1` 不是 1px，而是"占父级的 100%"，
+         * `borderRadius: 1` 也不是 1px，而是主题 shape 圆角的 1 倍（本项目 = 12px）。
+         * 上一版这么写，量出来是 20×11px、圆角 12px 的一个粗块——用户说"不是这个意思，是很窄的线"
+         * 说的就是它。jsdom 量不到，是活窗口 CDP 实测发现的。
+         */}
+        <Box sx={{ width: 20, height: '1px', borderRadius: 0, bgcolor: 'var(--ptm-hairline)' }} />
       </Box>
 
       <Box className="min-h-0 flex-1 overflow-auto py-1" role="tree" aria-label="图库目录树">
