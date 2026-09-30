@@ -2,10 +2,13 @@
 // 批次3 · G8 —— 设置对话框「常规」分区做实。
 // 全局约束里最硬的一条：只允许出现真的接上行为的控件。
 // 所以每条判据都同时盯"界面点了 → store 变了 → 落盘了"，开关类还要有反面腿。
+// 2026-09-30：排序与缩略图两行撤掉——主界面工具条上就是同一套控件、同一个偏好，
+// 这里再放一遍等于把同一事实说两遍，还让人怀疑两边是否同步。本文件反过来钉住它不许回来。
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 
 import { SettingsDialog } from '../src/components/settings/SettingsDialog';
+import { updateStub } from './fixtures/updateStub';
 import { useAppStore } from '../src/store/useAppStore';
 import { useScanSubscriptions } from '../src/hooks/useScan';
 import { DEFAULT_UI_PREFS } from '../shared/types';
@@ -61,31 +64,26 @@ beforeEach(() => {
 });
 
 describe('设置对话框 · 常规分区', () => {
-  it('放了三组真生效偏好，且不再写"暂无常规设置项"', () => {
-    render(<SettingsDialog open onClose={() => undefined} />);
+  it('只剩扫描完成与网络代理两项真生效偏好，且不再写"暂无常规设置项"', () => {
+    render(<SettingsDialog open onClose={() => undefined} update={updateStub()} />);
     const dialog = screen.getByRole('dialog');
     expect(within(dialog).queryByText(/暂无常规设置/)).toBeNull();
-    expect(within(dialog).getByText(/排序/)).toBeTruthy();
-    expect(within(dialog).getByText(/缩略图/)).toBeTruthy();
     expect(within(dialog).getByRole('checkbox', { name: /扫描完成后/ })).toBeTruthy();
+    expect(within(dialog).getByRole('textbox', { name: '网络代理地址' })).toBeTruthy();
   });
 
-  it('点缩略图「大」→ store 变 large 并落盘（不是只在界面上亮一下）', () => {
-    render(<SettingsDialog open onClose={() => undefined} />);
-    fireEvent.click(screen.getByRole('button', { name: '大' }));
-    expect(useAppStore.getState().thumbSize).toBe('large');
-    expect(api.setPrefs).toHaveBeenCalledWith({ thumbSize: 'large' });
-  });
-
-  it('点排序「时间」→ store 变 time 并落盘', () => {
-    render(<SettingsDialog open onClose={() => undefined} />);
-    fireEvent.click(screen.getByRole('button', { name: '时间' }));
-    expect(useAppStore.getState().sortKey).toBe('time');
-    expect(api.setPrefs).toHaveBeenCalledWith({ sortKey: 'time', sortDir: 'asc' });
+  it('排序与缩略图不在设置里重复：主界面工具条已有同一套控件，同一事实只允许一处可改', () => {
+    render(<SettingsDialog open onClose={() => undefined} update={updateStub()} />);
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).queryByText('默认排序')).toBeNull();
+    expect(within(dialog).queryByText('缩略图')).toBeNull();
+    for (const label of ['名称', '时间', '大小', '小', '中', '大']) {
+      expect(within(dialog).queryByRole('button', { name: label })).toBeNull();
+    }
   });
 
   it('开关拨一下 → store.scanDoneToast 变 true 并落盘', () => {
-    render(<SettingsDialog open onClose={() => undefined} />);
+    render(<SettingsDialog open onClose={() => undefined} update={updateStub()} />);
     const sw = screen.getByRole('checkbox', { name: /扫描完成后/ });
     expect(sw.checked).toBe(false);
     fireEvent.click(sw);
@@ -94,11 +92,21 @@ describe('设置对话框 · 常规分区', () => {
   });
 
   it('控件初值从 store 读回，写死初始态会在这里红', () => {
-    useAppStore.setState({ thumbSize: 'large', sortKey: 'size', sortDir: 'desc', scanDoneToast: true });
-    render(<SettingsDialog open onClose={() => undefined} />);
-    expect(screen.getByRole('button', { name: '大' }).getAttribute('aria-pressed')).toBe('true');
-    expect(screen.getByRole('button', { name: '中' }).getAttribute('aria-pressed')).toBe('false');
+    useAppStore.setState({ scanDoneToast: true });
+    render(<SettingsDialog open onClose={() => undefined} update={updateStub()} />);
     expect(screen.getByRole('checkbox', { name: /扫描完成后/ }).checked).toBe(true);
+  });
+
+  it('解释型长句收进问号图标，悬浮才展开正文', async () => {
+    render(<SettingsDialog open onClose={() => undefined} update={updateStub()} />);
+    const dialog = screen.getByRole('dialog');
+    // 正文一开始不在 DOM 里，才说明它真被收起来了而不是只是变小
+    expect(within(dialog).queryByText(/只影响「模型下载」/)).toBeNull();
+    const hints = within(dialog).getAllByRole('button', { name: '说明' });
+    expect(hints).toHaveLength(2);
+    fireEvent.mouseOver(hints[1]);
+    await waitFor(() => expect(screen.getByRole('tooltip')).toBeTruthy());
+    expect(screen.getByRole('tooltip').textContent).toContain('照片始终不出本机');
   });
 });
 

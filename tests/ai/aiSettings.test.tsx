@@ -7,6 +7,7 @@ import { render, screen, fireEvent, within } from '@testing-library/react';
 
 import { SettingsDialog } from '../../src/components/settings/SettingsDialog';
 import { AiSettingsPane } from '../../src/components/settings/AiSettingsPane';
+import { updateStub } from '../fixtures/updateStub';
 import { useAiStore } from '../../src/store/useAiStore';
 import type { AiStorageStats } from '../../shared/types';
 
@@ -111,7 +112,7 @@ describe('ai/AiSettingsPane —— 只读统计', () => {
 
 describe('ai/SettingsDialog —— 应用级总入口', () => {
   it('① 打开后有 AI 分区，且它是应用级设置的一部分而不是 AI 专属弹窗', async () => {
-    render(<SettingsDialog open onClose={() => undefined} />);
+    render(<SettingsDialog open onClose={() => undefined} update={updateStub()} />);
     const dialog = screen.getByRole('dialog');
     expect(within(dialog).getByRole('tab', { name: /常规/ })).toBeTruthy();
     fireEvent.click(within(dialog).getByRole('tab', { name: /AI/ }));
@@ -119,7 +120,7 @@ describe('ai/SettingsDialog —— 应用级总入口', () => {
   });
 
   it('② 不含模型下载 / 卸载 / 删除 / 设为默认——同一状态只允许一处可改（D17）', async () => {
-    render(<SettingsDialog open onClose={() => undefined} />);
+    render(<SettingsDialog open onClose={() => undefined} update={updateStub()} />);
     fireEvent.click(screen.getByRole('tab', { name: /AI/ }));
     const pane = await screen.findByTestId('ai-settings-pane');
     for (const banned of ['下载', '卸载', '删除', '设为默认']) {
@@ -128,7 +129,7 @@ describe('ai/SettingsDialog —— 应用级总入口', () => {
   });
 
   it('③ 参数区为空态并明确标注「暂无可调参数」，且不许出现任何无效控件', async () => {
-    render(<SettingsDialog open onClose={() => undefined} />);
+    render(<SettingsDialog open onClose={() => undefined} update={updateStub()} />);
     fireEvent.click(screen.getByRole('tab', { name: /AI/ }));
     const pane = await screen.findByTestId('ai-settings-pane');
     expect(pane.textContent).toContain('暂无可调参数');

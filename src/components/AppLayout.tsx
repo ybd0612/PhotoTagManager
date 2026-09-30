@@ -16,7 +16,6 @@ import StopCircleIcon from '@mui/icons-material/StopCircle';
 import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary';
 import SettingsIcon from '@mui/icons-material/Settings';
 import ViewSidebarIcon from '@mui/icons-material/ViewSidebar';
-import { call, getApi } from '../api';
 import { useAppStore } from '../store/useAppStore';
 import { cancelScan, rescan } from '../hooks/useScan';
 import { useRootActions } from '../hooks/useRootActions';
@@ -27,9 +26,9 @@ import { FolderTree } from './FolderTree';
 import { TagFilterBar } from './TagFilterBar';
 import { ThumbnailGrid } from './ThumbnailGrid';
 import { PreviewOverlay } from './PreviewOverlay';
-import { UpdateDialog } from './UpdateDialog';
+import { useUpdate } from '../hooks/useUpdate';
+import { updateActionLabel, updatePrimaryAction, updateStatusLabel } from '../utils/updateStatus';
 import { SettingsDialog } from './settings/SettingsDialog';
-import type { UpdateStatus } from '../../shared/types';
 
 /**
  * 三栏布局容器 + 顶部工具栏 + 底部状态栏（PRD §3.3 线框图，多根 R10）。
@@ -52,11 +51,11 @@ export function AppLayout(): JSX.Element {
   const toggleTreeCollapsed = useAppStore((s) => s.toggleTreeCollapsed);
 
   const { actions: rootActions, dialogs: rootDialogs } = useRootActions();
-  const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   /** 打开设置时停在哪个分区：工具栏按钮进「常规」，`?` 直接进「快捷键」（批次3 G11） */
   const [settingsTab, setSettingsTab] = useState<'general' | 'ai' | 'shortcuts'>('general');
-  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ state: 'idle' });
+  /** 整应用唯一一份更新状态订阅：右下角通知卡与设置「关于与更新」分区共用 */
+  const update = useUpdate();
 
   const selectedRoot = roots.find((r) => r.id === selectedRootId) ?? null;
 
@@ -98,27 +97,10 @@ export function AppLayout(): JSX.Element {
     void cancelScan();
   }, []);
 
-  // 启动静默检查更新：仅发现新版本（available）时才弹出提示框
+  // 启动静默检查一次：结果只进右下角通知卡，不再弹模态
   useEffect(() => {
-    let cancelled = false;
-    const unsubscribe = getApi().onUpdateStatus((s) => {
-      if (cancelled) return;
-      setUpdateStatus(s);
-      if (s.state === 'available') setUpdateDialogOpen(true);
-    });
-    void getApi()
-      .checkUpdate()
-      .then((result) => {
-        if (cancelled || !result.ok) return;
-        setUpdateStatus(result.data);
-        if (result.data.state === 'available') setUpdateDialogOpen(true);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-      unsubscribe();
-    };
-  }, []);
+    void update.check();
+  }, [update.check]);
 
   /**
    * 全局键位：`?` 唤出快捷键列表（批次3 G11）、`Ctrl + B` 收起/展开左栏。
@@ -147,18 +129,14 @@ export function AppLayout(): JSX.Element {
     return () => window.removeEventListener('keydown', onKey);
   }, [toggleTreeCollapsed]);
 
-  /** 手动检查更新：先打开对话框展示状态，再触发检查 */
-  const handleCheckUpdate = useCallback(async (): Promise<void> => {
-    setUpdateDialogOpen(true);
-    try {
-      await call(getApi().checkUpdate());
-    } catch (error) {
-      setSnackbar(`检查更新失败：${error instanceof Error ? error.message : String(error)}`);
-    }
-  }, [setSnackbar]);
-
   const scanning = currentRootScanState === 'scanning';
   const hasRoot = roots.length > 0 && selectedRootId !== null;
+  // 通知卡只在需要用户有所动作、或正在跑的时候出现；not-available 这类"没什么可说"的静默
+  const updateNoticeVisible =
+    update.status.state === 'available' ||
+    update.status.state === 'downloading' ||
+    update.status.state === 'downloaded';
+  const updateNoticeAction = updatePrimaryAction(update.status);
   return (
     <Box className="flex h-full flex-col bg-slate-50">
       {/* 顶部工具栏：同时是窗口标题栏（拖拽区与右侧控件避让见 index.css 的 .ptm-titlebar） */}
@@ -310,29 +288,38 @@ export function AppLayout(): JSX.Element {
       {/* 预览覆盖层 */}
       <PreviewOverlay />
 
-      {/* 固定位置的非阻塞更新进度提示；关闭对话框不影响后台下载 */}
-      {(updateStatus.state === 'downloading' || updateStatus.state === 'downloaded') && (
+      {/* 固定位置的非阻塞更新提示：文案与动作跟设置分区用同一套派生，两处永远一致 */}
+      {updateNoticeVisible && (
         <Paper
           elevation={3}
+          data-testid="update-notice"
           sx={{ position: 'fixed', right: 20, bottom: 44, zIndex: (theme) => theme.zIndex.snackbar, minWidth: 240, px: 2, py: 1 }}
         >
           <Typography variant="caption" display="block">
-            {updateStatus.state === 'downloading' ? `正在下载更新 ${updateStatus.percent ?? 0}%` : '更新下载完成，可安装'}
+            {updateStatusLabel(update.status)}
           </Typography>
-          {updateStatus.state === 'downloading' && <LinearProgress variant="determinate" value={updateStatus.percent ?? 0} sx={{ mt: 0.5 }} />}
+          {update.status.state === 'downloading' && (
+            <LinearProgress variant="determinate" value={update.status.percent ?? 0} sx={{ mt: 0.5 }} />
+          )}
+          {updateNoticeAction && (
+            <Button
+              size="small"
+              data-testid="update-notice-action"
+              onClick={update.runPrimary}
+              sx={{ mt: 0.5, textTransform: 'none' }}
+            >
+              {updateActionLabel(updateNoticeAction, update.status)}
+            </Button>
+          )}
         </Paper>
       )}
 
-      <UpdateDialog open={updateDialogOpen} onClose={() => setUpdateDialogOpen(false)} />
-      {/* 应用级设置总入口（D16）：检查更新由「关于与更新」分区触发，先收起设置再开更新对话框 */}
+      {/* 应用级设置总入口（D16）：更新在「关于与更新」分区就地完成，不再另开对话框 */}
       <SettingsDialog
         open={settingsOpen}
         initialTab={settingsTab}
         onClose={() => setSettingsOpen(false)}
-        onCheckUpdate={() => {
-          setSettingsOpen(false);
-          void handleCheckUpdate();
-        }}
+        update={update}
       />
       {rootDialogs}
 

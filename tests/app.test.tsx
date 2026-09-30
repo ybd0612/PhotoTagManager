@@ -3,7 +3,6 @@ import { describe, expect, it, vi, beforeAll, beforeEach } from 'vitest';
 import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import App from '../src/App';
 import { AppLayout } from '../src/components/AppLayout';
-import { AboutUpdatePane } from '../src/components/settings/AboutUpdatePane';
 import { rootKey, useAppStore } from '../src/store/useAppStore';
 import { SHORTCUTS } from '../src/utils/shortcuts';
 import { DEFAULT_UI_PREFS } from '../shared/types';
@@ -138,8 +137,6 @@ describe('App 冒烟', () => {
   it('无根目录时渲染空状态引导与「添加根目录」入口（R10）', () => {
     render(<App />);
     expect(screen.getByText('PhotoTagManager')).toBeTruthy();
-    render(<AboutUpdatePane />);
-    expect(screen.getByText(`当前版本：${packageJson.version}`)).toBeTruthy();
     expect(screen.getByText('添加一个或多个图片根目录，起个名字方便管理')).toBeTruthy();
     expect(screen.getAllByText('添加根目录').length).toBeGreaterThanOrEqual(1);
   });
@@ -201,27 +198,34 @@ function seedGallery(selectedDir = '截图'): void {
 }
 
 describe('批次2 G6 顶栏', () => {
-  it('检查更新与关于不在顶栏，收进设置的「关于与更新」分区', async () => {
+  it('更新在设置「关于与更新」分区就地完成，不再另开对话框', async () => {
     seedGallery();
     render(<AppLayout />);
     const header = screen.getByRole('banner');
     expect(within(header).queryByRole('button', { name: '更多操作' })).toBeNull();
     expect(within(header).queryByRole('button', { name: '检查更新' })).toBeNull();
     expect(within(header).queryByRole('button', { name: /关于/ })).toBeNull();
-    expect(screen.queryByTestId('settings-about')).toBeNull();
 
     fireEvent.click(within(header).getByRole('button', { name: '设置' }));
     const dialog = screen.getByRole('dialog');
     fireEvent.click(within(dialog).getByRole('tab', { name: '关于与更新' }));
     expect(within(dialog).getByText(`当前版本：${packageJson.version}`)).toBeTruthy();
 
+    // 启动那轮静默检查的结果直接落在分区里，用户不用再点一次才看见
+    await waitFor(() =>
+      expect(within(dialog).getByTestId('update-status').textContent).toContain('已是最新版本')
+    );
+
     const api = (window as unknown as { api: PhotoTagApi }).api;
     const checksBefore = vi.mocked(api.checkUpdate).mock.calls.length;
     fireEvent.click(within(dialog).getByRole('button', { name: '检查更新' }));
-    expect(vi.mocked(api.checkUpdate).mock.calls.length).toBe(checksBefore + 1);
-    // 状态展示交给更新对话框；设置同时收起，两个模态不叠加
-    expect(screen.getByText('尚未检查')).toBeTruthy();
-    await waitFor(() => expect(screen.queryByTestId('settings-about')).toBeNull());
+    await waitFor(() => expect(vi.mocked(api.checkUpdate).mock.calls.length).toBe(checksBefore + 1));
+
+    // 就地出结果：设置不收起，页面上也只有设置这一个模态
+    expect(screen.getByTestId('settings-about')).toBeTruthy();
+    expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+    // "已是最新版本"没什么可说的，不该占住右下角
+    expect(screen.queryByTestId('update-notice')).toBeNull();
   });
 
   it('批次4 整改后：添加根目录在树头，重新扫描改由树行右键菜单发起（常驻图标已撤）', () => {

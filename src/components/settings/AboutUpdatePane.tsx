@@ -2,29 +2,30 @@ import type { MouseEvent } from 'react';
 import {
   Box,
   Button,
+  CircularProgress,
   Divider,
+  LinearProgress,
   Link,
-  List,
-  ListItem,
-  ListItemText,
   Stack,
   Typography
 } from '@mui/material';
 import { call, getApi } from '../../api';
+import { Hint } from '../Hint';
+import { updateActionLabel, updatePrimaryAction, updateStatusLabel } from '../../utils/updateStatus';
 import packageJson from '../../../package.json';
+import type { UpdateController } from '../../hooks/useUpdate';
 
 /**
- * 「关于与更新」分区：版本号、许可与更新入口并置在一处。
+ * 「关于与更新」分区：版本号、许可与更新状态并置在一处。
  *
- * 手动检查复用 AppLayout 挂载的 UpdateDialog（状态机只有一份实现），本分区只负责触发；
- * 埋一层不伤可用性是因为启动时已静默检查过一轮，发现新版本会自己弹窗提示。
+ * 更新就地完成，不再另开对话框：状态与主动作都由传入的控制器推导，
+ * 这里是那份状态机在界面上的唯一落点（右下角通知卡共用同一个控制器）。
  */
-export function AboutUpdatePane({
-  onCheckUpdate = () => undefined
-}: {
-  /** 由 AppLayout 传入：关掉设置再打开更新对话框，避免两个模态叠在一起 */
-  onCheckUpdate?: () => void;
-}): JSX.Element {
+export function AboutUpdatePane({ update }: { update: UpdateController }): JSX.Element {
+  const { status } = update;
+  const action = updatePrimaryAction(status);
+  const downloading = status.state === 'downloading';
+
   const handleExternalLink = (url: string) => (event: MouseEvent<HTMLAnchorElement>): void => {
     event.preventDefault();
     // 主进程打不开外链时不打断用户，链接本身仍可靠 href 生效
@@ -52,7 +53,7 @@ export function AboutUpdatePane({
           程序名：PhotoTagManager（安装目录、进程与快捷方式同名；配置文件夹为 <code>%APPDATA%\photo-tag-manager</code>）
         </Typography>
         <Typography variant="body2">
-          开源地址：{' '}
+          源码地址：{' '}
           <Link
             href="https://github.com/ybd0612/PhotoTagManager"
             target="_blank"
@@ -75,25 +76,46 @@ export function AboutUpdatePane({
             yangbang.de
           </Link>
         </Typography>
-        <Typography variant="body2">许可证：MIT License</Typography>
+        <Typography variant="body2">
+          许可证：源码公开非商业使用许可 v1.0（全文见仓库 <code>LICENSE</code> 文件）
+        </Typography>
       </Box>
       <Divider />
 
-      <Stack direction="row" spacing={1.5} alignItems="flex-start">
-        <Stack spacing={0.5} sx={{ flex: 1, minWidth: 0 }}>
+      <Stack spacing={0.75}>
+        <Stack direction="row" spacing={0.5} alignItems="center">
           <Typography variant="subtitle2">更新</Typography>
-          <Typography variant="caption" color="text.secondary">
-            启动时自动静默检查，发现新版本会弹窗提示；这里可以手动再查一次。
-          </Typography>
+          <Hint
+            testId="update-hint"
+            text="应用启动时会自动静默检查一次，发现新版本在右下角提示；这里的按钮是手动再查一次。更新只从 GitHub Releases 拉取安装包，与代理设置共用同一个出口；照片始终不出本机。"
+          />
         </Stack>
-        <Button
-          variant="outlined"
-          size="small"
-          onClick={onCheckUpdate}
-          sx={{ textTransform: 'none' }}
-        >
-          检查更新
-        </Button>
+        <Stack direction="row" spacing={1.5} alignItems="center">
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ flex: 1, minWidth: 0 }}>
+            {status.state === 'checking' && <CircularProgress size={16} />}
+            <Typography
+              data-testid="update-status"
+              variant="body2"
+              color={status.state === 'error' ? 'error' : 'text.secondary'}
+              sx={{ minWidth: 0 }}
+            >
+              {updateStatusLabel(status)}
+            </Typography>
+          </Stack>
+          {action && (
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={update.runPrimary}
+              sx={{ textTransform: 'none' }}
+            >
+              {updateActionLabel(action, status)}
+            </Button>
+          )}
+        </Stack>
+        {downloading && (
+          <LinearProgress variant="determinate" value={status.percent ?? 0} sx={{ width: '100%' }} />
+        )}
       </Stack>
       <Divider />
 
@@ -101,23 +123,9 @@ export function AboutUpdatePane({
         <Typography variant="subtitle2" gutterBottom>
           学习与使用说明
         </Typography>
-        <List dense disablePadding>
-          <ListItem disableGutters>
-            <ListItemText primary="1. 添加一个或多个图片根目录，可为每个目录设置便于识别的别名。" />
-          </ListItem>
-          <ListItem disableGutters>
-            <ListItemText primary="2. 选择根目录后启动扫描，等待扫描完成。" />
-          </ListItem>
-          <ListItem disableGutters>
-            <ListItemText primary="3. 用标签筛选、文件名搜索和排序找图，点击缩略图可放大预览。" />
-          </ListItem>
-          <ListItem disableGutters>
-            <ListItemText primary="4. 右键图片，或在放大图里点「在资源管理器中定位」即可打开所在文件夹。" />
-          </ListItem>
-          <ListItem disableGutters>
-            <ListItemText primary="5. 放大图底栏点「人像抠图」，结果先进暂存，按住空格对比确认后再保存为派生文件——原图不会被改。" />
-          </ListItem>
-        </List>
+        <Typography variant="body2">
+          此项目仅供学习交流使用，严禁用于商业用途，请在 24 小时之内删除。
+        </Typography>
       </Box>
     </Stack>
   );

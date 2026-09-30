@@ -17,78 +17,28 @@ import TableRow from '@mui/material/TableRow';
 import TableHead from '@mui/material/TableHead';
 import Tabs from '@mui/material/Tabs';
 import TextField from '@mui/material/TextField';
-import ToggleButton from '@mui/material/ToggleButton';
-import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Typography from '@mui/material/Typography';
 import { sanitizeProxyRules } from '../../../shared/proxyRule';
 import { AboutUpdatePane } from './AboutUpdatePane';
 import { AiSettingsPane } from './AiSettingsPane';
+import { Hint } from '../Hint';
 import { useAppStore } from '../../store/useAppStore';
 import { SHORTCUTS } from '../../utils/shortcuts';
-import type { SortKey, ThumbSize } from '../../../shared/types';
+import type { UpdateController } from '../../hooks/useUpdate';
 
 /**
  * 常规分区（批次3 G8）：只放**真的接上行为**的偏好。
- * 三个控件都直接读写 useAppStore，改值即落盘 settings.json；
+ * 两个控件都直接读写 useAppStore，改值即落盘 settings.json；
  * 加一个不生效的开关等于把批次1 立的那条防线拆掉，所以宁可少放。
+ * 排序与缩略图不在这里重复——主界面工具条上就是同一套控件、同一个偏好，
+ * 同一事实说两遍只会让人怀疑两边是否同步。
  */
 function GeneralPane(): JSX.Element {
-  const sortKey = useAppStore((s) => s.sortKey);
-  const sortDir = useAppStore((s) => s.sortDir);
-  const thumbSize = useAppStore((s) => s.thumbSize);
   const scanDoneToast = useAppStore((s) => s.scanDoneToast);
-  const setSort = useAppStore((s) => s.setSort);
-  const setThumbSize = useAppStore((s) => s.setThumbSize);
   const setScanDoneToast = useAppStore((s) => s.setScanDoneToast);
 
   return (
     <Stack spacing={2} data-testid="settings-general">
-      <Stack direction="row" spacing={1.5} alignItems="center">
-        <Typography variant="body2" sx={{ width: 96 }} className="shrink-0">
-          默认排序
-        </Typography>
-        <ToggleButtonGroup
-          exclusive
-          size="small"
-          value={sortKey}
-          onChange={(_e, value: SortKey | null) => value && setSort(value)}
-        >
-          <ToggleButton value="name">名称</ToggleButton>
-          <ToggleButton value="time">时间</ToggleButton>
-          <ToggleButton value="size">大小</ToggleButton>
-        </ToggleButtonGroup>
-        <Button
-          size="small"
-          color="inherit"
-          aria-label="切换排序方向"
-          onClick={() => setSort(sortKey)}
-          sx={{ minWidth: 0, px: 1 }}
-        >
-          {sortDir === 'asc' ? '↑ 升序' : '↓ 降序'}
-        </Button>
-      </Stack>
-      <Divider />
-
-      <Stack direction="row" spacing={1.5} alignItems="center">
-        <Typography variant="body2" sx={{ width: 96 }} className="shrink-0">
-          缩略图
-        </Typography>
-        <ToggleButtonGroup
-          exclusive
-          size="small"
-          value={thumbSize}
-          onChange={(_e, value: ThumbSize | null) => value && setThumbSize(value)}
-        >
-          <ToggleButton value="small">小</ToggleButton>
-          <ToggleButton value="medium">中</ToggleButton>
-          <ToggleButton value="large">大</ToggleButton>
-        </ToggleButtonGroup>
-        <Typography variant="caption" color="text.secondary">
-          和首页工具条是同一个设置，改完立即生效
-        </Typography>
-      </Stack>
-      <Divider />
-
       <Stack direction="row" spacing={1.5} alignItems="center">
         <Typography variant="body2" sx={{ width: 96 }} className="shrink-0">
           扫描完成
@@ -103,9 +53,7 @@ function GeneralPane(): JSX.Element {
           }
           label="扫描完成后弹出提示"
         />
-        <Typography variant="caption" color="text.secondary">
-          默认关闭：状态栏已常驻「已扫描 N 个文件」，不重复播报
-        </Typography>
+        <Hint text="默认关闭：状态栏已常驻「已扫描 N 个文件」，打开它只是再弹一条 snackbar 播报同一个数字，不改变扫描行为。" />
       </Stack>
       <Divider />
       <ProxyRow />
@@ -159,11 +107,8 @@ function ProxyRow(): JSX.Element {
               ? '未覆盖，跟随系统默认设置'
               : `将使用代理 ${checked.value}`}
         </Typography>
-        <Typography variant="caption" color="text.secondary">
-          只影响「模型下载」与「检查更新」两件事；照片始终不出本机，本应用没有任何上传照片的请求。
-          不支持带账号密码的代理地址（那会明文存在配置文件里）。
-        </Typography>
       </Stack>
+      <Hint text="只影响「模型下载」与「检查更新」两件事；照片始终不出本机，本应用没有任何上传照片的请求。不支持带账号密码的代理地址（那会明文存在配置文件里）。" />
     </Stack>
   );
 }
@@ -208,14 +153,14 @@ export function SettingsDialog({
   open,
   onClose,
   initialTab,
-  onCheckUpdate
+  update
 }: {
   open: boolean;
   onClose: () => void;
   /** 打开时停在哪个分区；全局 `?` 用它直接把对话框开到「快捷键」上 */
   initialTab?: 'general' | 'ai' | 'shortcuts' | 'about';
-  /** 「关于与更新」分区里的手动检查入口，状态展示仍由 AppLayout 挂载的 UpdateDialog 负责 */
-  onCheckUpdate?: () => void;
+  /** 「关于与更新」分区就地用的更新控制器，由 AppLayout 挂载的唯一一份传入 */
+  update: UpdateController;
 }): JSX.Element {
   const [tab, setTab] = useState<string>(initialTab ?? 'general');
 
@@ -242,7 +187,7 @@ export function SettingsDialog({
         ) : tab === 'shortcuts' ? (
           <ShortcutPane />
         ) : (
-          <AboutUpdatePane onCheckUpdate={onCheckUpdate} />
+          <AboutUpdatePane update={update} />
         )}
       </DialogContent>
       <DialogActions>
