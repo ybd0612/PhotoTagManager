@@ -301,7 +301,10 @@ export function PreviewOverlay(): JSX.Element | null {
       aria-labelledby="preview-overlay-title"
       tabIndex={-1}
       className="fixed inset-0 flex flex-col"
-      sx={{ bgcolor: 'rgb(2,6,23)', color: 'white', zIndex: 1800 }} // 压过 .ptm-window-controls 的 1700：预览时那三个要消失
+      // 留在 MUI 模态带上：预览里弹出的模型下拉、右键菜单、下载确认框都是 portal 挂 body、
+      // 按这个带（1300）画的，覆盖层一旦抬到它之上就把自家浮层一起压住（2026-09-30 点三角没反应）。
+      // 右上角窗口控件由 WindowControls 在预览开着时显式隐藏，不靠这里的层级压它。
+      sx={{ bgcolor: 'rgb(2,6,23)', color: 'white', zIndex: (theme) => theme.zIndex.modal }}
     >
       {/* 顶栏 */}
       <Stack

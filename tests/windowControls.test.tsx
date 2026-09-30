@@ -5,6 +5,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 
 import { WindowControls } from '../src/components/WindowControls';
+import { useAppStore } from '../src/store/useAppStore';
 
 function ok<T>(data: T): { ok: true; data: T } {
   return { ok: true, data };
@@ -63,5 +64,19 @@ describe('自绘窗口控件', () => {
     // 主进程推来"已最大化"——组件自己没有点过任何按钮
     act(() => listener?.(true));
     expect(screen.getByRole('button', { name: '还原窗口' })).toBeTruthy();
+  });
+
+  /**
+   * 预览打开时三颗让位。起因（2026-09-30）：为了让预览盖住它们，把预览覆盖层的
+   * z-index 抬到 1800，结果连预览自己弹出的下拉、对话框和右键菜单一起被压住
+   * ——那些是 portal 挂 body、按 MUI 模态带 1300 画的。盖不住就用显式隐藏，别抬层。
+   */
+  it('预览开着时三颗让位，关掉预览又回来', () => {
+    useAppStore.setState({ preview: { image: {} as never, index: 0, list: [] as never[] } });
+    render(<WindowControls />);
+    expect(screen.queryByTestId('window-controls'), '预览开着还浮着三颗').toBeNull();
+
+    act(() => useAppStore.setState({ preview: null }));
+    expect(screen.getByTestId('window-controls'), '关掉预览后三颗没回来').toBeTruthy();
   });
 });

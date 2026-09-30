@@ -98,15 +98,18 @@ describe('UiPrefs 落盘白名单不许漏字段', () => {
 /**
  * 右上角三个窗口控件从系统覆盖层改成了渲染层自绘，两个必须守住的性质：
  * ① 原生覆盖层不许回来——它画在网页之上，预览遮不住、对话框压不住，Windows 又没有隐藏的 API；
- * ② 层叠顺序两头都要卡：控件要高于 MUI 模态（1300~1600），否则开着「设置」点不到关闭；
- *    预览覆盖层又要高于控件，否则预览时那三个还浮在上面。
+ * ② 层叠顺序：控件要高于 MUI 模态（1300~1600），否则开着「设置」点不到关闭；
+ *    预览盖住控件用显式隐藏（见 windowControls.test.tsx），不许靠把预览层抬到控件之上——
+ *    抬上去会连预览自己弹出的下拉、右键菜单和对话框一起压在下面（2026-09-30 就这么弄坏过人像抠图的下拉）。
  */
 describe('窗口控件自绘，原生覆盖层不许回来', () => {
   /** 判代码用法，不判注释：main.ts 为了说明"为什么不用它"，注释里原样写着这两个选项名 */
-  const codeOnly = (): string =>
-    read(join('electron', 'main.ts'))
+  const codeOf = (p: string): string =>
+    read(p)
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .replace(/^\s*\/\/.*$/gm, '');
+
+  const codeOnly = (): string => codeOf(join('electron', 'main.ts'));
 
   it('主进程 frame:false，且不再声明 titleBarStyle / titleBarOverlay', () => {
     const code = codeOnly();
@@ -126,15 +129,27 @@ describe('窗口控件自绘，原生覆盖层不许回来', () => {
     ).toMatch(/\.ptm-window-controls button\s*\{[^}]*width:\s*var\(--ptm-wc-btn-width\)/);
   });
 
-  it('z-index 顺序：MUI 模态 < 窗口控件 < 预览覆盖层', () => {
+  it('z-index 顺序：窗口控件高于 MUI 模态带，但预览覆盖层不许高于模态带', () => {
     const css = read(join('src', 'styles', 'index.css'));
     const controls = Number(css.match(/\.ptm-window-controls\s*\{[\s\S]*?z-index:\s*(\d+)/)?.[1]);
     expect(controls, '读不到 .ptm-window-controls 的 z-index，这条断言在空转').toBeGreaterThan(0);
     expect(controls, '控件必须高于 MUI 对话框与菜单（1300~1600）').toBeGreaterThan(1600);
 
-    const preview = read(join('src', 'components', 'PreviewOverlay.tsx'));
-    const overlay = Number(preview.match(/zIndex:\s*(\d+)/)?.[1]);
-    expect(overlay, '预览覆盖层没有显式 zIndex，盖不住窗口控件').toBeGreaterThan(controls);
+    /**
+     * 预览覆盖层必须留在 MUI 模态带里。预览里弹出的下拉（模型选择）、右键菜单、下载确认框、
+     * 回收站确认框全是 portal 挂到 body、按 theme.zIndex.modal = 1300 画的；覆盖层一旦高过这个数，
+     * 就把自家弹出的浮层一起压在下面——2026-09-30「人像抠图旁边的小三角点了没反应」就是这么来的
+     * （当时为了让预览盖住窗口控件，把覆盖层抬到 1800）。盖住控件改用显式隐藏，见 windowControls.test.tsx。
+     */
+    const preview = codeOf(join('src', 'components', 'PreviewOverlay.tsx'));
+    const explicit = [...preview.matchAll(/zIndex:\s*(\d+)/g)].map((m) => Number(m[1]));
+    for (const z of explicit) {
+      expect(z, `预览覆盖层写了 z-index ${z}，会盖住预览自己弹出的浮层（模态带是 1300）`).toBeLessThanOrEqual(1300);
+    }
+    expect(
+      preview,
+      '预览覆盖层必须挂在 MUI 模态带上（zIndex.modal），否则它和弹出浮层的先后就没人管'
+    ).toMatch(/zIndex:[^\n]*\.zIndex\.modal/);
   });
 });
 
