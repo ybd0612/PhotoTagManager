@@ -40,3 +40,30 @@ describe('sx 里的圆角必须带单位，不吃 MUI 的倍乘', () => {
     expect(offenders, '这些圆角会被 MUI 当成倍率乘出 96px 这类值，改成 px(tokens.radius.x)').toEqual([]);
   });
 });
+
+/**
+ * 输入框字号只许有一个来源（App.tsx 主题的 MuiInputBase）。
+ * 起因（2026-09-30）：搜索框当年被单独压到 13px，其余输入框仍吃 MUI 默认的 body1 = 15px，
+ * 于是同一行里输入框比旁边的控件（实测 12.07px）大一档，用户报"只要是个输入框都偏大"。
+ * 各组件再各写一遍 fontSize，就是这种分裂的成因，所以扫源码钉住。
+ */
+describe('输入框字号单一来源', () => {
+  const srcFiles = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+      e.isDirectory()
+        ? srcFiles(join(dir, e.name))
+        : /\.(tsx|ts)$/.test(e.name)
+          ? [join(dir, e.name)]
+          : []
+    );
+
+  it('组件里不许再出现 .MuiInputBase-input 的 fontSize（改主题那一个来源）', () => {
+    const offenders: string[] = [];
+    for (const abs of [...srcFiles(join(root, 'src', 'components')), ...srcFiles(join(root, 'src', 'hooks'))]) {
+      for (const m of codeOf(abs).matchAll(/MuiInputBase-input['"]?\s*:\s*\{([^}]*)\}/g)) {
+        if (/fontSize/.test(m[1])) offenders.push(`${abs.replace(root + '\\', '')}: ${m[0].slice(0, 60)}`);
+      }
+    }
+    expect(offenders, '输入框字号散在各组件里会各自漂量，收进 App.tsx 的 MuiInputBase 主题').toEqual([]);
+  });
+});

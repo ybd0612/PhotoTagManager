@@ -109,12 +109,7 @@ export function TagFilterBar(): JSX.Element {
             onChange={(e) => setNameQuery(e.target.value)}
             placeholder="搜索文件名"
             aria-label="搜索文件名"
-            sx={{
-              width: 220,
-              // placeholder 小一号到 12px，与同行「排序」「缩略图」组标签同量级；
-              // 浅灰由 MUI 自己的 currentColor + opacity .42 负责，这里不覆盖
-              '& .MuiInputBase-input': { fontSize: 13, py: 0.75, '&::placeholder': { fontSize: 12 } }
-            }}
+            sx={{ width: 220 }}
             InputProps={{
               startAdornment: (
                 <InputAdornment position="start">

@@ -78,6 +78,15 @@ const theme = createTheme({
     },
     MuiDialog: { styleOverrides: { paper: { borderRadius: radius.lg, boxShadow: shadow.pop } } },
     MuiMenu: { styleOverrides: { paper: { borderRadius: radius.md, boxShadow: shadow.pop } } },
+    // 输入框字号只有一个来源：吃 caption 那一档（12px），与同行控件实测 12.07px、组标签 12px 同量级。
+    // MUI 默认让输入框吃 body1（本项目 15px），而搜索框当年被单独压到 13px——同一行里输入框大一档，
+    // 用户报"只要是个输入框都偏大"。盒高靠 input 上下内边距落到 ~29px，与按钮（27~29px）齐平。
+    MuiInputBase: {
+      styleOverrides: {
+        root: { fontSize: font.caption },
+        input: { fontSize: 'inherit', paddingTop: 5, paddingBottom: 5 }
+      }
+    },
     // 填充色不写死：写死成 paper 后，控件坐在有色带子上时圆角外会露出一圈带子色
     MuiOutlinedInput: { styleOverrides: { root: { borderRadius: radius.sm, backgroundColor: 'transparent' } } }
   }
