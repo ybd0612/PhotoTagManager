@@ -168,7 +168,7 @@ export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.E
         direction="row"
         alignItems="center"
         justifyContent="space-between"
-        className="shrink-0 border-b border-hairline px-2 py-2"
+        className="ptm-band-row shrink-0 px-2 py-2"
       >
         <Typography variant="subtitle2" color="text.secondary" className="pl-1">
           图库 · {roots.length} 个目录
@@ -181,6 +181,15 @@ export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.E
           </Tooltip>
         </Stack>
       </Stack>
+
+      {/*
+       * 标题与树之间只放一条居左的短横线。原先是通栏 border-b：它要和右边那条线对齐才好看，
+       * 而左右两行的内容高度不同，对齐不上就成了一条长一条短还错位的两根线（用户就是这么报的）。
+       * 短横线只负责"隔开"这一件事，不参与跨栏对齐。
+       */}
+      <Box className="flex shrink-0 items-center px-3" sx={{ height: 10 }}>
+        <Box sx={{ width: 24, height: 1, bgcolor: 'var(--ptm-hairline)' }} />
+      </Box>
 
       <Box className="min-h-0 flex-1 overflow-auto py-1" role="tree" aria-label="图库目录树">
         {rows.length === 0 && (

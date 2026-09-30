@@ -222,7 +222,7 @@ export function TagFilterBar(): JSX.Element {
       )}
 
       {/* 热门标签（当前上下文范围）+ 更多（全量标签列表） */}
-      <Stack direction="row" alignItems="center" spacing={0.5} className="mt-1.5 flex-wrap">
+      <Stack direction="row" alignItems="center" spacing={0.5} className="ptm-band-row mt-1.5 flex-wrap">
         <Typography variant="caption" color="text.secondary" className="shrink-0">
           常用标签
         </Typography>
