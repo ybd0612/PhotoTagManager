@@ -68,7 +68,8 @@ const theme = createTheme({
     },
     MuiDialog: { styleOverrides: { paper: { borderRadius: radius.lg, boxShadow: shadow.pop } } },
     MuiMenu: { styleOverrides: { paper: { borderRadius: radius.md, boxShadow: shadow.pop } } },
-    MuiOutlinedInput: { styleOverrides: { root: { borderRadius: radius.sm, backgroundColor: surface.paper } } }
+    // 填充色不写死：写死成 paper 后，控件坐在有色带子上时圆角外会露出一圈带子色
+    MuiOutlinedInput: { styleOverrides: { root: { borderRadius: radius.sm, backgroundColor: 'transparent' } } }
   }
 });
 
