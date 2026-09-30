@@ -10,7 +10,7 @@
  * 颜色若在 CSS 里再写一遍字面值，就会出现"改了 CSS 没改主题"的漂移（此前正是这个原因）。
  */
 :root {
-  --ptm-header-height: 56px;
+  --ptm-header-height: 44px;  /* 顶栏兼标题栏：56 偏高，自绘窗口控件与标题文字在 44 下更贴合 */
   --ptm-tree-width: 280px;
   /* 与 tokens.motion.base 是同一个 180ms，两处写法：CSS 拿不到 TS 常量，改一处要记得改另一处 */
   --ptm-tree-collapse-ms: 180ms;
@@ -86,6 +86,21 @@ body {
   outline: 2px solid var(--ptm-accent);
   outline-offset: 2px;
   border-radius: inherit;
+}
+
+/*
+ * 树行的行内操作（改别名 / 删除）：只在鼠标悬停这一行、或键盘焦点落进这一行时露出。
+ * 刻意不用 group-focus-within：点一下树行就让 treeitem 拿到焦点，那样图标会一直赖着
+ * 不走（用户就是这么报的）。:has(:focus-visible) 只认键盘引发的焦点，鼠标点选不算，
+ * 既满足"只有悬浮才有"，又不把键盘用户的路断掉。
+ */
+.ptm-row-actions {
+  opacity: 0;
+  transition: opacity var(--ptm-t-fast) var(--ptm-ease);
+}
+.ptm-tree-row:hover .ptm-row-actions,
+.ptm-tree-row:has(:focus-visible) .ptm-row-actions {
+  opacity: 1;
 }
 
 /* 预览大图区域允许选中文件名文本 */

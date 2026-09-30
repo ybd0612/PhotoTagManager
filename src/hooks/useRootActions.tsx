@@ -43,7 +43,7 @@ export function useRootActions(): { actions: RootActions; dialogs: JSX.Element }
       store.selectRoot(entry.id);
       if (!existed || !store.scannedRoots.has(entry.id)) await startScan(entry);
     } catch (error) {
-      setSnackbar(`添加根目录失败：${error instanceof Error ? error.message : String(error)}`);
+      setSnackbar(`添加目录失败：${error instanceof Error ? error.message : String(error)}`);
     }
   }, [setSnackbar]);
 
@@ -77,14 +77,14 @@ export function useRootActions(): { actions: RootActions; dialogs: JSX.Element }
       await call(getApi().removeRoot(target.id));
       useAppStore.getState().removeRootLocal(target.id);
     } catch (error) {
-      setSnackbar(`删除根目录失败：${error instanceof Error ? error.message : String(error)}`);
+      setSnackbar(`删除目录失败：${error instanceof Error ? error.message : String(error)}`);
     }
   }, [removeTarget, setSnackbar]);
 
   const dialogs = (
     <>
       <Dialog open={renameTarget !== null} onClose={() => setRenameTarget(null)} fullWidth maxWidth="xs">
-        <DialogTitle>修改根目录别名</DialogTitle>
+        <DialogTitle>修改目录别名</DialogTitle>
         <DialogContent>
           <TextField
             autoFocus
@@ -108,7 +108,7 @@ export function useRootActions(): { actions: RootActions; dialogs: JSX.Element }
       </Dialog>
 
       <Dialog open={removeTarget !== null} onClose={() => setRemoveTarget(null)} fullWidth maxWidth="xs">
-        <DialogTitle>删除根目录？</DialogTitle>
+        <DialogTitle>删除目录？</DialogTitle>
         <DialogContent>
           <DialogContentText>
             删除「{removeTarget?.alias}」（{removeTarget?.path}）？仅移除列表与扫描数据，不会删除磁盘文件。

@@ -13,7 +13,6 @@ import {
   Tooltip,
   Typography
 } from '@mui/material';
-import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import StopCircleIcon from '@mui/icons-material/StopCircle';
 import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary';
@@ -210,7 +209,7 @@ export function AppLayout(): JSX.Element {
       {/* 顶部工具栏：同时是窗口标题栏（拖拽区与右侧控件避让见 index.css 的 .ptm-titlebar） */}
       <Paper
         component="header"
-        className="ptm-titlebar flex h-14 shrink-0 items-center justify-between border-b border-hairline bg-chrome pl-4"
+        className="ptm-titlebar flex h-11 shrink-0 items-center justify-between border-b border-hairline bg-chrome pl-4"
         // 通栏与上下板块相接，四角必须直；写在 sx 里才压得住 MUI Paper 的默认圆角
         sx={{ bgcolor: 'var(--ptm-chrome-bg)', borderRadius: 0 }}
       >
@@ -333,8 +332,7 @@ export function AppLayout(): JSX.Element {
                 {selectedDirLabel}
               </Typography>
               <span className="shrink-0 text-ink-3">|</span>
-              <Tooltip title={`点击复制绝对路径：${selectedDirAbs}`} placement="top-start">
-                <ButtonBase
+              <ButtonBase
                   aria-label="复制当前目录路径"
                   onClick={() => void handleCopyDirPath()}
                   sx={{
@@ -351,10 +349,8 @@ export function AppLayout(): JSX.Element {
                     <Typography variant="caption" className="min-w-0" noWrap sx={{ color: 'inherit' }}>
                       {truncatePathMiddle(selectedDirAbs, STATUS_PATH_MAX_CHARS)}
                     </Typography>
-                    <ContentCopyIcon sx={{ fontSize: 12, flexShrink: 0 }} />
                   </Stack>
-                </ButtonBase>
-              </Tooltip>
+              </ButtonBase>
               <span className="shrink-0 text-ink-3">|</span>
             </>
           )}
@@ -466,13 +462,13 @@ function EmptyState({ onPick }: { onPick: () => void }): JSX.Element {
     <Box className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4">
       <PhotoLibraryIcon sx={{ fontSize: 88, color: '#c7d2fe' }} />
       <Typography variant="h6" color="text.secondary">
-        添加一个或多个图片根目录，起个名字方便管理
+        添加一个或多个图片目录，起个名字方便管理
       </Typography>
       <Typography variant="body2" color="text.disabled">
         例如：A 目录起别名「照片」，B 目录起别名「资料」；支持 JPG / PNG / WebP / RAW / HEIC / TIFF
       </Typography>
       <Button variant="contained" size="large" startIcon={<FolderOpenIcon />} onClick={onPick}>
-        添加根目录
+        添加目录
       </Button>
     </Box>
   );

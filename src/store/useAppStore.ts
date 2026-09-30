@@ -75,6 +75,8 @@ interface AppState {
   proxyRules: string;
   /** 左栏目录树是否收起（落盘，重启保留用户上次的选择） */
   treeCollapsed: boolean;
+  /** 找图工具行是否展开（落盘，与左栏折叠同一套做法） */
+  filterBarVisible: boolean;
   setNameQuery(query: string): void;
   /** 同一个键再点一次 = 翻转方向；换键 = 该键的默认方向 asc */
   setSort(key: SortKey): void;
@@ -82,6 +84,7 @@ interface AppState {
   setScanDoneToast(on: boolean): void;
   setProxyRules(rules: string): void;
   toggleTreeCollapsed(): void;
+  toggleFilterBar(): void;
   loadUiPrefs(): Promise<void>;
   tagCache: Map<string, string[]>;
   tagCounts: Map<string, number>;
@@ -224,6 +227,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   scanDoneToast: DEFAULT_UI_PREFS.scanDoneToast,
   proxyRules: DEFAULT_UI_PREFS.proxyRules,
   treeCollapsed: DEFAULT_UI_PREFS.treeCollapsed,
+  filterBarVisible: DEFAULT_UI_PREFS.filterBarVisible,
 
   setNameQuery: (nameQuery) => set({ nameQuery }),
 
@@ -255,6 +259,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     persistPrefs({ treeCollapsed });
   },
 
+  toggleFilterBar: () => {
+    const filterBarVisible = !get().filterBarVisible;
+    set({ filterBarVisible });
+    persistPrefs({ filterBarVisible });
+  },
+
   loadUiPrefs: async () => {
     try {
       const prefs = await call(getApi().getPrefs());
@@ -265,7 +275,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         thumbSize: prefs.thumbSize,
         scanDoneToast: prefs.scanDoneToast,
         proxyRules: prefs.proxyRules,
-        treeCollapsed: prefs.treeCollapsed
+        treeCollapsed: prefs.treeCollapsed,
+        filterBarVisible: prefs.filterBarVisible
       });
     } catch {
       // 读不到偏好就用默认值，不能因此卡住启动

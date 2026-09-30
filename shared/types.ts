@@ -249,7 +249,7 @@ export interface UiPrefs {
   sortKey: SortKey;
   sortDir: SortDir;
   thumbSize: ThumbSize;
-  /** 扫描完成后是否额外弹一条 snackbar。状态栏已常驻「已扫描 N 个文件」，默认不重复播报 */
+  /** 扫描完成后是否额外弹一条 snackbar。状态栏已常驻「已扫描 N 张图片」，默认不重复播报 */
   scanDoneToast: boolean;
   /**
    * 模型下载与检查更新走的代理，形如 `127.0.0.1:7890`；空字符串 = 不覆盖，跟随系统默认。
@@ -261,6 +261,11 @@ export interface UiPrefs {
    * 当前目录仍由顶栏面包屑显示，所以不会失去定位。默认展开。
    */
   treeCollapsed: boolean;
+  /**
+   * 找图工具行（搜索 + 排序 + 标签筛选 + 缩略图档位）是否展开。
+   * 收起后只剩「常用标签」那一行，图片区多出约 40px；默认展开。
+   */
+  filterBarVisible: boolean;
 }
 
 /** 默认与既有行为一致：按相对路径升序、最小档缩略图、左栏展开 */
@@ -270,7 +275,8 @@ export const DEFAULT_UI_PREFS: UiPrefs = {
   thumbSize: 'small',
   scanDoneToast: false,
   proxyRules: '',
-  treeCollapsed: false
+  treeCollapsed: false,
+  filterBarVisible: true
 };
 
 /** 移到回收站的结果：逐条给失败原因，部分失败不允许静默 */

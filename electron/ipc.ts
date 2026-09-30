@@ -237,6 +237,7 @@ export function registerIpc(deps: IpcDeps): void {
       thumbSize: THUMB_SIZES.includes(p.thumbSize as ThumbSize) ? (p.thumbSize as ThumbSize) : base.thumbSize,
       scanDoneToast: typeof p.scanDoneToast === 'boolean' ? p.scanDoneToast : base.scanDoneToast,
       treeCollapsed: typeof p.treeCollapsed === 'boolean' ? p.treeCollapsed : base.treeCollapsed,
+      filterBarVisible: typeof p.filterBarVisible === 'boolean' ? p.filterBarVisible : base.filterBarVisible,
       proxyRules: proxy.ok ? proxy.value : base.proxyRules
     };
     let all: Record<string, unknown> = {};

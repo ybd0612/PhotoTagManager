@@ -171,11 +171,11 @@ export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.E
         className="shrink-0 border-b border-hairline px-2 py-2"
       >
         <Typography variant="subtitle2" color="text.secondary" className="pl-1">
-          图库 · {roots.length} 个根目录
+          图库 · {roots.length} 个目录
         </Typography>
         <Stack direction="row" alignItems="center" spacing={0.25}>
-          <Tooltip title="添加根目录">
-            <IconButton size="small" aria-label="添加根目录" onClick={() => void rootActions.addRoot()}>
+          <Tooltip title="添加目录">
+            <IconButton size="small" aria-label="添加目录" onClick={() => void rootActions.addRoot()}>
               <AddIcon fontSize="small" />
             </IconButton>
           </Tooltip>
@@ -185,7 +185,7 @@ export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.E
       <Box className="min-h-0 flex-1 overflow-auto py-1" role="tree" aria-label="图库目录树">
         {rows.length === 0 && (
           <Typography variant="body2" color="text.secondary" className="px-3 py-2">
-            还没有根目录，点上方「添加根目录」
+            还没有目录，点上方「添加目录」
           </Typography>
         )}
         {rows.map((row) => (
@@ -257,7 +257,7 @@ export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.E
           <>
             <MenuItem onClick={() => handleMenuAction('rename')}>改别名</MenuItem>
             <MenuItem color="error" onClick={() => handleMenuAction('remove')}>
-              删除根目录
+              删除目录
             </MenuItem>
           </>
         )}
@@ -281,12 +281,12 @@ interface TreeRowItemProps {
 function TreeRowItem({ row, scanned, scanning, onExpand, onSelect, onContextMenu, onRename, onRemove }: TreeRowItemProps): JSX.Element {
   const ariaLabel = row.isRoot
     ? scanned
-      ? `根目录 ${row.name}，共 ${row.totalCount} 张图片`
-      : `根目录 ${row.name}，未扫描`
+      ? `目录 ${row.name}，共 ${row.totalCount} 张图片`
+      : `目录 ${row.name}，未扫描`
     : `${row.name}，${row.totalCount} 张图片`;
   return (
     <Box
-      className="group flex cursor-pointer items-center gap-1 rounded-md py-1 pr-1.5"
+      className="ptm-tree-row group flex cursor-pointer items-center gap-1 rounded-md py-1 pr-1.5"
       style={{ paddingLeft: 6 + row.depth * 14 }}
       role="treeitem"
       tabIndex={0}
@@ -320,11 +320,9 @@ function TreeRowItem({ row, scanned, scanning, onExpand, onSelect, onContextMenu
       {row.hasChildren ? (
         <IconButton
           size="small"
-          className={`!min-w-0 shrink-0 transition-opacity ${
-            row.expanded
-              ? 'opacity-100'
-              : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
-          }`}
+          // 展开态必须一直可见（否则收不回去）；折叠态与行内操作同一套显示规则：
+          // 只认悬停与键盘聚焦，不认鼠标点选带来的焦点
+          className={`!min-w-0 shrink-0 ${row.expanded ? 'opacity-100' : 'ptm-row-actions'}`}
           sx={{ width: 26, height: 26, padding: 1, transform: row.expanded ? 'rotate(90deg)' : undefined, transition: 'opacity 120ms, transform 120ms' }}
           aria-label={row.expanded ? `收起${row.name}` : `展开${row.name}`}
           aria-expanded={row.expanded}
@@ -354,8 +352,8 @@ function TreeRowItem({ row, scanned, scanning, onExpand, onSelect, onContextMenu
         <>
           <IconButton
             size="small"
-            className="!p-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
-            aria-label={`修改根目录别名：${row.name}`}
+            className="ptm-row-actions !p-0.5"
+            aria-label={`修改目录别名：${row.name}`}
             onClick={(e) => {
               e.stopPropagation();
               onRename();
@@ -365,8 +363,8 @@ function TreeRowItem({ row, scanned, scanning, onExpand, onSelect, onContextMenu
           </IconButton>
           <IconButton
             size="small"
-            className="!p-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
-            aria-label={`删除根目录：${row.name}`}
+            className="ptm-row-actions !p-0.5"
+            aria-label={`删除目录：${row.name}`}
             onClick={(e) => {
               e.stopPropagation();
               onRemove();

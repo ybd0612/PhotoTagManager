@@ -59,8 +59,8 @@ function createMockApi(): PhotoTagApi {
     openExternal: vi.fn(async () => ({ ok: true as const, data: undefined })),
     revealFileInExplorer: vi.fn(async () => ({ ok: true as const, data: undefined })),
     trashFiles: vi.fn(async () => ({ ok: true as const, data: { trashed: [] as string[], failed: [] } })),
-    getPrefs: vi.fn(async () => ({ ok: true as const, data: { sortKey: "name" as const, sortDir: "asc" as const, thumbSize: "small" as const, scanDoneToast: false, proxyRules: "", treeCollapsed: false } })),
-    setPrefs: vi.fn(async () => ({ ok: true as const, data: { sortKey: "name" as const, sortDir: "asc" as const, thumbSize: "small" as const, scanDoneToast: false, proxyRules: "", treeCollapsed: false } })),
+    getPrefs: vi.fn(async () => ({ ok: true as const, data: { sortKey: "name" as const, sortDir: "asc" as const, thumbSize: "small" as const, scanDoneToast: false, proxyRules: "", treeCollapsed: false, filterBarVisible: true } })),
+    setPrefs: vi.fn(async () => ({ ok: true as const, data: { sortKey: "name" as const, sortDir: "asc" as const, thumbSize: "small" as const, scanDoneToast: false, proxyRules: "", treeCollapsed: false, filterBarVisible: true } })),
     windowMinimize: vi.fn(async () => ({ ok: true as const, data: undefined })),
     windowToggleMaximize: vi.fn(async () => ({ ok: true as const, data: undefined })),
     windowClose: vi.fn(async () => ({ ok: true as const, data: undefined })),
@@ -135,11 +135,11 @@ beforeEach(() => {
 });
 
 describe('App 冒烟', () => {
-  it('无根目录时渲染空状态引导与「添加根目录」入口（R10）', () => {
+  it('无目录时渲染空状态引导与「添加目录」入口（R10）', () => {
     render(<App />);
     expect(screen.getByText('PhotoTagManager')).toBeTruthy();
-    expect(screen.getByText('添加一个或多个图片根目录，起个名字方便管理')).toBeTruthy();
-    expect(screen.getAllByText('添加根目录').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('添加一个或多个图片目录，起个名字方便管理')).toBeTruthy();
+    expect(screen.getAllByText('添加目录').length).toBeGreaterThanOrEqual(1);
   });
 });
 
@@ -232,18 +232,18 @@ describe('批次2 G6 顶栏', () => {
     expect(screen.queryByTestId('update-notice')).toBeNull();
   });
 
-  it('批次4 整改后：添加根目录在树头，重新扫描改由树行右键菜单发起（常驻图标已撤）', () => {
+  it('批次4 整改后：添加目录在树头，重新扫描改由树行右键菜单发起（常驻图标已撤）', () => {
     seedGallery();
     render(<AppLayout />);
     const header = screen.getByRole('banner');
-    expect(within(header).queryByRole('button', { name: '添加根目录' })).toBeNull();
+    expect(within(header).queryByRole('button', { name: '添加目录' })).toBeNull();
     expect(within(header).queryByRole('button', { name: /重新扫描/ })).toBeNull();
 
     // 树头只剩加号；那颗常驻刷新图标不再存在
-    expect(screen.getByRole('button', { name: '添加根目录' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '添加目录' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: '重新扫描当前根目录' })).toBeNull();
 
-    fireEvent.contextMenu(screen.getByRole('treeitem', { name: /根目录 截图/ }));
+    fireEvent.contextMenu(screen.getByRole('treeitem', { name: /目录 截图/ }));
     fireEvent.click(screen.getByRole('menuitem', { name: '重新扫描' }));
     // 关键：真的发起对该行所属根 r1 的重扫，而不是只留一个菜单项
     const scanStart = (window as unknown as { api: PhotoTagApi }).api.scanStart as ReturnType<
@@ -258,10 +258,10 @@ describe('批次2 G5 左栏合并单棵树', () => {
   it('根作为顶层节点，同名根与子目录各占一行且标签不冲突', () => {
     seedGallery('');
     render(<AppLayout />);
-    expect(screen.getByRole('treeitem', { name: '根目录 截图，共 3 张图片' })).toBeTruthy();
+    expect(screen.getByRole('treeitem', { name: '目录 截图，共 3 张图片' })).toBeTruthy();
     expect(screen.getByRole('treeitem', { name: '截图，2 张图片' })).toBeTruthy();
     expect(screen.getByRole('treeitem', { name: '其他，1 张图片' })).toBeTruthy();
-    expect(screen.getByRole('treeitem', { name: '根目录 资料，未扫描' })).toBeTruthy();
+    expect(screen.getByRole('treeitem', { name: '目录 资料，未扫描' })).toBeTruthy();
   });
 
   it('不再有独立的「根目录（N）」列表块', () => {
@@ -280,7 +280,7 @@ describe('批次2 G7 状态栏', () => {
       .getAllByText(/扫描/)
       .filter((el) => /已扫描|扫描已完成/.test(el.textContent ?? ''));
     expect(lines).toHaveLength(1);
-    expect(lines[0].textContent).toBe('已扫描 40 个文件（含非图片）');
+    expect(lines[0].textContent).toBe('已扫描 3 张图片');
   });
 
   it('当前目录只在状态栏说一次：目录名 + 绝对路径 + 两个张数', () => {
@@ -309,12 +309,34 @@ describe('批次2 G7 状态栏', () => {
   it('点状态栏路径 = 复制绝对路径文本，并给成功反馈', async () => {
     seedGallery('截图');
     render(<AppLayout />);
+    const pathBtn = screen.getByRole('button', { name: '复制当前目录路径' });
+    // 尾部那颗复制图标已撤：整页只在这一处说"这是路径"，图标是重复陈述
+    expect(pathBtn.querySelector('svg')).toBeNull();
+    // 悬停也不再出提示条——要复制的人点一下就有反馈，常驻提示反而挡视线
+    fireEvent.mouseOver(pathBtn);
+    expect(screen.queryByRole('tooltip')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '复制当前目录路径' }));
     const api = (window as unknown as { api: PhotoTagApi }).api;
     await waitFor(() =>
       expect(vi.mocked(api.copyTextToClipboard)).toHaveBeenCalledWith('C:/截图\\截图')
     );
     expect(await screen.findByText('已复制路径')).toBeTruthy();
+  });
+
+  it('找图工具条可收起：收起后搜索框消失，再点回来，且偏好落盘', () => {
+    seedGallery('截图');
+    render(<AppLayout />);
+    const api = (window as unknown as { api: PhotoTagApi }).api;
+    expect(screen.getByPlaceholderText('搜索文件名')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: '收起筛选工具条' }));
+    expect(screen.queryByPlaceholderText('搜索文件名')).toBeNull();
+    // 标签那一行必须留着：收起的是工具条，不是整个筛选能力
+    expect(screen.getByText('常用标签')).toBeTruthy();
+    expect(vi.mocked(api.setPrefs).mock.calls.flat().some((c) => JSON.stringify(c).includes('"filterBarVisible":false'))).toBe(true);
+
+    fireEvent.click(screen.getByRole('button', { name: '展开筛选工具条' }));
+    expect(screen.getByPlaceholderText('搜索文件名')).toBeTruthy();
   });
 
   it('超长路径只省略中段，头尾仍可读', () => {
@@ -457,27 +479,27 @@ describe('左栏右键菜单的「取消隐藏」区', () => {
     store.finishScan('r1', 's1', 'done', stats);
   }
 
-  const rootRow = (): HTMLElement => screen.getByRole('treeitem', { name: /根目录 照片/ });
+  const rootRow = (): HTMLElement => screen.getByRole('treeitem', { name: /目录 照片/ });
 
-  it('根行菜单：没有「隐藏文件夹」（根本身不许隐藏），有改别名与删除根目录', () => {
+  it('根行菜单：没有「隐藏文件夹」（根本身不许隐藏），有改别名与删除目录', () => {
     seedScannedRoot();
     render(<AppLayout />);
     fireEvent.contextMenu(rootRow());
     expect(screen.queryByRole('menuitem', { name: '隐藏文件夹' })).toBeNull();
     expect(screen.getByRole('menuitem', { name: '改别名' })).toBeTruthy();
-    expect(screen.getByRole('menuitem', { name: '删除根目录' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: '删除目录' })).toBeTruthy();
     // 子树里没有隐藏项时，「取消隐藏」整块也不出现（旧版是点不亮的永久灰项）
     expect(screen.queryByRole('menuitem', { name: '取消隐藏' })).toBeNull();
     expect(screen.queryByRole('menuitem', { name: /全部恢复/ })).toBeNull();
   });
 
-  it('目录行菜单：有「隐藏文件夹」，不出现改别名与删除根目录', () => {
+  it('目录行菜单：有「隐藏文件夹」，不出现改别名与删除目录', () => {
     seedScannedRoot();
     render(<AppLayout />);
     fireEvent.contextMenu(screen.getByRole('treeitem', { name: /2024，/ }));
     expect(screen.getByRole('menuitem', { name: '隐藏文件夹' })).toBeTruthy();
     expect(screen.queryByRole('menuitem', { name: '改别名' })).toBeNull();
-    expect(screen.queryByRole('menuitem', { name: '删除根目录' })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: '删除目录' })).toBeNull();
   });
 
   it('子树里只有一个隐藏项时给单行「取消隐藏」，不铺分组', () => {
