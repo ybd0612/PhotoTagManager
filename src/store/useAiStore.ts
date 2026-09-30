@@ -121,6 +121,9 @@ export const useAiStore = create<AiState>((set, get) => ({
     api.onAiDone((payload) => {
       // 完成后清进行中标记，但保留结果给对比视图
       set({ task: null, result: payload, error: null });
+      // 驻留状态是清单里从主进程取来的快照：不重取，跑完这一次也显示不出"已加载"。
+      // 缓存命中同样要刷——那时驻留可能早被用户点卸载改掉了
+      void get().refreshCatalog();
     });
     api.onAiError((err) => {
       set({ task: null, error: err });

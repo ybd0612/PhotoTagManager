@@ -181,6 +181,15 @@ describe('ai/useAiStore —— 状态机', () => {
     expect(s.result?.cacheHit).toBe(true);
   });
 
+  // 实测缺陷（2026-09-30 CDP 取证抓到）：推理成功后 runner 里模型已驻留，
+  // 但清单不刷新 → 行内"已加载"永远显示不出来，用户看不出谁在内存里。
+  it('成功事件也要顺手刷新清单，否则「已加载」这个状态在界面上永远出不来', async () => {
+    api.aiCatalog.mockClear();
+    await useAiStore.getState().startRun('C:/photos/a.jpg');
+    fireDone({ cacheHit: false });
+    await vi.waitFor(() => expect(api.aiCatalog).toHaveBeenCalled());
+  });
+
   it('error 事件保留错误上下文，让界面能解释而不是变灰', async () => {
     await useAiStore.getState().startRun('C:/photos/a.jpg');
     listeners.error?.({ taskId: 'ai-1', code: 'MODEL_NOT_VERIFIED', message: '该模型在本引擎不支持' });
@@ -329,6 +338,10 @@ describe('AiActionSplitButton —— 组合按钮', () => {
     expect(items[1].textContent).toContain('已下载');
     expect(within(items[1]).queryByRole('button', { name: '卸载' })).toBeNull();
     expect(within(items[1]).getByRole('button', { name: '删除' })).toBeTruthy();
+    // 状态还得看得出差别：只有驻留那行给实心绿标签（纯灰文本肉眼分不出"已加载/已下载"）
+    const chipOf = (li: Element) => li.querySelector('[data-testid="model-status"]')?.className ?? '';
+    expect(chipOf(items[0])).toContain('MuiChip-colorSuccess');
+    expect(chipOf(items[1])).not.toContain('MuiChip-colorSuccess');
   });
 
   it('默认模型由复选框表达：行内不再重复写「默认」，勾未默认那行发 set-default', () => {

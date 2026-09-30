@@ -3,6 +3,7 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import ButtonGroup from '@mui/material/ButtonGroup';
 import Checkbox from '@mui/material/Checkbox';
+import Chip from '@mui/material/Chip';
 import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
@@ -11,6 +12,7 @@ import Divider from '@mui/material/Divider';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Popover from '@mui/material/Popover';
 import Stack from '@mui/material/Stack';
+import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import { describeDownloadCost, useAiStore } from '../store/useAiStore';
 import { downloadConsent } from '../utils/strings';
@@ -173,6 +175,44 @@ function primaryActionOf(model: AiModelView): { label: string; action: 'download
   return { label: model.loaded ? '卸载' : '删除', action: model.loaded ? 'unload' : 'delete' };
 }
 
+/**
+ * 状态标签。"已下载"和"已加载"只差一个字，纯灰文本肉眼分不出来（用户两次反馈），
+ * 所以驻留那档给实心绿，其余描边——强度差是语义差，不是装饰。
+ */
+function ModelStatusChip({ model }: { model: AiModelView }) {
+  const resident = model.status === 'present' && model.loaded && !model.statusReason;
+  const label = model.statusReason
+    ? '不可用'
+    : model.status === 'absent'
+      ? '未下载'
+      : model.loaded
+        ? '已加载'
+        : '已下载';
+  const chip = (
+    <Chip
+      size="small"
+      data-testid="model-status"
+      label={label}
+      color={resident ? 'success' : 'default'}
+      variant={resident ? 'filled' : 'outlined'}
+      sx={{
+        height: 20,
+        flexShrink: 0,
+        fontSize: '0.7rem',
+        fontWeight: resident ? 700 : 500,
+        '& .MuiChip-label': { px: 0.75 },
+        ...(model.statusReason ? { color: 'warning.main', borderColor: 'warning.light' } : null)
+      }}
+    />
+  );
+  if (!resident) return chip;
+  return (
+    <Tooltip title="模型正驻留在显存/内存里，不会自己退出：点「卸载」立即释放，下次处理时会自动重新加载">
+      {chip}
+    </Tooltip>
+  );
+}
+
 function ModelMenu({
   cap,
   anchorEl,
@@ -307,11 +347,10 @@ function ModelMenu({
               <Typography variant="body2" noWrap sx={{ minWidth: 0, flex: 1, fontSize: '0.82rem' }}>
                 {model.displayName}
                 <Box component="span" sx={{ color: 'text.secondary', ml: 0.75 }}>
-                  {describeDownloadCost(model.sizeBytes).split('，')[0]} ·{' '}
-                  {model.status === 'present' ? (model.loaded ? '已加载' : '已下载') : '未下载'}
-                  {model.statusReason ? ' · 不可用' : ''}
+                  {describeDownloadCost(model.sizeBytes).split('，')[0]}
                 </Box>
               </Typography>
+              <ModelStatusChip model={model} />
               {/* 不可用必须说清"为什么 + 怎么办"，只给一个灰词等于没解释（规格 §6） */}
               {model.statusReason ? (
                 <Typography
