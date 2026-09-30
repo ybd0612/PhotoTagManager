@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from 'react';
 import { Box, Button, Card, Chip, Menu, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { FixedSizeGrid } from 'react-window';
@@ -81,7 +81,6 @@ export function ThumbnailGrid(): JSX.Element {
     [images, tagFilter.tags, tagFilter.mode, tagCache, nameQuery, sortKey, sortDir]
   );
 
-  const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [range, setRange] = useState<GridRange | null>(null);
   const [contextMenu, setContextMenu] = useState<{ mouseX: number; mouseY: number; image: ImageFile; paths: string[] } | null>(null);
@@ -105,18 +104,26 @@ export function ThumbnailGrid(): JSX.Element {
     });
   };
 
-  useEffect(() => {
-    const el = containerRef.current;
+  /**
+   * 容器测尺走回调式 ref，不用 useEffect + []。
+   * 原因：本组件有三个分支各自渲染一个带 ref 的 div（首帧的量尺占位、空态/扫描提示、网格容器），
+   * effect 只在挂载那一次跑，绑到的是首帧那个占位 div；分支一切换，被观察的节点就被摘出文档，
+   * 观察器从此不再回调，尺寸永远停在"还没有多选条"时的高度——批量条一出现，网格就溢出压住底部状态栏。
+   */
+  const observerRef = useRef<ResizeObserver | null>(null);
+  const attachContainer = useCallback((el: HTMLDivElement | null) => {
+    observerRef.current?.disconnect();
+    observerRef.current = null;
     if (!el) return;
+    // 不额外同步读 clientWidth：observe 之后浏览器会立即为这个新的观察对象上报一次初始尺寸
     const ro = new ResizeObserver((entries) => {
       const rect = entries[0].contentRect;
       setSize({ width: rect.width, height: rect.height });
     });
     ro.observe(el);
-    setSize({ width: el.clientWidth, height: el.clientHeight });
-    return () => ro.disconnect();
+    observerRef.current = ro;
   }, []);
-
+  useEffect(() => () => observerRef.current?.disconnect(), []);
   // 列宽基准来自偏好档位；列宽再自适应填满容器，避免右侧留白。行高按 168×148 的比例跟随
   const baseColWidth = THUMB_SIZES[thumbSize];
   const cols = Math.max(1, Math.floor((size.width + GAP) / (baseColWidth + GAP)));
@@ -185,7 +192,7 @@ export function ThumbnailGrid(): JSX.Element {
   };
 
   if (size.width <= 0) {
-    return <div ref={containerRef} className="h-full w-full" />;
+    return <div ref={attachContainer} className="h-full w-full" />;
   }
 
   if (filtered.length === 0) {
@@ -201,7 +208,7 @@ export function ThumbnailGrid(): JSX.Element {
             ? `没有文件名含「${nameQuery.trim()}」的图片${tagFilter.tags.length > 0 ? '（同时受标签筛选）' : ''}`
             : '没有符合当前标签筛选的图片';
     return (
-      <div ref={containerRef} className="flex h-full w-full items-center justify-center">
+      <div ref={attachContainer} className="flex h-full w-full items-center justify-center">
         <Stack alignItems="center" spacing={1} role="status" aria-live="polite">
           <Typography variant="body2" color="text.secondary">{message}</Typography>
           {!scanningNow && !rootScanned && <Button size="small" onClick={() => void rescan()}>重新扫描</Button>}
@@ -331,7 +338,8 @@ export function ThumbnailGrid(): JSX.Element {
     <div className="flex h-full w-full flex-col">
       {/* 多选操作条：批量添加标签 / 清除选择 */}
       {selectedImages.size > 0 && <BatchTagBar selectedIds={selectedImages} />}
-      <div ref={containerRef} className="min-h-0 flex-1">
+      {/* overflow-hidden：观察器回调比布局晚一帧，容器缩小的那一帧里网格仍是旧高度，不裁剪就会画到状态栏上 */}
+      <div ref={attachContainer} className="min-h-0 flex-1 overflow-hidden">
         <FixedSizeGrid
           columnCount={cols}
           columnWidth={colWidth}
