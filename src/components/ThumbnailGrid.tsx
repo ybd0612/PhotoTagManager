@@ -9,6 +9,7 @@ import { useTrashImages } from '../hooks/useTrashImages';
 import { call, getApi, toFileUrl } from '../api';
 import { collectDirAndDescendants } from '../utils/folders';
 import { matchName, ROW_RATIO, sortImages, THUMB_SIZES } from '../utils/viewFilters';
+import { tokens } from '../theme/tokens';
 import type { ImageFile } from '../../shared/types';
 
 /**
@@ -16,10 +17,11 @@ import type { ImageFile } from '../../shared/types';
  * 支持 Ctrl/⌘ 多选、点击预览；标签角标右下角展示。
  */
 
-const GAP = 12;
+/** 网格间距：走 8pt 刻度的 s4（16px）。比原来的 12 松一档，tile 之间的呼吸感是「高级」的一半来源 */
+const GAP = 16;
 
 const PLACEHOLDER = `data:image/svg+xml;utf8,${encodeURIComponent(
-  `<svg xmlns="http://www.w3.org/2000/svg" width="160" height="140"><rect width="100%" height="100%" fill="#f1f5f9"/><text x="50%" y="50%" fill="#cbd5e1" font-size="13" text-anchor="middle" dominant-baseline="middle">加载中…</text></svg>`
+  `<svg xmlns="http://www.w3.org/2000/svg" width="160" height="140"><rect width="100%" height="100%" fill="#f1f3f6"/><text x="50%" y="50%" fill="#8a929e" font-size="13" text-anchor="middle" dominant-baseline="middle">加载中…</text></svg>`
 )}`;
 
 /** 多标签筛选：AND（默认，更精确）/ OR */
@@ -223,7 +225,7 @@ export function ThumbnailGrid(): JSX.Element {
     return (
       <div style={{ ...style, padding: GAP / 2 }}>
         <Card
-          className="relative h-full w-full cursor-pointer select-none overflow-hidden transition-shadow hover:shadow-md"
+          className="relative h-full w-full cursor-pointer select-none overflow-hidden"
           role="button"
           tabIndex={0}
           aria-label={`打开图片预览：${image.name}`}
@@ -239,7 +241,20 @@ export function ThumbnailGrid(): JSX.Element {
             }
           }}
           onContextMenu={(e) => handleContextMenu(e, image)}
-          sx={selected ? { outline: '2px solid', outlineColor: 'primary.main' } : { '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main' } }}
+          sx={{
+            // 静止态只带极浅阴影：一屏几十个 tile 同时画深阴影，滚动时就是白付的绘制成本
+            boxShadow: 'var(--ptm-shadow-raised)',
+            transition: 'transform var(--ptm-t-base) var(--ptm-ease), box-shadow var(--ptm-t-base) var(--ptm-ease)',
+            '& img': { transition: 'transform var(--ptm-t-base) var(--ptm-ease)' },
+            '&:hover': { transform: 'translateY(-1px)', boxShadow: 'var(--ptm-shadow-pop)' },
+            '&:hover img': { transform: 'scale(1.02)' },
+            // 选中：内描边（不挤动布局）再压一层主色半透明底，一眼看得出这张被选了
+            ...(selected
+              ? { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: '-2px', bgcolor: 'primary.soft' }
+              : {}),
+            // 键盘焦点：外描边环，与选中分成两档，Tab 走到哪儿都看得见
+            '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.light', outlineOffset: '2px' }
+          }}
         >
           {imageError ? (
             <Stack alignItems="center" justifyContent="center" spacing={1} className="h-full w-full bg-surface-2">
@@ -274,32 +289,32 @@ export function ThumbnailGrid(): JSX.Element {
           )}
           {/* 标签角标：常驻左上，平时就能看出这张图归在哪一组标签下 */}
           {tags.length > 0 && (
-            <Box className="pointer-events-none absolute left-1.5 top-1.5 flex max-w-[78%] flex-wrap justify-start gap-0.5">
+            <Box className="pointer-events-none absolute left-2 top-2 flex max-w-[78%] flex-wrap justify-start gap-1">
               {tags.slice(0, 2).map((tag) => (
                 <Chip
                   key={tag}
                   label={tag}
                   size="small"
-                  sx={{ height: 17, fontSize: 10, bgcolor: 'rgba(255,255,255,0.88)', color: 'slate.800' }}
+                  sx={{ height: 20, px: 0.5, fontSize: 11, fontWeight: 500, bgcolor: 'rgba(255,255,255,0.92)', color: 'text.primary' }}
                 />
               ))}
               {tags.length > 2 && (
                 <Chip
                   label={`+${tags.length - 2}`}
                   size="small"
-                  sx={{ height: 17, fontSize: 10, bgcolor: 'rgba(255,255,255,0.88)', color: 'slate.600' }}
+                  sx={{ height: 20, px: 0.5, fontSize: 11, fontWeight: 500, bgcolor: 'rgba(255,255,255,0.92)', color: 'text.secondary' }}
                 />
               )}
             </Box>
           )}
           {/* 文件名：只在鼠标悬停或键盘聚焦时浮现，平时把画面完整让给图片 */}
           <Box
-            className="absolute bottom-0 left-0 right-0 flex items-end px-1.5 py-1"
+            className="absolute bottom-0 left-0 right-0 flex items-end px-2 py-1"
             sx={{
               pointerEvents: 'none',
-              background: 'linear-gradient(transparent, rgba(15,23,42,0.82))',
+              background: `linear-gradient(transparent, ${tokens.overlay.captionScrim})`,
               opacity: 0,
-              transition: 'opacity .12s ease',
+              transition: 'opacity var(--ptm-t-fast) var(--ptm-ease)',
               '.MuiCard-root:hover &, .MuiCard-root:focus-visible &, .MuiCard-root:focus-within &': { opacity: 1 }
             }}
           >

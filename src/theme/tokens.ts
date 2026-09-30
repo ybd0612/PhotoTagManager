@@ -11,6 +11,20 @@
  * 两边同源，所以不会出现"CSS 改了 MUI 没改"。
  */
 
+declare module '@mui/material/styles' {
+  /**
+   * 本项目给 primary 多加的一档：选中行的主色半透明底。
+   * 不声明的话 `bgcolor: 'primary.soft'` 过不了 tsc（MUI 的 PaletteColor 只有 main/light/dark 等固定键），
+   * 而退回去在每个组件里 import 常量就是第二个事实源——所以补类型，不绕过去。
+   */
+  interface PaletteColor {
+    soft: string;
+  }
+  interface SimplePaletteColorOptions {
+    soft?: string;
+  }
+}
+
 /** 中性色阶：区域靠色块深浅分开，描边只保留一条必需的细分线 */
 const ink = {
   /** 主文字。不用纯黑：近黑带一点冷调，大面积排字不刺眼 */
@@ -57,6 +71,8 @@ const status = {
 const overlay = {
   scrim: 'rgba(9, 12, 20, 0.72)',
   chip: 'rgba(2, 6, 23, 0.62)',
+  /** 图片上压字用的渐变终点：比 chip 深得多，白文件名才读得清 */
+  captionScrim: 'rgba(9, 12, 20, 0.82)',
   surfaceFaint: 'rgba(255, 255, 255, 0.05)',
   surface: 'rgba(255, 255, 255, 0.08)',
   surfaceStrong: 'rgba(255, 255, 255, 0.14)',

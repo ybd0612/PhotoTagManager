@@ -19,7 +19,7 @@ const { ink, surface, accent, radius, font, shadow, motion } = tokens;
 const theme = createTheme({
   palette: {
     mode: 'light',
-    primary: { main: accent.main, light: accent.light, dark: accent.dark, contrastText: accent.onColor },
+    primary: { main: accent.main, light: accent.light, dark: accent.dark, soft: accent.soft, contrastText: accent.onColor },
     secondary: { main: '#0ea5e9' },
     background: { default: surface.canvas, paper: surface.paper },
     text: { primary: ink.primary, secondary: ink.secondary, disabled: ink.tertiary },
