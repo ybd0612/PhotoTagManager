@@ -66,6 +66,8 @@ const api: PhotoTagApi = {
   onWindowMaximized: (cb: (maximized: boolean) => void) => subscribe<boolean>('window:maximized-changed', cb),
   // 复制文件到剪贴板
   copyFileToClipboard: (absPath: string) => ipcRenderer.invoke('clipboard:copy-file', absPath),
+  // 复制纯文本到剪贴板（状态栏复制目录绝对路径）
+  copyTextToClipboard: (text: string) => ipcRenderer.invoke('clipboard:copy-text', text),
   // 标签
   readImageTags: (absPath: string) => ipcRenderer.invoke('tags:read-image', absPath),
   readBulkTags: (absPaths: string[]) => ipcRenderer.invoke('tags:read-bulk', absPaths),

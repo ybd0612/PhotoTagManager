@@ -3,6 +3,7 @@ import type { MouseEvent as ReactMouseEvent } from 'react';
 import {
   Box,
   Button,
+  ButtonBase,
   Divider,
   IconButton,
   LinearProgress,
@@ -12,6 +13,7 @@ import {
   Tooltip,
   Typography
 } from '@mui/material';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import StopCircleIcon from '@mui/icons-material/StopCircle';
 import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary';
@@ -19,6 +21,7 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { useAppStore } from '../store/useAppStore';
+import { call, getApi } from '../api';
 import { cancelScan, rescan } from '../hooks/useScan';
 import { useRootActions } from '../hooks/useRootActions';
 import { collectDirAndDescendants } from '../utils/folders';
@@ -43,11 +46,29 @@ const TREE_HANDLE_SHOW_TO = 26;
 const TREE_HANDLE_KEEP_FROM = -14;
 const TREE_HANDLE_KEEP_TO = 34;
 
+/** 状态栏路径最多显示的字符数，超出后中段省略（完整路径在悬停 Tooltip 里） */
+const STATUS_PATH_MAX_CHARS = 56;
+
+/**
+ * 路径中段省略：`C:\Users\ybd06\Pictures\PixPinAutoSave\2024\01` → `C:\Users\ybd06\Pictures\…\PixPinAutoSave\2024\01`。
+ * 不用 CSS 的 `text-overflow: ellipsis`：那只掐尾巴，而路径最有信息量的正是尾巴（末级目录与其父级）；
+ * 也不换行——状态栏只有 28px 高，一换行就把右侧扫描状态挤没了。
+ */
+function truncatePathMiddle(path: string, maxChars: number): string {
+  if (path.length <= maxChars) return path;
+  // 头 6 成尾 4 成：尾部至少留 12 字符，否则末级目录名会被省略号吃掉
+  const tailChars = Math.max(12, Math.floor(maxChars * 0.4));
+  const headChars = maxChars - tailChars - 1;
+  return `${path.slice(0, headChars)}…${path.slice(path.length - tailChars)}`;
+}
+
 /**
  * 三栏布局容器 + 顶部工具栏 + 底部状态栏（PRD §3.3 线框图，多根 R10）。
  * 批次2 起：左栏是一棵「根 + 子目录」合并树（G5），状态栏扫描文案只播一次（G7）。
  * 批次4 起：添加根目录与重新扫描都归到左栏树头，顶栏只剩标题区、扫描中的「取消」和设置入口。
  * 检查更新与关于（原 G6 的溢出菜单）现收在设置弹窗的「关于与更新」分区，顶栏不再有次操作菜单。
+ * 「当前目录」一条信息（目录名 + 绝对路径 + 张数）只说一次，统一落在底部状态栏左侧，
+ * 路径可点击复制；顶栏不再挂路径 chip（顶栏是窗口拖拽区，在里面放可点元素要在拖拽区上挖洞）。
  */
 export function AppLayout(): JSX.Element {
   const roots = useAppStore((s) => s.roots);
@@ -96,10 +117,12 @@ export function AppLayout(): JSX.Element {
     return `${selectedRoot.path.replace(/[\\/]+$/, '')}\\${selectedDir.replace(/\//g, '\\')}`;
   }, [selectedRoot, selectedDir]);
 
+  /** 状态栏左侧目录名：选中根本身时用根别名（与左栏树行同一口径），否则取末级目录名 */
   const selectedDirLabel = useMemo(() => {
-    if (!selectedRoot || selectedDir === null || selectedDir === '') return '根目录';
+    if (!selectedRoot) return '';
+    if (selectedDir === null || selectedDir === '') return selectedRoot.alias;
     const normalized = selectedDir.replace(/[\\/]+$/, '').replace(/\\/g, '/');
-    return normalized.split('/').filter(Boolean).pop() ?? '根目录';
+    return normalized.split('/').filter(Boolean).pop() ?? selectedRoot.alias;
   }, [selectedRoot, selectedDir]);
 
   /** 按目录集合累计可见图片数（隐藏子树已被 collectDirAndDescendants 剪掉） */
@@ -111,9 +134,11 @@ export function AppLayout(): JSX.Element {
     [selectedRootId, imagesByDir, tree]
   );
 
-  // 当前目录（含子树）张数给目录条，本根总数给状态栏，两个数不再同名不同义
+  // 当前目录（含子树）张数给状态栏「当前」，本根总数给「共」，两个数不再同名不同义
   const currentDirImageCount = imageCountOf(selectedDir ?? '');
   const currentRootImageCount = imageCountOf('');
+  // 选中根本身时两个数必然相等，只报「共」一次
+  const isBrowsingRoot = selectedDir === null || selectedDir === '';
 
   const currentRootScanState = selectedRootId ? (scanStateByRoot.get(selectedRootId) ?? 'idle') : 'idle';
   const currentRootScanStats = selectedRootId ? (scanStatsByRoot.get(selectedRootId) ?? null) : null;
@@ -126,6 +151,17 @@ export function AppLayout(): JSX.Element {
   const handleCancel = useCallback(() => {
     void cancelScan();
   }, []);
+
+  /** 点状态栏路径 = 复制当前目录绝对路径（走纯文本通道，不是复制文件那条） */
+  const handleCopyDirPath = useCallback(async (): Promise<void> => {
+    if (!selectedDirAbs) return;
+    try {
+      await call(getApi().copyTextToClipboard(selectedDirAbs));
+      setSnackbar('已复制路径');
+    } catch {
+      setSnackbar('复制路径失败');
+    }
+  }, [selectedDirAbs, setSnackbar]);
 
   // 启动静默检查一次：结果只进右下角通知卡，不再弹模态
   useEffect(() => {
@@ -184,26 +220,6 @@ export function AppLayout(): JSX.Element {
               </Typography>
             </Box>
           </Typography>
-          {selectedRoot && (
-            <Tooltip title={selectedDirAbs ?? selectedRoot.path} placement="bottom-start">
-              <Box
-                className="min-w-0 shrink"
-                sx={{ maxWidth: 520, minWidth: 0, border: '1px solid', borderColor: 'divider', borderRadius: 1, px: 1, py: 0.25 }}
-              >
-                <Typography
-                  variant="caption"
-                  noWrap
-                  component="div"
-                  sx={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis' }}
-                >
-                  {selectedDirLabel} ·{' '}
-                  <Box component="span" sx={{ fontWeight: 400, color: 'text.secondary' }}>
-                    {selectedDirAbs ?? selectedRoot.path}
-                  </Box>
-                </Typography>
-              </Box>
-            </Tooltip>
-          )}
         </Stack>
 
         {/* 次操作区：扫描中才出现「取消」，分隔线随之只在需要它时渲染 */}
@@ -281,11 +297,6 @@ export function AppLayout(): JSX.Element {
           </Tooltip>
 
           <Box className="flex min-w-0 flex-1 flex-col">
-            <Paper className="flex shrink-0 items-center gap-2 rounded-none border-b border-slate-100 px-3 py-1" elevation={0}>
-              <Typography variant="caption" color="text.secondary" noWrap title={selectedDirAbs ?? undefined}>
-                当前目录：{selectedDirLabel} · {currentDirImageCount.toLocaleString()} 张图片
-              </Typography>
-            </Paper>
             <TagFilterBar />
             <Box className="min-h-0 flex-1">
               <ThumbnailGrid />
@@ -294,13 +305,58 @@ export function AppLayout(): JSX.Element {
         </Box>
       )}
 
-      {/* 底部状态栏：浏览统计在左，扫描状态只播一次（G7） */}
+      {/* 底部状态栏：当前目录（名称 + 可复制的绝对路径）与浏览统计在左，扫描状态只播一次（G7） */}
       <Paper className="flex h-7 shrink-0 items-center justify-between rounded-none border-t border-slate-200 px-3">
-        <Typography variant="caption" color="text.secondary" noWrap>
-          共 {currentRootImageCount.toLocaleString()} 张
-          <span className="mx-2 text-slate-300">|</span>
-          已选 {selectedImages.size} 张
-        </Typography>
+        <Stack direction="row" spacing={1} alignItems="center" className="min-w-0">
+          {selectedDirAbs && (
+            <>
+              <Typography
+                variant="caption"
+                data-testid="status-dir-name"
+                className="min-w-0"
+                sx={{ fontWeight: 600 }}
+                noWrap
+              >
+                {selectedDirLabel}
+              </Typography>
+              <span className="shrink-0 text-slate-300">|</span>
+              <Tooltip title={`点击复制绝对路径：${selectedDirAbs}`} placement="top-start">
+                <ButtonBase
+                  aria-label="复制当前目录路径"
+                  onClick={() => void handleCopyDirPath()}
+                  sx={{
+                    minWidth: 0,
+                    maxWidth: 460,
+                    px: 0.75,
+                    py: 0,
+                    borderRadius: 0.5,
+                    color: 'text.secondary',
+                    '&:hover': { bgcolor: 'action.hover', color: 'text.primary' }
+                  }}
+                >
+                  <Stack direction="row" spacing={0.5} alignItems="center" className="min-w-0">
+                    <Typography variant="caption" className="min-w-0" noWrap sx={{ color: 'inherit' }}>
+                      {truncatePathMiddle(selectedDirAbs, STATUS_PATH_MAX_CHARS)}
+                    </Typography>
+                    <ContentCopyIcon sx={{ fontSize: 12, flexShrink: 0 }} />
+                  </Stack>
+                </ButtonBase>
+              </Tooltip>
+              <span className="shrink-0 text-slate-300">|</span>
+            </>
+          )}
+          <Typography variant="caption" color="text.secondary" noWrap>
+            {!isBrowsingRoot && (
+              <>
+                当前 {currentDirImageCount.toLocaleString()} 张
+                <span className="mx-2 text-slate-300">|</span>
+              </>
+            )}
+            共 {currentRootImageCount.toLocaleString()} 张
+            <span className="mx-2 text-slate-300">|</span>
+            已选 {selectedImages.size} 张
+          </Typography>
+        </Stack>
         <Stack direction="row" spacing={1} alignItems="center">
           {statusLabel && (
             <Stack

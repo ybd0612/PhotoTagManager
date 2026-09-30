@@ -67,6 +67,7 @@ function createMockApi(): PhotoTagApi {
     isWindowMaximized: vi.fn(async () => ({ ok: true as const, data: false })),
     onWindowMaximized: vi.fn(() => () => undefined),
     copyFileToClipboard: vi.fn(async () => ({ ok: true as const, data: undefined })),
+    copyTextToClipboard: vi.fn(async () => ({ ok: true as const, data: undefined })),
     readImageTags: vi.fn(async () => ({
       ok: true as const,
       data: { absPath: '', subjects: [], ok: true }
@@ -282,11 +283,54 @@ describe('批次2 G7 状态栏', () => {
     expect(lines[0].textContent).toBe('已扫描 40 个文件（含非图片）');
   });
 
-  it('目录条显示当前目录张数，状态栏显示本根总数', () => {
+  it('当前目录只在状态栏说一次：目录名 + 绝对路径 + 两个张数', () => {
     seedGallery('截图');
     render(<AppLayout />);
-    expect(screen.getByText('当前目录：截图 · 2 张图片')).toBeTruthy();
+    // 顶栏不再挂路径（顶栏是窗口拖拽区），网格上方那条目录条也已撤
+    const header = screen.getByRole('banner');
+    expect(within(header).queryByText(/C:\/截图/)).toBeNull();
+    expect(screen.queryByText(/当前目录：/)).toBeNull();
+
+    expect(screen.getByTestId('status-dir-name').textContent).toBe('截图');
+    expect(screen.getByRole('button', { name: '复制当前目录路径' }).textContent).toContain(
+      'C:/截图\\截图'
+    );
+    expect(screen.getByText(/当前 2 张/)).toBeTruthy();
     expect(screen.getByText(/共 3 张/)).toBeTruthy();
+  });
+
+  it('选中根本身时两个数相等，只报一次「共」', () => {
+    seedGallery('');
+    render(<AppLayout />);
+    expect(screen.queryByText(/当前 \d+ 张/)).toBeNull();
+    expect(screen.getByText(/共 3 张/)).toBeTruthy();
+  });
+
+  it('点状态栏路径 = 复制绝对路径文本，并给成功反馈', async () => {
+    seedGallery('截图');
+    render(<AppLayout />);
+    fireEvent.click(screen.getByRole('button', { name: '复制当前目录路径' }));
+    const api = (window as unknown as { api: PhotoTagApi }).api;
+    await waitFor(() =>
+      expect(vi.mocked(api.copyTextToClipboard)).toHaveBeenCalledWith('C:/截图\\截图')
+    );
+    expect(await screen.findByText('已复制路径')).toBeTruthy();
+  });
+
+  it('超长路径只省略中段，头尾仍可读', () => {
+    seedGallery('截图');
+    useAppStore.setState((s) => ({
+      roots: s.roots.map((r) =>
+        r.id === 'r1' ? { ...r, path: 'C:\\Users\\ybd06\\Documents\\我的图片归档\\PixPinAutoSave\\2026\\09月\\项目截图' } : r
+      )
+    }));
+    render(<AppLayout />);
+    const shown = screen.getByRole('button', { name: '复制当前目录路径' }).textContent ?? '';
+    expect(shown).toContain('…');
+    expect(shown).toContain('C:\\Users\\ybd06');
+    expect(shown).toContain('项目截图');
+    // 中段真的被切掉了：整段目录名不可能同时出现在省略后的文本里
+    expect(shown).not.toContain('PixPinAutoSave');
   });
 });
 

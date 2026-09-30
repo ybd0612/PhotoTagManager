@@ -290,6 +290,12 @@ export function registerIpc(deps: IpcDeps): void {
     clipboard.writeBuffer('FileNameW', Buffer.from(`${absPath}\0`, 'utf16le'));
   });
 
+  // 复制纯文本（状态栏复制目录路径）。不能复用上面那条：FileNameW 粘进资源管理器是"粘贴文件"
+  handle('clipboard:copy-text', (text: string): void => {
+    if (!text) throw new Error('text 不能为空');
+    clipboard.writeText(text);
+  });
+
   // 标签（R07）
   handle('tags:read-image', (absPath: string): Promise<unknown> => deps.xmp.read(absPath));
   handle('tags:read-bulk', (absPaths: string[]): Promise<unknown> => deps.xmp.readBulk(absPaths ?? []));

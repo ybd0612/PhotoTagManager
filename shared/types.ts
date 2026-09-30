@@ -317,6 +317,8 @@ export interface PhotoTagApi {
   revealFileInExplorer(absPath: string): Promise<IpcResult<void>>;
   // 复制文件到剪贴板（FileNameW 格式，可在资源管理器粘贴；text 同时写入路径）
   copyFileToClipboard(absPath: string): Promise<IpcResult<void>>;
+  // 复制纯文本到剪贴板（底部状态栏「点击复制路径」）
+  copyTextToClipboard(text: string): Promise<IpcResult<void>>;
   // 标签
   readImageTags(absPath: string): Promise<IpcResult<TagInfo>>;
   readBulkTags(absPaths: string[]): Promise<IpcResult<TagInfo[]>>;

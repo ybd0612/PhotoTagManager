@@ -25,6 +25,6 @@ export const SHORTCUTS: Shortcut[] = [
   { keys: 'Enter', action: '在标签输入框里确认并写入标签', scope: '预览' },
   { keys: 'Ctrl + 单击', action: '网格中多选图片（批量加标签、批量移到回收站）', scope: '网格' },
   { keys: 'Tab / ↑ ↓ / Enter', action: '键盘走到并展开模型下拉，方向键移动、Enter 选择', scope: '预览底栏' },
-  { keys: 'Ctrl + B', action: '收起 / 展开左侧目录树（当前目录仍显示在顶栏）', scope: '全局' },
+  { keys: 'Ctrl + B', action: '收起 / 展开左侧目录树（当前目录常驻底部状态栏）', scope: '全局' },
   { keys: '?', action: '打开设置并停在快捷键分区（即本列表）', scope: '全局 · 输入框内除外' }
 ];
