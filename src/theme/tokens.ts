@@ -110,7 +110,8 @@ const font = { caption: 12, body: 13, subtitle: 15, title: 22 };
 
 /** 阴影两档：静止态几乎看不见，只在悬停与浮层上出现 */
 const shadow = {
-  raised: '0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06)',
+  /** 只留一档：浮层与 hover 抬升用。静止态阴影已撤（几十个 tile 同画阴影是纯绘制开销），
+   *  没有消费者就不留在色板里，免得变成一处永不生效却要看一遍的死值 */
   pop: '0 6px 16px rgba(16, 24, 40, 0.10), 0 2px 6px rgba(16, 24, 40, 0.06)'
 };
 
@@ -151,7 +152,6 @@ const cssVars: Record<string, string> = {
   '--ptm-r-sm': `${radius.sm}px`,
   '--ptm-r-md': `${radius.md}px`,
   '--ptm-r-lg': `${radius.lg}px`,
-  '--ptm-shadow-raised': shadow.raised,
   '--ptm-shadow-pop': shadow.pop,
   '--ptm-t-fast': `${motion.fast}ms`,
   '--ptm-t-base': `${motion.base}ms`,

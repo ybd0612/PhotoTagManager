@@ -242,8 +242,8 @@ export function ThumbnailGrid(): JSX.Element {
           }}
           onContextMenu={(e) => handleContextMenu(e, image)}
           sx={{
-            // 静止态只带极浅阴影：一屏几十个 tile 同时画深阴影，滚动时就是白付的绘制成本
-            boxShadow: 'var(--ptm-shadow-raised)',
+            // 静止态不带阴影：一屏几十个 tile 同时画阴影是纯绘制开销，而 tile 本身就是照片，
+            // 边界由画面与画布的色调差给出，不需要阴影来划。阴影只在 hover 出现（那一次才付）
             transition: 'transform var(--ptm-t-base) var(--ptm-ease), box-shadow var(--ptm-t-base) var(--ptm-ease)',
             '& img': { transition: 'transform var(--ptm-t-base) var(--ptm-ease)' },
             '&:hover': { transform: 'translateY(-1px)', boxShadow: 'var(--ptm-shadow-pop)' },

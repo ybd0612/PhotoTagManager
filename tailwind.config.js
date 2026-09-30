@@ -27,7 +27,6 @@ module.exports = {
         sheet: 'var(--ptm-r-lg)'
       },
       boxShadow: {
-        raised: 'var(--ptm-shadow-raised)',
         pop: 'var(--ptm-shadow-pop)'
       }
     }
