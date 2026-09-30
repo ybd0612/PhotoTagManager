@@ -96,16 +96,36 @@ describe('模型许可与来源的完整性（规范 §3.0 / §3.1.1 / §5）', 
     expect(notice).not.toContain('已核验上游许可');
   });
 
-  it('本项目自己的许可文件在位，且 package.json 指向它', () => {
+  it('本项目自己的许可是 MIT 正文，且各表面口径不与它打架', () => {
     const license = readFileSync('LICENSE', 'utf8');
-    expect(license).toContain('源码公开非商业使用许可');
-    expect(license).toContain('不得用于任何商业目的');
-    expect(license).toContain('24 小时之内删除');
+    expect(license).toContain('MIT License');
+    expect(license).toContain('Copyright (c) 2026 Ybond');
+    expect(license).toContain('Permission is hereby granted, free of charge');
+    expect(license).toContain('and/or sell copies of the Software');
+    expect(license).toContain('THE SOFTWARE IS PROVIDED "AS IS"');
+    // 占位符必须都填掉，否则发出去的是模板不是许可
+    expect(license).not.toContain('<year>');
+    expect(license).not.toContain('<copyright holders>');
+
     const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
-    expect(pkg.license).toBe('SEE LICENSE IN LICENSE');
-    // 承诺随包发的东西，files 白名单里就得真有——否则 §4 是我们自己不会遵守的条款
+    expect(pkg.license).toBe('MIT');
+    expect(pkg.author).toBe('Ybond');
+    // 承诺随包发的东西，files 白名单里就得真有
     expect(pkg.build.files).toContain('LICENSE');
     expect(pkg.build.files).toContain('NOTICE');
     expect(pkg.build.files).toContain('LICENSES/**');
+
+    // MIT 明文允许商用与再分发。下面这些措辞与许可正文相互矛盾，任何一处出现都算口径分裂
+    const surfaces: Record<string, string> = {
+      'README.md': readFileSync('README.md', 'utf8'),
+      NOTICE: readFileSync('NOTICE', 'utf8'),
+      '设置·关于与更新': readFileSync(join('src', 'components', 'settings', 'AboutUpdatePane.tsx'), 'utf8')
+    };
+    const banned = ['严禁用于商业用途', '24 小时之内删除', '仅供学习交流使用', '源码公开非商业使用许可'];
+    for (const [name, text] of Object.entries(surfaces)) {
+      for (const phrase of banned) {
+        expect(text, `${name} 里还留着与 MIT 冲突的「${phrase}」`).not.toContain(phrase);
+      }
+    }
   });
 });

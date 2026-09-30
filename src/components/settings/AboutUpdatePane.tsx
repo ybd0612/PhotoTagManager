@@ -59,7 +59,7 @@ export function AboutUpdatePane({ update }: { update: UpdateController }): JSX.E
           />
         </Stack>
         <Typography variant="body2">
-          源码地址：{' '}
+          开源地址：{' '}
           <Link
             href="https://github.com/ybd0612/PhotoTagManager"
             target="_blank"
@@ -83,7 +83,7 @@ export function AboutUpdatePane({ update }: { update: UpdateController }): JSX.E
           </Link>
         </Typography>
         <Typography variant="body2">
-          许可证：源码公开非商业使用许可 v1.0（全文见仓库 <code>LICENSE</code> 文件）
+          许可证：MIT License（全文见仓库 <code>LICENSE</code> 文件）
         </Typography>
       </Box>
       <Divider />
@@ -127,10 +127,13 @@ export function AboutUpdatePane({ update }: { update: UpdateController }): JSX.E
 
       <Box>
         <Typography variant="subtitle2" gutterBottom>
-          学习与使用说明
+          许可与免责
         </Typography>
-        <Typography variant="body2">
-          此项目仅供学习交流使用，严禁用于商业用途，请在 24 小时之内删除。
+        <Typography variant="body2" color="text.secondary">
+          本软件按 MIT 许可提供，可自由使用、复制、修改与再分发（含商用），但按「现状」交付，不含任何明示或暗示的担保。
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+          标签写进图片文件自身的 XMP 元数据，「移到回收站」依赖系统回收站的可恢复性——这两种操作都可能改坏或丢数据，重要目录请先自行备份。
         </Typography>
       </Box>
     </Stack>

@@ -41,8 +41,9 @@ async function build() {
   L.push('');
   L.push('1. 本项目自己的代码');
   L.push('');
-  L.push('   源代码与可执行程序按仓库根 LICENSE 文件所列的「源码公开非商业使用许可 v1.0」提供：');
-  L.push('   仅供个人学习与非商业使用，禁止用于商业用途。该许可不覆盖下面列出的第三方组件。');
+  L.push('   源代码与可执行程序按仓库根 LICENSE 文件所列的 MIT License 提供：可自由使用、复制、修改、');
+  L.push('   合并、发布、再分发、再许可与销售，前提是保留版权声明与本许可正文。该许可**不覆盖**下面');
+  L.push('   列出的第三方组件——它们各自保持原始许可。');
   L.push('');
   L.push('2. 代码依赖（React、Material UI、Electron、electron-builder、electron-updater、');
   L.push('   exiftool-vendored、onnxruntime-node、sharp 等）');

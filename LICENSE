@@ -1,92 +1,9 @@
-PhotoTagManager 源码公开非商业使用许可协议
-Version 1.0
+MIT License
 
-版权所有 (c) 2026 Ybond（https://yangbang.de）
+Copyright (c) 2026 Ybond
 
-本协议不是开源许可。开源定义（OSI The Open Source Definition）禁止对用途、行业和商业模式
-施加歧视，而本协议第 3 条明确禁止商业使用。因此本项目对外称「源码公开（source-available）」，
-不称「开源」。
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
-1. 定义
-
-1.1 「本软件」指 PhotoTagManager（中文名「图片管家」）的源代码、可执行程序、安装包、
-    界面文案、文档与随附素材的整体。
-
-1.2 「商业使用」指为本组织或本人的营业目的而使用、部署、集成或对外提供本软件，包括但
-    不限于：在企业生产环境部署；将本软件或其任何部分纳入对外收费的产品、服务或设备；
-    以本软件为工具对外提供收费服务；在广告投放或会员增值场景中投放。
-
-1.3 「非商业使用」指个人学习、研究、技术交流、评测，以及不产生对价收益的自愿性内部使用。
-
-
-2. 授予的权利
-
-在同时遵守第 3、4 条的前提下，任何人可免费获得本软件的一份副本，并有权：
-
-2.1 为非商业目的运行、复制本软件；
-2.2 阅读源代码，并为非商业目的修改源代码；
-2.3 转载上述权利，但转载时不得移除本协议全文与版权声明。
-
-
-3. 限制
-
-3.1 不得用于任何商业目的（定义见 1.2）。
-3.2 不得对外销售、出租，不得以订阅或捆绑方式牟利，不得在收费平台作为收费内容分发。
-3.3 不得移除或修改本软件中的版权声明、本协议全文，以及第三方组件的许可声明。
-3.4 不得移除、掩盖或伪造界面中「此项目仅供学习交流使用，严禁用于商业用途」的声明。
-3.5 修改后的版本仍受本协议约束，且不得暗示原作者对其提供支持、担保或认可。
-3.6 未明确授予的权利一律保留。需要商业使用请另行取得书面授权。
-3.7 以学习或评估为目的取得本软件副本的，应在取得后 24 小时之内删除该副本；逾期继续持有或使用，
-    需另行取得书面授权。本款只约束**复制与留存**这一行为：你在该 24 小时之内在本机上进行的学习、
-    评估、图片整理等使用不受影响。本软件不设置到期自动失效、远程停用之类的技术手段，
-    因此这一款是靠许可约定而非技术强制生效——它构成你依本协议取得副本的条件，违反即触发第 6 条。
-
-
-4. 第三方组件
-
-本软件包含第三方组件，分两条路径各自保留原始许可，本协议不改变、也不收紧它们授予你的权利：
-
-4.1 **代码依赖**（React、Material UI、Electron、electron-builder、electron-updater、
-    exiftool-vendored、onnxruntime-node、sharp 等）：随发行包一同分发，各自的许可正文即包内
-    `node_modules/<包名>/LICENSE` 等原始文件。本项目不在别处重复抄录这些正文，以免出现第二份
-    可能过时的副本。
-
-4.2 **模型权重**（U²-Netp、MODNet 等）：**不在发行包内**。应用按清单指定的公开模型源
-    （ModelScope 优先、hf-mirror 镜像兜底）在你本机下载，下载件按清单里的 SHA-256 校验。
-    本项目不持有任何模型权重，也无权代为授予上游作者对权重的任何权利。这些权重的许可全文
-    逐字留存于 `LICENSES/third-party/`，许可依据、归属与"系第三方转导出、非上游一手发布"的
-    披露写在仓库根 `NOTICE`。
-
-你对上述组件的使用须同时遵守各自的许可条款。
-
-
-5. 无担保与责任限制
-
-本软件按「现状」提供，不含任何明示或暗示的担保，包括但不限于适销性、特定用途适用性与
-不侵权的担保。
-
-本软件会把标签写入图片文件自身的 XMP 元数据，并支持将图片移至系统回收站。这类操作可能
-造成文件内容变更、属性改写或数据丢失，部分操作不可逆。在真实数据上使用之前，你应自行
-完成备份。
-
-在适用法律允许的最大范围内，作者不对因使用或无法使用本软件导致的任何损失（包括数据丢失、
-利润损失、业务中断、信息损毁）承担责任，即使已被告知此类损失发生的可能性。
-
-
-6. 终止
-
-违反本协议任一条款，依本协议授予的许可自动终止。终止后应停止使用并删除本软件副本。
-你已依其他许可合法取得的第三方组件不受影响。
-
-
-7. 适用与解释
-
-本协议适用中华人民共和国法律。若某一条款被认定为无效或不可执行，不影响其余条款的效力。
-
-
-8. 版本范围
-
-本协议适用于自本文件加入仓库之日起的发布版本与当前主分支。在此之前的版本曾在仓库
-package.json 与 README 中标注为 MIT（当时仓库内并无 LICENSE 文件本体），该标注构成对
-该等版本的授权，不溯及收回；请以你实际取得的版本所附的许可声明为准。
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
