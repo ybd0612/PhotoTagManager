@@ -64,7 +64,7 @@ export interface CapabilitySpec {
 export const capabilities: CapabilitySpec[] = [
   {
     id: 'portrait-cutout',
-    label: '抠图',
+    label: '人像抠图',
     description: '去除人像背景',
     actionTag: 'AI人像抠图',
     outputSuffix: 'cutout',
@@ -94,7 +94,7 @@ export const capabilities: CapabilitySpec[] = [
         // 人像专用：输出是连续 alpha（不是显著图），发丝一类的半透明边缘靠它。
         // 归一化与 u2netp 不同——MODNet 要的是 [-1,1]，不是 ImageNet 均值方差。
         id: 'modnet',
-        displayName: 'MODNet（人像专用）',
+        displayName: 'MODNet',
         repoId: 'Xenova/modnet',
         filePath: 'onnx/model.onnx',
         fileName: 'modnet.onnx',

@@ -312,6 +312,59 @@ describe('AiActionSplitButton —— 组合按钮', () => {
     expect(api.aiModelDelete).toHaveBeenCalledWith('u2netp');
   });
 
+  it('每行只有一个主动作：未加载的行不给「卸载」（点了只会拿到"该模型未加载，无需卸载"）', () => {
+    seedCatalog({
+      ...baseCap,
+      models: [
+        { ...baseCap.models[0], loaded: true },
+        { ...baseCap.models[0], id: 'modnet', displayName: 'MODNet', isDefault: false }
+      ]
+    });
+    render(<AiActionSplitButton absPath="C:/photos/a.jpg" />);
+    fireEvent.click(screen.getByRole('button', { name: /选择模型/ }));
+    const items = within(screen.getByRole('menu')).getAllByRole('menuitem');
+    // 状态与动作必须自洽：写"已加载"的给卸载，写"已下载"的给删除
+    expect(items[0].textContent).toContain('已加载');
+    expect(within(items[0]).getByRole('button', { name: '卸载' })).toBeTruthy();
+    expect(items[1].textContent).toContain('已下载');
+    expect(within(items[1]).queryByRole('button', { name: '卸载' })).toBeNull();
+    expect(within(items[1]).getByRole('button', { name: '删除' })).toBeTruthy();
+  });
+
+  it('默认模型由复选框表达：行内不再重复写「默认」，勾未默认那行发 set-default', () => {
+    seedCatalog({
+      ...baseCap,
+      models: [
+        baseCap.models[0],
+        { ...baseCap.models[0], id: 'modnet', displayName: 'MODNet', isDefault: false }
+      ]
+    });
+    render(<AiActionSplitButton absPath="C:/photos/a.jpg" />);
+    fireEvent.click(screen.getByRole('button', { name: /选择模型/ }));
+    const items = within(screen.getByRole('menu')).getAllByRole('menuitem');
+    const boxes = screen.getAllByRole('checkbox', { name: /设为默认/ });
+    expect((boxes[0] as HTMLInputElement).checked).toBe(true);
+    expect((boxes[1] as HTMLInputElement).checked).toBe(false);
+    // 同一事实只说一次：默认与否只看复选框，行内不再挂「· 默认」后缀
+    expect(items[0].textContent).not.toContain('· 默认');
+    fireEvent.click(boxes[1]);
+    expect(api.aiModelSetDefault).toHaveBeenCalledWith('portrait-cutout', 'modnet');
+  });
+
+  it('下拉打开时焦点落在默认模型那一行（高亮与焦点不能分家）', async () => {
+    seedCatalog({
+      ...baseCap,
+      models: [
+        { ...baseCap.models[0], isDefault: false },
+        { ...baseCap.models[0], id: 'modnet', displayName: 'MODNet', isDefault: true }
+      ]
+    });
+    render(<AiActionSplitButton absPath="C:/photos/a.jpg" />);
+    fireEvent.click(screen.getByRole('button', { name: /选择模型/ }));
+    const items = within(screen.getByRole('menu')).getAllByRole('menuitem');
+    await waitFor(() => expect(document.activeElement).toBe(items[1]));
+  });
+
   it('③ 未下载的模型，回车执行的是下载', () => {
     seedCatalog(capWith({}, { status: 'absent' }));
     render(<AiActionSplitButton absPath="C:/photos/a.jpg" />);

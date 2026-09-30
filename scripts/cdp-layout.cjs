@@ -92,8 +92,8 @@ async function main() {
     report.steps.push(
       await evalJs(`(() => { const wrap = document.querySelector('[data-testid="ai-split-button"]');
         if (!wrap) return '没有 ai-split-button';
-        const b = [...wrap.querySelectorAll('button')].find((x) => x.textContent.trim() === '抠图');
-        if (!b) return '抠图主按钮没找到'; b.click(); return 'clicked'; })()`)
+        const b = wrap.querySelector('button[aria-busy]');
+        if (!b) return '主按钮没找到'; b.click(); return 'clicked'; })()`)
     );
     for (let i = 0; i < 90; i += 1) {
       await sleep(1000);

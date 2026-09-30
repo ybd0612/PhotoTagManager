@@ -185,10 +185,13 @@ function ModelMenu({
   const modelAction = useAiStore((s) => s.modelAction);
   const backend = useAiStore((s) => s.backend);
   const setBackend = useAiStore((s) => s.setBackend);
-  const [active, setActive] = useState(0);
+  const models = cap.models;
   const itemRefs = useRef<Array<HTMLLIElement | null>>([]);
 
-  const models = cap.models;
+  const [active, setActive] = useState(() => {
+    const defaultIndex = models.findIndex((m) => m.isDefault);
+    return defaultIndex < 0 ? 0 : defaultIndex;
+  });
 
   useEffect(() => {
     // Modal 挂载时会自己动一次焦点，把"打开即落在当前行"那次冲掉；晚一帧再落位，
@@ -265,7 +268,7 @@ function ModelMenu({
       PaperProps={{
         // 主题色而不是硬编码 #fff：深色预览层里继承的白字落到白底上就是一片看不见
         sx: {
-          minWidth: 268,
+          minWidth: 300,
           maxWidth: 'calc(100vw - 16px)',
           bgcolor: 'background.paper',
           color: 'text.primary',
@@ -298,7 +301,7 @@ function ModelMenu({
                 flexWrap: 'wrap',
                 alignItems: 'center',
                 gap: 0.75,
-                bgcolor: index === active ? 'action.selected' : 'transparent'
+                bgcolor: model.isDefault ? 'action.selected' : index === active ? 'action.hover' : 'transparent'
               }}
             >
               <Typography variant="body2" noWrap sx={{ minWidth: 0, flex: 1, fontSize: '0.82rem' }}>
@@ -307,7 +310,6 @@ function ModelMenu({
                   {describeDownloadCost(model.sizeBytes).split('，')[0]} ·{' '}
                   {model.status === 'present' ? (model.loaded ? '已加载' : '已下载') : '未下载'}
                   {model.statusReason ? ' · 不可用' : ''}
-                  {model.isDefault ? ' · 默认' : ''}
                 </Box>
               </Typography>
               {/* 不可用必须说清"为什么 + 怎么办"，只给一个灰词等于没解释（规格 §6） */}
@@ -320,7 +322,25 @@ function ModelMenu({
                   {model.statusReason}
                 </Typography>
               ) : null}
-              <Stack direction="row" spacing={0.5}>
+              <Stack direction="row" spacing={0.5} alignItems="center">
+                {/* 默认是单选：勾别行即切换，点在已勾那行不动作——没有"无默认模型"这个状态。
+                    不关下拉，让用户亲眼看到高亮跟着换到新的那一行 */}
+                <FormControlLabel
+                  sx={{ mr: 0 }}
+                  control={
+                    <Checkbox
+                      size="small"
+                      data-testid={`model-is-default-${model.id}`}
+                      aria-label={`设为默认（${model.displayName}）`}
+                      checked={model.isDefault}
+                      onChange={() => {
+                        if (!model.isDefault) void modelAction(model.id, 'set-default');
+                      }}
+                      sx={{ p: 0.25, '& .MuiSvgIcon-root': { fontSize: 16 } }}
+                    />
+                  }
+                  label={<Typography variant="caption">默认</Typography>}
+                />
                 <Button
                   size="small"
                   onClick={() => void modelAction(model.id, primary.action).then(onClose)}
@@ -329,16 +349,6 @@ function ModelMenu({
                 >
                   {primary.label}
                 </Button>
-                {model.status === 'present' && !model.loaded && (
-                  <Button size="small" sx={{ textTransform: 'none', minWidth: 0, px: 0.75, fontSize: '0.78rem' }} onClick={() => void modelAction(model.id, 'unload')}>
-                    卸载
-                  </Button>
-                )}
-                {!model.isDefault && (
-                  <Button size="small" sx={{ textTransform: 'none', minWidth: 0, px: 0.75, fontSize: '0.78rem' }} onClick={() => void modelAction(model.id, 'set-default')}>
-                    设为默认
-                  </Button>
-                )}
               </Stack>
             </Box>
           );

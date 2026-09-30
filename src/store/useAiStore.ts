@@ -162,7 +162,7 @@ export const useAiStore = create<AiState>((set, get) => ({
   primaryLabel: (capabilityId) => {
     const caps = get().usableCapabilities();
     const cap = capabilityId ? caps.find((c) => c.id === capabilityId) : caps[0];
-    return cap?.label ?? '抠图';
+    return cap?.label ?? '人像抠图';
   },
 
   setBackend: (backend) => set({ backend }),
