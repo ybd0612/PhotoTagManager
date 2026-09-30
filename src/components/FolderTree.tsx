@@ -168,7 +168,7 @@ export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.E
         direction="row"
         alignItems="center"
         justifyContent="space-between"
-        className="shrink-0 px-2 py-2"
+        className="shrink-0 border-b border-hairline px-2 py-2"
       >
         <Typography variant="subtitle2" color="text.secondary" className="pl-1">
           图库 · {roots.length} 个根目录

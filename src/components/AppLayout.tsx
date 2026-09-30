@@ -209,7 +209,7 @@ export function AppLayout(): JSX.Element {
       {/* 顶部工具栏：同时是窗口标题栏（拖拽区与右侧控件避让见 index.css 的 .ptm-titlebar） */}
       <Paper
         component="header"
-        className="ptm-titlebar flex h-14 shrink-0 items-center justify-between rounded-none bg-chrome pl-4"
+        className="ptm-titlebar flex h-14 shrink-0 items-center justify-between rounded-none border-b border-hairline bg-chrome pl-4"
         sx={{ bgcolor: 'var(--ptm-chrome-bg)' }}
       >
         <Stack direction="row" spacing={1.5} alignItems="center" className="min-w-0">
@@ -264,7 +264,7 @@ export function AppLayout(): JSX.Element {
             aria-hidden={treeCollapsed || undefined}
           >
             <Paper
-              className="ptm-tree-inner flex h-full flex-col overflow-hidden rounded-none bg-chrome"
+              className="ptm-tree-inner flex h-full flex-col overflow-hidden rounded-none border-r border-hairline bg-chrome"
               sx={{ bgcolor: 'var(--ptm-chrome-bg)' }}
             >
               <FolderTree rootActions={rootActions} />
@@ -313,7 +313,7 @@ export function AppLayout(): JSX.Element {
 
       {/* 底部状态栏：当前目录（名称 + 可复制的绝对路径）与浏览统计在左，扫描状态只播一次（G7） */}
       <Paper
-        className="flex h-7 shrink-0 items-center justify-between rounded-none bg-chrome px-3"
+        className="flex h-7 shrink-0 items-center justify-between rounded-none border-t border-hairline bg-chrome px-3"
         sx={{ bgcolor: 'var(--ptm-chrome-bg)' }}
       >
         <Stack direction="row" spacing={1} alignItems="center" className="min-w-0">

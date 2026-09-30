@@ -424,7 +424,7 @@ function BatchTagBar({ selectedIds }: BatchTagBarProps): JSX.Element {
 
   return (
     <Paper
-      className="flex shrink-0 items-center gap-2 rounded-none bg-chrome px-3 py-2"
+      className="flex shrink-0 items-center gap-2 rounded-none border-b border-hairline bg-chrome px-3 py-2"
       sx={{ bgcolor: 'var(--ptm-chrome-bg)' }}
       data-testid="batch-tag-bar"
     >

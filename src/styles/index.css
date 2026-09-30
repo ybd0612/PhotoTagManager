@@ -156,8 +156,13 @@ body {
   outline-offset: -3px;
 }
 
-.ptm-window-controls__close:hover,
-.ptm-window-controls__close:active {
+/*
+ * 必须带上 button 才压得过上面那条 `.ptm-window-controls button:hover`：
+ * 前者特异性是 (类1+伪类1+元素1)，只写 `.ptm-window-controls__close:hover` 是 (类1+伪类1)，
+ * 少一个元素级——结果这条红色规则从写下那天起就没生效过（真机 hover 无变化才发现）。
+ */
+.ptm-window-controls button.ptm-window-controls__close:hover,
+.ptm-window-controls button.ptm-window-controls__close:active {
   background: #c42b1c;
   color: #ffffff;
 }
