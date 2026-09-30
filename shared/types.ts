@@ -279,6 +279,12 @@ export interface TrashResult {
   failed: Array<{ absPath: string; reason: string }>;
 }
 
+/**
+ * 右上角三个窗口控件由系统覆盖层绘制，底色只能由主进程整块指定，不能透明、也不能被网页盖住。
+ * light = 与主界面白色顶栏同色；dark = 与全屏预览的近黑顶栏同色。
+ */
+export type CaptionTheme = 'light' | 'dark';
+
 /** preload 暴露到 window.api 的白名单接口（electron/preload.ts 与 src/api.ts 严格一致） */
 export interface PhotoTagApi {
   // 移到系统回收站（可恢复）；主进程只放行落在已添加根目录内的路径
@@ -286,6 +292,8 @@ export interface PhotoTagApi {
   // 视图偏好（排序、缩略图档位）持久化在 userData/settings.json
   getPrefs(): Promise<IpcResult<UiPrefs>>;
   setPrefs(patch: Partial<UiPrefs>): Promise<IpcResult<UiPrefs>>;
+  // 右上角原生窗口控件的配色：全屏预览打开时切 dark，关闭时切回 light
+  setCaptionTheme(theme: CaptionTheme): Promise<IpcResult<void>>;
   // 目录选择
   pickDirectory(): Promise<IpcResult<string | null>>;
   // 多根目录（R10：多根 + 别名）

@@ -95,4 +95,21 @@ describe('UiPrefs 落盘白名单不许漏字段', () => {
   });
 });
 
+/**
+ * 右上角三个窗口控件是一块盖在网页之上的不透明矩形：高度对不上就往下多压几像素，
+ * 顶栏没让出它的宽度，自己的控件就落在它底下点不到。这两件事都只在真机上看得见，
+ * 而三处高度各写一次必然漂移，所以在这里钉住同一口径。
+ */
+describe('窗口控件覆盖层与两条顶栏同口径', () => {
+  it('覆盖层高度 56 ↔ 主界面与预览顶栏都是 h-14，且都做了 138px 留白', () => {
+    const caption = read(join('electron', 'captionTheme.ts'));
+    expect(caption, 'CAPTION_OVERLAY_HEIGHT 改名了，这条检查得跟着改').toMatch(/CAPTION_OVERLAY_HEIGHT = 56/);
+    expect(read(join('src', 'components', 'AppLayout.tsx'))).toContain('ptm-titlebar flex h-14');
+    expect(read(join('src', 'components', 'PreviewOverlay.tsx'))).toContain('ptm-wco-inset h-14');
+    const css = read(join('src', 'styles', 'index.css'));
+    expect(css).toContain('--ptm-wco-width: 138px');
+    expect(css).toContain('.ptm-wco-inset');
+  });
+});
+
 void sep;

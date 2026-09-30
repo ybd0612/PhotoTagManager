@@ -62,6 +62,7 @@ function createMockApi(): PhotoTagApi {
     trashFiles: vi.fn(async () => ({ ok: true as const, data: { trashed: [] as string[], failed: [] } })),
     getPrefs: vi.fn(async () => ({ ok: true as const, data: { sortKey: "name" as const, sortDir: "asc" as const, thumbSize: "small" as const, scanDoneToast: false, proxyRules: "", treeCollapsed: false } })),
     setPrefs: vi.fn(async () => ({ ok: true as const, data: { sortKey: "name" as const, sortDir: "asc" as const, thumbSize: "small" as const, scanDoneToast: false, proxyRules: "", treeCollapsed: false } })),
+    setCaptionTheme: vi.fn(async () => ({ ok: true as const, data: undefined })),
     copyFileToClipboard: vi.fn(async () => ({ ok: true as const, data: undefined })),
     readImageTags: vi.fn(async () => ({
       ok: true as const,

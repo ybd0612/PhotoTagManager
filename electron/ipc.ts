@@ -5,6 +5,7 @@ import type {
   AiGpuMemory,
   AiRunAck,
   AiRunRequest,
+  CaptionTheme,
   IpcResult,
   SortDir,
   SortKey,
@@ -17,6 +18,7 @@ import type {
 import { DEFAULT_UI_PREFS } from '../shared/types';
 import { isInsideRoot } from '../shared/pathGuard';
 import { settingsFile } from './ai/paths';
+import { applyCaptionTheme } from './captionTheme';
 import type { ScanService } from './services/scanService';
 import type { XmpService } from './services/xmpService';
 import type { ThumbnailService } from './services/thumbnailService';
@@ -254,6 +256,14 @@ export function registerIpc(deps: IpcDeps): void {
     // 存完立刻生效，不等重启：否则用户在设置里填了代理、当场试一次下载还是失败，等于没有反馈
     if (proxy.ok) await deps.applyProxy?.(next.proxyRules);
     return next;
+  });
+
+  /**
+   * 右上角三个原生窗口控件的底色跟随最上层界面：主界面是纯白顶栏，全屏预览是近黑顶栏。
+   * 这块由 DWM 画在网页之上，渲染层既遮不住它也改不了它，只能把配色递回主进程整块换。
+   */
+  handle('window:set-caption-theme', (theme: CaptionTheme): void => {
+    applyCaptionTheme(deps.getWindow(), theme === 'dark' ? 'dark' : 'light');
   });
 
   // 复制文件到剪贴板（FileNameW 格式，Windows 资源管理器可直接粘贴）

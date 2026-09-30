@@ -4,6 +4,7 @@ import type {
   AiErrorPayload,
   AiProgressPayload,
   AiRunRequest,
+  CaptionTheme,
   PhotoTagApi,
   ScanBatch,
   ScanStats,
@@ -58,6 +59,8 @@ const api: PhotoTagApi = {
   // 视图偏好（排序、缩略图档位）读写
   getPrefs: () => ipcRenderer.invoke('prefs:get'),
   setPrefs: (patch: Record<string, unknown>) => ipcRenderer.invoke('prefs:set', patch),
+  // 右上角原生窗口控件配色（全屏预览打开/关闭时切换）
+  setCaptionTheme: (theme: CaptionTheme) => ipcRenderer.invoke('window:set-caption-theme', theme),
   // 复制文件到剪贴板
   copyFileToClipboard: (absPath: string) => ipcRenderer.invoke('clipboard:copy-file', absPath),
   // 标签

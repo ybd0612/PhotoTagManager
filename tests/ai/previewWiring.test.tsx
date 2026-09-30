@@ -44,6 +44,7 @@ const api: Record<string, ReturnType<typeof vi.fn>> = {
   revealFileInExplorer: vi.fn(async () => ok(undefined)),
   trashFiles: vi.fn(async () => ok({ trashed: [], failed: [] })),
   copyFileToClipboard: vi.fn(async () => ok(undefined)),
+  setCaptionTheme: vi.fn(async () => ok(undefined)),
   openFolderInExplorer: vi.fn(async () => ok(undefined))
 };
 
@@ -123,6 +124,16 @@ describe('预览层 AI 接线', () => {
     const bar = await screen.findByTestId('ai-bar');
     expect(bar).toBeTruthy();
     expect(screen.getAllByRole('button', { name: /^抠图$/ })).toHaveLength(1);
+  });
+
+  it('预览开合会切换右上角原生窗口控件的底色（白底糊在黑顶栏上的回归）', async () => {
+    api.setCaptionTheme.mockClear();
+    render(<PreviewOverlay />);
+    await screen.findByTestId('ai-bar');
+    expect(api.setCaptionTheme).toHaveBeenCalledWith('dark');
+
+    act(() => useAppStore.getState().closePreview());
+    expect(api.setCaptionTheme).toHaveBeenLastCalledWith('light');
   });
 
   it('没有结果时不占位：对比视图不出现', () => {

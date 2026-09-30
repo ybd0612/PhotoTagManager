@@ -20,6 +20,7 @@ import { statfs, readFile } from 'fs/promises';
 import { readWholeGpuMemory } from './ai/gpuStats';
 import { readGpuCapability, activeFakeGpu } from './ai/gpuCapability';
 import { APP_ICON_TRAY_DATA_URL, APP_ICON_WINDOW_DATA_URL } from './appIcon';
+import { captionOverlay } from './captionTheme';
 import type { InferenceRunner } from './ai/runner';
 
 electronLog.initialize();
@@ -168,10 +169,11 @@ function createWindow(): void {
      * Mica 染色——这个颜色应用改不了，和界面顶栏的纯白之间必然留一条对不齐的缝。
      * 改成 hidden 后整条标题栏交回网页自己画，只把右上角三个控件留作系统覆盖层，
      * 覆盖层底色由 titleBarOverlay.color 指定，于是能和顶栏严格同色。
-     * height 必须与 AppLayout 顶栏的 h-14（56px）一致，否则三个控件会上下错位。
+     * 高度必须与顶栏的 h-14（56px）一致，否则三个控件会上下错位——两套配色和这个高度统一放在
+     * captionTheme.ts，全屏预览打开时由 window:set-caption-theme 换成深色那一套。
      */
     titleBarStyle: 'hidden',
-    titleBarOverlay: { color: '#ffffff', symbolColor: '#0f172a', height: 56 },
+    titleBarOverlay: captionOverlay('light'),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,

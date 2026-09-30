@@ -42,7 +42,8 @@ const api: Record<string, ReturnType<typeof vi.fn>> = {
   getThumbnail: vi.fn(async () => ok(null)),
   revealFileInExplorer: vi.fn(async () => ok(undefined)),
   trashFiles: vi.fn(async () => ok({ trashed: [], failed: [] })),
-  copyFileToClipboard: vi.fn(async () => ok(undefined))
+  copyFileToClipboard: vi.fn(async () => ok(undefined)),
+  setCaptionTheme: vi.fn(async () => ok(undefined))
 };
 
 const IMG_A = {
