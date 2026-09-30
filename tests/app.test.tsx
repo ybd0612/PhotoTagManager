@@ -210,6 +210,9 @@ describe('批次2 G6 顶栏', () => {
     const dialog = screen.getByRole('dialog');
     fireEvent.click(within(dialog).getByRole('tab', { name: '关于与更新' }));
     expect(within(dialog).getByText(`当前版本：${packageJson.version}`)).toBeTruthy();
+    // 程序名后面那串说明已收进 ⓘ 悬浮提示，正文只剩一行
+    expect(within(dialog).getByText('程序名：PhotoTagManager')).toBeTruthy();
+    expect(within(dialog).getByTestId('app-name-hint')).toBeTruthy();
 
     // 启动那轮静默检查的结果直接落在分区里，用户不用再点一次才看见
     await waitFor(() =>
@@ -288,16 +291,16 @@ describe('批次2 G7 状态栏', () => {
 });
 
 /**
- * 左栏折叠：顶栏开关 + Ctrl+B + 状态落盘。
- * 收起时整棵树的 Paper 用内联 display:none 摘掉（不是卸载），这样 FolderTree 里的
- * 展开态不丢；内联样式让 jsdom 的 getComputedStyle 能识别，role 查询才会真的查不到。
+ * 左栏折叠：分界线上的悬浮把手 + Ctrl+B + 状态落盘。
+ * 收起走 180ms 宽度过渡（.ptm-tree-pane--collapsed），不再用 display:none 硬切；
+ * 因此"收起后树不可达"这条断言靠的是容器上的 DOM 层 aria-hidden，而不是内联样式。
  */
 describe('左栏折叠与展开', () => {
   const queryTree = (): HTMLElement | null => screen.queryByRole('tree', { name: '图库目录树' });
   const setPrefsMock = (): ReturnType<typeof vi.fn> =>
     (window as unknown as { api: { setPrefs: ReturnType<typeof vi.fn> } }).api.setPrefs;
 
-  it('顶栏「折叠侧栏」一点收起目录树，再点展开', () => {
+  it('折叠把手「折叠侧栏」一点收起目录树，再点展开', () => {
     seedGallery();
     render(<AppLayout />);
     expect(queryTree()).toBeTruthy();
@@ -307,6 +310,25 @@ describe('左栏折叠与展开', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '展开侧栏' }));
     expect(queryTree()).toBeTruthy();
+  });
+
+  it('折叠把手挂在左栏右缘，鼠标贴近分界线才现身', () => {
+    seedGallery();
+    render(<AppLayout />);
+    const handle = screen
+      .getByRole('button', { name: '折叠侧栏' })
+      .closest('.ptm-tree-handle') as HTMLElement;
+    // 顶栏那颗常驻按钮已撤：把手不在 header 里，顶栏也就没有第二个出口
+    expect(handle.closest('header')).toBeNull();
+    expect(handle.className).not.toContain('ptm-tree-handle--visible');
+
+    // jsdom 的 getBoundingClientRect 恒为 0，分界线就落在 x=0：判定带内现身、带外隐去。
+    // 事件用 mousemove——jsdom 造的 PointerEvent 压根不带 clientX，换成它判不出坐标。
+    const body = handle.parentElement as HTMLElement;
+    fireEvent.mouseMove(body, { clientX: 12 });
+    expect(handle.className).toContain('ptm-tree-handle--visible');
+    fireEvent.mouseMove(body, { clientX: 400 });
+    expect(handle.className).not.toContain('ptm-tree-handle--visible');
   });
 
   it('折叠状态写进偏好：收起发 treeCollapsed:true，展开发 false', () => {

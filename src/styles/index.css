@@ -160,10 +160,50 @@ body {
   width: var(--ptm-tree-width);
 }
 
+/*
+ * 左栏折叠把手：贴在分界线上、竖向居中，鼠标靠近才淡入（判定在 AppLayout 的 handleBodyMouseMove）。
+ * 本体放在分界线右侧 2px，不往左压——左栏右缘那 8px 是滚动条，压上去就拖不动了。
+ *
+ * 隐藏用 visibility 而不只是 opacity:0：一个看不见的按钮如果仍可命中，
+ * 会常年吃掉网格左缘那 24px 的点击，也仍留在 Tab 顺序里。
+ * visibility 的延迟和左栏那套一样——淡出走完才置 hidden，淡入则立刻可见。
+ *
+ * left 走与左栏折叠同一条时长与缓动，把手才会跟着左栏一起滑到窗口左缘，
+ * 而不是折叠动画走完了再瞬移过去。
+ */
+.ptm-tree-handle {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--ptm-tree-width) + 2px);
+  z-index: 3;
+  transform: translateY(-50%);
+  visibility: hidden;
+  opacity: 0;
+  transition:
+    opacity 120ms ease,
+    visibility 0s linear 120ms,
+    left var(--ptm-tree-collapse-ms) cubic-bezier(0.2, 0, 0, 1);
+}
+
+.ptm-tree-handle--collapsed {
+  left: 2px;
+}
+
+.ptm-tree-handle--visible {
+  visibility: visible;
+  opacity: 1;
+  transition:
+    opacity 120ms ease,
+    visibility 0s linear 0s,
+    left var(--ptm-tree-collapse-ms) cubic-bezier(0.2, 0, 0, 1);
+}
+
 /* 系统层面关掉动画时退回原来的瞬时切换，同时保留折叠后不可达的语义 */
 @media (prefers-reduced-motion: reduce) {
   .ptm-tree-pane,
-  .ptm-tree-pane--collapsed {
+  .ptm-tree-pane--collapsed,
+  .ptm-tree-handle,
+  .ptm-tree-handle--visible {
     transition: none;
   }
 }

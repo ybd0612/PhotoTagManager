@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { MouseEvent as ReactMouseEvent } from 'react';
 import {
   Box,
   Button,
@@ -15,7 +16,8 @@ import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import StopCircleIcon from '@mui/icons-material/StopCircle';
 import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary';
 import SettingsIcon from '@mui/icons-material/Settings';
-import ViewSidebarIcon from '@mui/icons-material/ViewSidebar';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { useAppStore } from '../store/useAppStore';
 import { cancelScan, rescan } from '../hooks/useScan';
 import { useRootActions } from '../hooks/useRootActions';
@@ -29,6 +31,12 @@ import { PreviewOverlay } from './PreviewOverlay';
 import { useUpdate } from '../hooks/useUpdate';
 import { updateActionLabel, updatePrimaryAction, updateStatusLabel } from '../utils/updateStatus';
 import { SettingsDialog } from './settings/SettingsDialog';
+
+/**
+ * 折叠把手的唤出宽度（内容区一侧，px）。必须 ≥ 按钮宽度 24 + 离分界线的间距 2，
+ * 否则把手刚出现、指针往它身上挪一点就掉出判定带，自己把自己藏掉，点不着。
+ */
+const TREE_HANDLE_HIT_PX = 26;
 
 /**
  * 三栏布局容器 + 顶部工具栏 + 底部状态栏（PRD §3.3 线框图，多根 R10）。
@@ -54,6 +62,19 @@ export function AppLayout(): JSX.Element {
   const [settingsOpen, setSettingsOpen] = useState(false);
   /** 打开设置时停在哪个分区：工具栏按钮进「常规」，`?` 直接进「快捷键」（批次3 G11） */
   const [settingsTab, setSettingsTab] = useState<'general' | 'ai' | 'shortcuts'>('general');
+  /**
+   * 折叠把手只在鼠标贴近左栏右缘时出现。判定用坐标而不是铺一层 `:hover` 热区：
+   * 热区层会盖住树右缘的 8px 滚动条和网格左缘，把这两处的点击吞掉。
+   * 判定带刻意做成非对称——把手本体放在分界线右侧（见 .ptm-tree-handle 的 left），
+   * 往左栏侧只留 4px 余量；再往左伸就会在鼠标碰到滚动条时把把手送到指针正下方，滚动条再也拖不动。
+   * 用 mousemove 而不是 pointermove：本机只有鼠标这一种指针，而 jsdom 造的 PointerEvent 不带 clientX。
+   */
+  const treePaneRef = useRef<HTMLDivElement>(null);
+  const [treeHandleVisible, setTreeHandleVisible] = useState(false);
+  const handleBodyMouseMove = (e: ReactMouseEvent<HTMLDivElement>): void => {
+    const edge = treePaneRef.current?.getBoundingClientRect().right ?? 0;
+    setTreeHandleVisible(e.clientX >= edge - 4 && e.clientX <= edge + TREE_HANDLE_HIT_PX);
+  };
   /** 整应用唯一一份更新状态订阅：右下角通知卡与设置「关于与更新」分区共用 */
   const update = useUpdate();
 
@@ -145,14 +166,6 @@ export function AppLayout(): JSX.Element {
         className="ptm-titlebar flex h-14 shrink-0 items-center justify-between rounded-none border-b border-slate-200 pl-4"
       >
         <Stack direction="row" spacing={1.5} alignItems="center" className="min-w-0">
-          {/* 侧栏开关：左栏收起后必须还在，否则整棵树没有出口 */}
-          {hasRoot && (
-            <Tooltip title={treeCollapsed ? '展开目录树（Ctrl + B）' : '收起目录树（Ctrl + B）'}>
-              <IconButton size="small" aria-label={treeCollapsed ? '展开侧栏' : '折叠侧栏'} onClick={toggleTreeCollapsed} className="shrink-0">
-                <ViewSidebarIcon />
-              </IconButton>
-            </Tooltip>
-          )}
           <PhotoLibraryIcon color="primary" className="shrink-0" />
           <Typography variant="h6" sx={{ fontWeight: 700 }} className="shrink-0">
             <Box component="span">
@@ -205,7 +218,11 @@ export function AppLayout(): JSX.Element {
       {!hasRoot ? (
         <EmptyState onPick={() => void rootActions.addRoot()} />
       ) : (
-        <Box className="flex min-h-0 flex-1">
+        <Box
+          className="relative flex min-h-0 flex-1"
+          onMouseMove={handleBodyMouseMove}
+          onMouseLeave={() => setTreeHandleVisible(false)}
+        >
           {/*
             折叠改成宽度过渡（样式见 styles/index.css 的 .ptm-tree-pane），不再用 display:none 硬切。
             必须分两层：外层只负责裁剪与动画，内层 .ptm-tree-inner 定宽——否则树里几十行文字
@@ -214,6 +231,7 @@ export function AppLayout(): JSX.Element {
           */}
           {/* 折叠后对读屏不可达：CSS 的 visibility:hidden 是运行时那一半，aria-hidden 是不依赖样式表的另一半 */}
           <div
+            ref={treePaneRef}
             className={treeCollapsed ? 'ptm-tree-pane ptm-tree-pane--collapsed' : 'ptm-tree-pane'}
             aria-hidden={treeCollapsed || undefined}
           >
@@ -221,6 +239,37 @@ export function AppLayout(): JSX.Element {
               <FolderTree rootActions={rootActions} />
             </Paper>
           </div>
+
+          {/*
+            折叠把手：压在左栏右缘的分界线上，鼠标贴近才淡入（判定见 handleBodyMouseMove）。
+            顶栏那颗常驻按钮撤掉后，这里是唯一的鼠标出口，Ctrl + B 是键盘出口；
+            收起态左栏宽度归 0，把手跟着贴到窗口左缘，整棵树不会没有出口。
+          */}
+          <Tooltip title={treeCollapsed ? '展开目录树（Ctrl + B）' : '收起目录树（Ctrl + B）'}>
+            <Box
+              className={`ptm-tree-handle${treeCollapsed ? ' ptm-tree-handle--collapsed' : ''}${
+                treeHandleVisible ? ' ptm-tree-handle--visible' : ''
+              }`}
+            >
+              <IconButton
+                size="small"
+                aria-label={treeCollapsed ? '展开侧栏' : '折叠侧栏'}
+                onClick={toggleTreeCollapsed}
+                sx={{
+                  width: 24,
+                  height: 24,
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  bgcolor: 'background.paper',
+                  color: 'text.secondary',
+                  boxShadow: 1,
+                  '&:hover': { bgcolor: 'action.hover', color: 'text.primary' }
+                }}
+              >
+                {treeCollapsed ? <ChevronRightIcon fontSize="small" /> : <ChevronLeftIcon fontSize="small" />}
+              </IconButton>
+            </Box>
+          </Tooltip>
 
           <Box className="flex min-w-0 flex-1 flex-col">
             <Paper className="flex shrink-0 items-center gap-2 rounded-none border-b border-slate-100 px-3 py-1" elevation={0}>
