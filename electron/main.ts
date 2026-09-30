@@ -122,21 +122,28 @@ async function readSavedProxyRules(): Promise<string> {
   }
 }
 
+/** electron-updater 自己发请求用的会话分区名（改名要跟 node_modules 里那份常量一致） */
+const UPDATER_SESSION = 'electron-updater';
+
 /**
- * 把代理设置作用到默认会话。留空 = 不覆盖，跟随系统默认。
- * 必须显式调用：实测 Node 的全局 fetch 与 Electron 的 net.fetch 都**不会**自动使用
- * Windows 系统代理（这台机器上系统代理未开、只有显式指定 127.0.0.1:7897 才通），
- * 所以设置里那个输入框若不落到 session.setProxy，就是填了也没用的假控件。
+ * 把代理设置作用到「本应用会发外部请求的每一条网络出口」。留空 = 不覆盖，跟随系统默认。
+ * 必须显式调用：实测 Node 的全局 fetch **不读** Windows 系统代理（U7，只有显式指定
+ * 127.0.0.1:7897 才通），所以模型下载已经改走 net.fetch；而设置里那个输入框若不落到
+ * setProxy，就是一个填了也没用的假控件。
+ *
+ * 为什么是两个会话而不止 defaultSession：electron-updater 6.x 走 Chromium 的 net.request，
+ * 且自己建了名为 electron-updater 的分区（out/electronHttpExecutor.js），不受 defaultSession 管。
+ * 实测 session.fromPartition 同名返回同一实例，所以这里能直接把规则推给它——
+ * 否则「检查更新」只会跟随 Windows 系统代理，用户在设置里填的代理对它无效。
  */
 async function applyProxyRules(rules: string): Promise<void> {
-  const ses = session.defaultSession;
-  if (rules) {
-    await ses.setProxy({ proxyRules: rules, proxyBypassRules: '<-loopback>' });
-    electronLog.info(`网络代理：已启用 ${rules}`);
-  } else {
-    await ses.setProxy({ mode: 'system' });
-    electronLog.info('网络代理：跟随系统默认（本应用未覆盖）');
+  const sessions = [session.defaultSession, session.fromPartition(UPDATER_SESSION, { cache: false })];
+  for (const ses of sessions) {
+    if (rules) await ses.setProxy({ proxyRules: rules, proxyBypassRules: '<-loopback>' });
+    else await ses.setProxy({ mode: 'system' });
   }
+  if (rules) electronLog.info(`网络代理：已启用 ${rules}（含更新会话）`);
+  else electronLog.info('网络代理：跟随系统默认（本应用未覆盖，含更新会话）');
 }
 
 function createWindow(): void {

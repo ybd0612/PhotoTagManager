@@ -101,6 +101,18 @@ describe('U1 更新器必须落日志', () => {
     expect(last.message).toContain('0.1.5');
   });
 
+  it('Chromium 内部码只进日志，界面给人话（真机复现：net::ERR_CONNECTION_CLOSED）', () => {
+    makeService();
+    autoUpdater.emit('error', new Error('net::ERR_CONNECTION_CLOSED') as never);
+    const errLine = String(log.error.mock.calls.map((c) => String(c[0])).find((m) => m.includes('更新失败')));
+    expect(errLine).toContain('net::ERR_CONNECTION_CLOSED');
+    expect(errLine).toContain('network');
+    const last = sent[sent.length - 1];
+    expect(last.state).toBe('error');
+    expect(last.message).toContain('连不上更新服务器');
+    expect(last.message ?? '').not.toMatch(/net::/);
+  });
+
   it('下载进度只记整数百分比，不逐帧刷屏', () => {
     makeService();
     autoUpdater.emit('update-available', { version: '0.1.5' } as never);

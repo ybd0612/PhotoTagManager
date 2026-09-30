@@ -49,9 +49,15 @@ export function AboutUpdatePane({ update }: { update: UpdateController }): JSX.E
           产品信息
         </Typography>
         <Typography variant="body2">当前版本：{packageJson.version}</Typography>
-        <Typography variant="body2" color="text.secondary">
-          程序名：PhotoTagManager（安装目录、进程与快捷方式同名；配置文件夹为 <code>%APPDATA%\photo-tag-manager</code>）
-        </Typography>
+        <Stack direction="row" spacing={0.5} alignItems="center">
+          <Typography variant="body2" color="text.secondary">
+            程序名：PhotoTagManager
+          </Typography>
+          <Hint
+            testId="app-name-hint"
+            text="PhotoTagManager 同时是安装目录名、进程名与快捷方式名；配置文件夹在 %APPDATA%\\photo-tag-manager。"
+          />
+        </Stack>
         <Typography variant="body2">
           源码地址：{' '}
           <Link
@@ -87,7 +93,7 @@ export function AboutUpdatePane({ update }: { update: UpdateController }): JSX.E
           <Typography variant="subtitle2">更新</Typography>
           <Hint
             testId="update-hint"
-            text="应用启动时会自动静默检查一次，发现新版本在右下角提示；这里的按钮是手动再查一次。更新只从 GitHub Releases 拉取安装包，与代理设置共用同一个出口；照片始终不出本机。"
+            text="应用启动时会自动静默检查一次，发现新版本在右下角提示；这里的按钮是手动再查一次。更新只从 GitHub Releases 拉取安装包，与模型下载共用「常规」里设置的代理出口；连不上时会说明原因，照片始终不出本机。"
           />
         </Stack>
         <Stack direction="row" spacing={1.5} alignItems="center">

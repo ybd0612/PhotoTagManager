@@ -3,6 +3,7 @@ import { autoUpdater } from 'electron-updater';
 import electronLog from 'electron-log';
 import type { WebContents } from 'electron';
 import type { UpdateStatus } from '../../shared/types';
+import { classifyUpdateError } from '../../shared/updateError';
 
 /**
  * 可注入的日志面。单测要能断言"这些事件确实落了日志"，
@@ -72,11 +73,12 @@ export class UpdaterService {
       this.downloadInFlight = false;
       const detail = err instanceof Error ? err.message : String(err);
       // 原文必须留在日志里：进度归零这类现象的唯一线索就在这
-      this.log.error(`更新失败：${detail}`);
+      const { kind, message } = classifyUpdateError(detail);
+      this.log.error(`更新失败（${kind}）：${detail}`);
       this.updateStatus({
         state: 'error',
-        message:
-          `更新失败：${detail}。可点「重试」再查一次` + (this.lastVersion ? ` v${this.lastVersion}` : '')
+        // 界面上给人话，错误码只留在上面那行日志里
+        message: message + (this.lastVersion ? `重试仍指向 v${this.lastVersion}。` : '')
       });
     });
   }
