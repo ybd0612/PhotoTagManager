@@ -69,18 +69,34 @@ const status = {
 
 /** 深色覆盖层（大图预览、抠图对比）专用：与浅色工具带是两套，别互相引用 */
 const overlay = {
-  scrim: 'rgba(9, 12, 20, 0.72)',
-  chip: 'rgba(2, 6, 23, 0.62)',
+  scrim: 'rgba(9,12,20,0.72)',
+  chip: 'rgba(2,6,23,0.62)',
   /** 图片上压字用的渐变终点：比 chip 深得多，白文件名才读得清 */
-  captionScrim: 'rgba(9, 12, 20, 0.82)',
-  surfaceFaint: 'rgba(255, 255, 255, 0.05)',
-  surface: 'rgba(255, 255, 255, 0.08)',
-  surfaceStrong: 'rgba(255, 255, 255, 0.14)',
-  hairline: 'rgba(255, 255, 255, 0.12)',
-  textStrong: 'rgba(255, 255, 255, 0.88)',
-  textMid: 'rgba(255, 255, 255, 0.72)',
-  textDim: 'rgba(255, 255, 255, 0.55)',
-  fieldBorder: 'rgba(255, 255, 255, 0.35)',
+  captionScrim: 'rgba(9,12,20,0.82)',
+  surfaceFaint: 'rgba(255,255,255,0.05)',
+  surface: 'rgba(255,255,255,0.08)',
+  surfaceStrong: 'rgba(255,255,255,0.14)',
+  /** 暗底上的可点控件：悬停与按下两档，与浅色侧的 hover/pressed 对应 */
+  surfaceHover: 'rgba(255,255,255,0.1)',
+  surfaceActive: 'rgba(255,255,255,0.2)',
+  /** 暗底上的一条竖分隔 */
+  divider: 'rgba(255,255,255,0.18)',
+  /** 压在照片上的浅色 chip 底（缩略图标签角标）：要够实，否则花背景上读不出 */
+  chipOnImage: 'rgba(255,255,255,0.92)',
+  /** 白字压图时的投影，保证任何画面都能读 */
+  textOnImage: '0 1px 2px rgba(0,0,0,0.7)',
+  hairline: 'rgba(255,255,255,0.12)',
+  /** 压在照片上的浮层文字（按住提示、缩放读数） */
+  textStrong: 'rgba(255,255,255,0.88)',
+  /** 次级说明文字（掩码尺寸注明、元数据） */
+  mid: 'rgba(255,255,255,0.72)',
+  /** 最弱一档，再低就在近黑底上读不出了 */
+  dim: 'rgba(255,255,255,0.55)',
+  /** 暗底输入框描边：0.25 在近黑底上基本读不出边界 */
+  fieldBorder: 'rgba(255,255,255,0.35)',
+  /** placeholder：0.45 会连「这里能输入」都提示不出来 */
+  fieldPlaceholder: 'rgba(255,255,255,0.6)',
+  /** focus 态描边，取主题 primary.light */
   focus: '#818cf8'
 };
 
@@ -106,6 +122,9 @@ const motion = {
 };
 
 export const tokens = { ink, surface, accent, status, overlay, radius, space, font, shadow, motion };
+
+/** 深色覆盖层色板的单独导出名：预览层与对比视图共用这一份，不再由某个组件持有 */
+export { overlay };
 
 /**
  * 注入 :root 的 CSS 变量。名字与手写 CSS 里用的完全一致，

@@ -8,6 +8,7 @@ import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Typography from '@mui/material/Typography';
 import { call, getApi, toFileUrl } from '../api';
 import { HOLD_TO_COMPARE } from '../utils/strings';
+import { overlay } from '../theme/tokens';
 import { useAiStore, type AiCompareMode } from '../store/useAiStore';
 import type { AiDonePayload, AiSaveResult } from '../../shared/types';
 
@@ -38,25 +39,6 @@ const checkerBg: CSSProperties = {
   backgroundSize: `${CHECKER_SIZE}px ${CHECKER_SIZE}px`
 };
 
-/**
- * 预览层（近黑底 rgb(2,6,23)）上的对比 token，批次3 G10 单点在此。
- * 原先 0.55 / 0.7 / 0.8 三档手写值散在两个组件的 sx 里，同一层界面调一次对比要改五处。
- * 由本文件导出、宿主 PreviewOverlay 复用，两边读的是同一份。
- */
-export const OVERLAY = {
-  /** 压在照片上的浮层文字（按住提示、缩放读数） */
-  textStrong: 'rgba(255,255,255,0.88)',
-  /** 次级说明文字（掩码尺寸注明、元数据） */
-  mid: 'rgba(255,255,255,0.72)',
-  /** 最弱一档（元数据里的尺寸/大小），再低就在暗底上读不出了 */
-  dim: 'rgba(255,255,255,0.55)',
-  /** 暗底输入框描边：0.25 在近黑底上基本读不出边界 */
-  fieldBorder: 'rgba(255,255,255,0.35)',
-  /** placeholder：0.45 会连"这里能输入"都提示不出来 */
-  fieldPlaceholder: 'rgba(255,255,255,0.6)',
-  /** focus 态描边，取主题 primary.light */
-  focus: '#818cf8'
-} as const;
 
 /** 结果只属于它那张照片：翻到下一张不该继续显示上一张的对比 */
 export function useCompareResult(absPath: string | undefined): AiDonePayload | null {
@@ -115,7 +97,7 @@ export function AiCompareStage({ absPath, alt, onError, viewStyle }: StageProps)
           data-testid="ai-mask-note"
           variant="caption"
           className="pointer-events-none absolute bottom-2 left-3"
-          sx={{ color: OVERLAY.mid }}
+          sx={{ color: overlay.mid }}
         >
           掩码在 {result.maskWidth}×{result.maskHeight} 下计算，右侧结果放大后偏软，属正常
         </Typography>
@@ -141,8 +123,8 @@ export function AiCompareStage({ absPath, alt, onError, viewStyle }: StageProps)
         variant="caption"
         className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2"
         sx={{
-          color: OVERLAY.textStrong,
-          bgcolor: 'rgba(2,6,23,0.62)',
+          color: overlay.textStrong,
+          bgcolor: overlay.chip,
           px: 1.25,
           py: 0.5,
           borderRadius: 1.5
@@ -208,13 +190,13 @@ export function AiCompareActions({
             flexWrap: 'nowrap',
             '& .MuiToggleButton-root': {
               px: 1.5,
-              color: 'rgba(255,255,255,0.78)',
-              borderColor: 'rgba(255,255,255,0.28)',
-              '&:hover': { color: '#fff', bgcolor: 'rgba(255,255,255,0.10)' },
+              color: overlay.mid,
+              borderColor: overlay.fieldBorder,
+              '&:hover': { color: '#fff', bgcolor: overlay.surfaceHover },
               '&.Mui-selected': {
                 color: '#fff',
-                bgcolor: 'rgba(255,255,255,0.20)',
-                '&:hover': { bgcolor: 'rgba(255,255,255,0.26)' }
+                bgcolor: overlay.surfaceActive,
+                '&:hover': { bgcolor: overlay.surfaceActive }
               }
             }
           }}
@@ -226,7 +208,7 @@ export function AiCompareActions({
       <Box
         data-testid="ai-actions-divider"
         aria-hidden
-        sx={{ width: 1, alignSelf: 'stretch', bgcolor: 'rgba(255,255,255,0.18)', mx: 0.5 }}
+        sx={{ width: 1, alignSelf: 'stretch', bgcolor: overlay.divider, mx: 0.5 }}
       />
       {/* 右段：要不要留 */}
       <Stack direction="row" alignItems="center" spacing={1} data-testid="ai-commit-group" className="shrink-0">

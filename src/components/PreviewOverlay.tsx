@@ -25,7 +25,8 @@ import MenuItem from '@mui/material/MenuItem';
 import { useAppStore } from '../store/useAppStore';
 import { useAiStore } from '../store/useAiStore';
 import { AiActionSplitButton } from './AiActionSplitButton';
-import { AiCompareActions, AiCompareStage, OVERLAY, useCompareResult } from './AiCompareView';
+import { AiCompareActions, AiCompareStage, useCompareResult } from './AiCompareView';
+import { overlay, tokens } from '../theme/tokens';
 import type { ImageInfo } from '../../shared/types';
 
 /**
@@ -268,22 +269,22 @@ export function PreviewOverlay(): JSX.Element | null {
       sx={{ ml: 'auto', whiteSpace: 'nowrap', pl: 1 }}
     >
       {infoLoading ? (
-        <CircularProgress size={14} sx={{ color: OVERLAY.dim }} aria-label="正在读取图片信息" />
+        <CircularProgress size={14} sx={{ color: overlay.dim }} aria-label="正在读取图片信息" />
       ) : infoError ? (
         <Typography variant="caption" sx={{ color: 'error.light' }}>图片信息读取失败</Typography>
       ) : (
         <>
           {info?.width && info?.height ? (
-            <Typography variant="caption" sx={{ color: OVERLAY.dim }}>{info.width} × {info.height}</Typography>
+            <Typography variant="caption" sx={{ color: overlay.dim }}>{info.width} × {info.height}</Typography>
           ) : null}
           {info?.sizeBytes != null ? (
-            <Typography variant="caption" sx={{ color: OVERLAY.dim }}>{formatBytes(info.sizeBytes)}</Typography>
+            <Typography variant="caption" sx={{ color: overlay.dim }}>{formatBytes(info.sizeBytes)}</Typography>
           ) : null}
           {info?.dateTimeOriginal ? (
-            <Typography variant="caption" sx={{ color: OVERLAY.dim }}>{info.dateTimeOriginal}</Typography>
+            <Typography variant="caption" sx={{ color: overlay.dim }}>{info.dateTimeOriginal}</Typography>
           ) : null}
           {[info?.make, info?.model].filter(Boolean).join(' ') ? (
-            <Typography variant="caption" sx={{ color: OVERLAY.dim }}>
+            <Typography variant="caption" sx={{ color: overlay.dim }}>
               {[info?.make, info?.model].filter(Boolean).join(' ')}
             </Typography>
           ) : null}
@@ -308,7 +309,7 @@ export function PreviewOverlay(): JSX.Element | null {
         alignItems="center"
         spacing={1}
         className="h-14 shrink-0 px-3"
-        sx={{ borderBottom: '1px solid rgba(255,255,255,0.12)' }}
+        sx={{ borderBottom: `1px solid ${overlay.hairline}` }}
       >
         <Tooltip title="上一张 (←)">
           <IconButton sx={{ color: 'white' }} onClick={() => previewStep(-1)}>
@@ -323,9 +324,9 @@ export function PreviewOverlay(): JSX.Element | null {
           className="min-w-0 flex-1 text-center ptm-selectable"
           title={image.absPath}
         >
-          <span style={{ color: 'rgba(255,255,255,0.5)' }}>{dirPath}</span>
+          <span style={{ color: overlay.dim }}>{dirPath}</span>
           <span style={{ color: 'white' }}>{fileName}</span>
-          <Typography component="span" variant="caption" sx={{ color: 'rgba(255,255,255,0.55)', ml: 1 }}>
+          <Typography component="span" variant="caption" sx={{ color: overlay.dim, ml: 1 }}>
             {preview.index + 1} / {preview.list.length}
           </Typography>
         </Typography>
@@ -424,8 +425,8 @@ export function PreviewOverlay(): JSX.Element | null {
             className="pointer-events-none absolute bottom-2 right-3"
             variant="caption"
             sx={{
-              color: OVERLAY.textStrong,
-              bgcolor: 'rgba(2,6,23,0.62)',
+              color: overlay.textStrong,
+              bgcolor: overlay.chip,
               px: 1,
               py: 0.25,
               borderRadius: 1
@@ -443,9 +444,9 @@ export function PreviewOverlay(): JSX.Element | null {
           alignItems="center"
           spacing={1}
           className="shrink-0 px-4"
-          sx={{ bgcolor: 'rgba(183,28,28,0.22)' }}
+          sx={{ bgcolor: tokens.status.dangerOnDark }}
         >
-          <Typography variant="caption" data-testid="ai-error" sx={{ color: '#ffcdd2', minWidth: 0, flex: 1, py: 0.5 }}>
+          <Typography variant="caption" data-testid="ai-error" sx={{ color: tokens.status.dangerTextOnDark, minWidth: 0, flex: 1, py: 0.5 }}>
             {aiError.message}
           </Typography>
           {/* §8-17 的"一键卸载"：只在显存不足且确有模型驻留时出现，否则就是颗假控件 */}
@@ -472,7 +473,7 @@ export function PreviewOverlay(): JSX.Element | null {
       )}
 
       {/* 底栏上半：AI 动作 + 对比动作 + 元数据（原来元数据自己一行还配一条 Divider） */}
-      <Box className="shrink-0 px-4 pt-2.5" sx={{ bgcolor: 'rgba(255,255,255,0.05)' }}>
+      <Box className="shrink-0 px-4 pt-2.5" sx={{ bgcolor: overlay.surfaceFaint }}>
         <Stack
           direction="row"
           spacing={1.5}
@@ -506,9 +507,9 @@ export function PreviewOverlay(): JSX.Element | null {
       </Menu>
       {trashDialog}
       {/* 底栏下半：标签编辑（与上半同一块面板，不再各画一条分隔线） */}
-      <Box className="shrink-0 px-4 pb-2.5 pt-1" sx={{ bgcolor: 'rgba(255,255,255,0.05)' }}>
+      <Box className="shrink-0 px-4 pb-2.5 pt-1" sx={{ bgcolor: overlay.surfaceFaint }}>
         <Stack direction="row" spacing={1} alignItems="center" className="flex-wrap">
-          <Typography variant="caption" sx={{ color: OVERLAY.mid }}>
+          <Typography variant="caption" sx={{ color: overlay.mid }}>
             标签：
           </Typography>
           {tags.map((tag) => (
@@ -517,7 +518,7 @@ export function PreviewOverlay(): JSX.Element | null {
               label={tag}
               size="small"
               onDelete={() => handleRemoveTag(tag)}
-              sx={{ bgcolor: 'rgba(255,255,255,0.14)', color: 'white' }}
+              sx={{ bgcolor: overlay.surfaceStrong, color: 'white' }}
             />
           ))}
           <TextField
@@ -529,15 +530,15 @@ export function PreviewOverlay(): JSX.Element | null {
               if (e.key === 'Enter') handleAddTag();
             }}
             sx={{
-              '& .MuiOutlinedInput-root': { color: 'white', bgcolor: 'rgba(255,255,255,0.08)' },
-              '& .MuiOutlinedInput-notchedOutline': { borderColor: OVERLAY.fieldBorder },
+              '& .MuiOutlinedInput-root': { color: 'white', bgcolor: overlay.surface },
+              '& .MuiOutlinedInput-notchedOutline': { borderColor: overlay.fieldBorder },
               // focus 必须肉眼可辨：这块面板整层都是近黑底，只靠主题默认描边看不出光标在哪
               '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': {
-                borderColor: OVERLAY.focus,
+                borderColor: overlay.focus,
                 borderWidth: 2
               },
               // 显式 opacity:1：MUI 给 ::placeholder 另压了一层透明度，不写会被二次衰减
-              '& input::placeholder': { color: OVERLAY.fieldPlaceholder, opacity: 1 }
+              '& input::placeholder': { color: overlay.fieldPlaceholder, opacity: 1 }
             }}
             InputProps={{
               endAdornment: (

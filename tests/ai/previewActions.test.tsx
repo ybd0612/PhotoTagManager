@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, within, act, waitFor } from '@testing-library/react';
 
 import { PreviewOverlay } from '../../src/components/PreviewOverlay';
-import { OVERLAY } from '../../src/components/AiCompareView';
+import { overlay as OVERLAY } from '../../src/theme/tokens';
 import { rootKey, useAppStore } from '../../src/store/useAppStore';
 import { useAiStore } from '../../src/store/useAiStore';
 import type { AiDonePayload } from '../../shared/types';

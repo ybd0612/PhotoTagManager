@@ -9,7 +9,7 @@ import { useTrashImages } from '../hooks/useTrashImages';
 import { call, getApi, toFileUrl } from '../api';
 import { collectDirAndDescendants } from '../utils/folders';
 import { matchName, ROW_RATIO, sortImages, THUMB_SIZES } from '../utils/viewFilters';
-import { tokens } from '../theme/tokens';
+import { overlay, tokens } from '../theme/tokens';
 import type { ImageFile } from '../../shared/types';
 
 /**
@@ -295,14 +295,14 @@ export function ThumbnailGrid(): JSX.Element {
                   key={tag}
                   label={tag}
                   size="small"
-                  sx={{ height: 20, px: 0.5, fontSize: 11, fontWeight: 500, bgcolor: 'rgba(255,255,255,0.92)', color: 'text.primary' }}
+                  sx={{ height: 20, px: 0.5, fontSize: 11, fontWeight: 500, bgcolor: overlay.chipOnImage, color: 'text.primary' }}
                 />
               ))}
               {tags.length > 2 && (
                 <Chip
                   label={`+${tags.length - 2}`}
                   size="small"
-                  sx={{ height: 20, px: 0.5, fontSize: 11, fontWeight: 500, bgcolor: 'rgba(255,255,255,0.92)', color: 'text.secondary' }}
+                  sx={{ height: 20, px: 0.5, fontSize: 11, fontWeight: 500, bgcolor: overlay.chipOnImage, color: 'text.secondary' }}
                 />
               )}
             </Box>
@@ -318,7 +318,7 @@ export function ThumbnailGrid(): JSX.Element {
               '.MuiCard-root:hover &, .MuiCard-root:focus-visible &, .MuiCard-root:focus-within &': { opacity: 1 }
             }}
           >
-            <Typography noWrap variant="caption" sx={{ minWidth: 0, color: 'white', textShadow: '0 1px 2px rgba(0,0,0,.7)' }} title={image.name}>
+            <Typography noWrap variant="caption" sx={{ minWidth: 0, color: 'white', textShadow: overlay.textOnImage }} title={image.name}>
               {image.name}
             </Typography>
           </Box>
