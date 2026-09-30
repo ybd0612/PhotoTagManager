@@ -331,8 +331,10 @@ describe('批次2 G7 状态栏', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '收起筛选工具条' }));
     expect(screen.queryByPlaceholderText('搜索文件名')).toBeNull();
-    // 标签那一行必须留着：收起的是工具条，不是整个筛选能力
-    expect(screen.getByText('常用标签')).toBeTruthy();
+    // 标签那一行必须留着：收起的是工具条，不是整个筛选能力。
+    // 「常用标签」已撤掉可见文字（用户：默认认得这些胶囊就是标签），只作这一行的无障碍名保留
+    expect(screen.getByRole('group', { name: '常用标签' })).toBeTruthy();
+    expect(screen.queryByText('常用标签')).toBeNull();
     expect(vi.mocked(api.setPrefs).mock.calls.flat().some((c) => JSON.stringify(c).includes('"filterBarVisible":false'))).toBe(true);
 
     fireEvent.click(screen.getByRole('button', { name: '展开筛选工具条' }));

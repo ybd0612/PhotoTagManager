@@ -60,7 +60,14 @@ const theme = createTheme({
       }
     },
     MuiPaper: { defaultProps: { elevation: 0 } },
-    MuiChip: { styleOverrides: { root: { borderRadius: radius.sm, fontWeight: 500 } } },
+    MuiChip: {
+      styleOverrides: {
+        root: { borderRadius: radius.sm, fontWeight: 500 },
+        // 胶囊里的字实测比框中心低 0.5~1.5px：行盒本身是居中的，偏移来自字体 ascent/descent 不对称
+        // （12.07px 字号下 asc 13 / desc 3），而 CSS 只按行盒对齐、管不到墨迹。上移 1px 后残差 ≤0.5px。
+        label: { transform: 'translateY(-1px)' }
+      }
+    },
     // 切换钮（排序、缩略图档位）是可点控件，跟按钮同档，不吃容器的 md
     MuiToggleButton: { styleOverrides: { root: { borderRadius: radius.sm } } },
     MuiTooltip: {

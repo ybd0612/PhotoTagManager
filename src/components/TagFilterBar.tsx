@@ -221,11 +221,15 @@ export function TagFilterBar(): JSX.Element {
         </Stack>
       )}
 
-      {/* 热门标签（当前上下文范围）+ 更多（全量标签列表） */}
-      <Stack direction="row" alignItems="center" spacing={0.5} className="ptm-band-row mt-1.5 flex-wrap">
-        <Typography variant="caption" color="text.secondary" className="shrink-0">
-          常用标签
-        </Typography>
+      {/* 热门标签（当前上下文范围）+ 更多（全量标签列表）。「常用标签」只作无障碍名，不再占可见文字位 */}
+      <Stack
+        direction="row"
+        alignItems="center"
+        spacing={0.5}
+        role="group"
+        aria-label="常用标签"
+        className="ptm-band-row mt-1.5 flex-wrap"
+      >
         {!hasContext || hotTags.length === 0 ? (
           <Typography variant="caption" color="text.disabled">
             {TAGS_PENDING}
