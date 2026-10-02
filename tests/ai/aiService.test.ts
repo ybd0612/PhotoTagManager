@@ -538,6 +538,34 @@ describe('ai/aiService —— 掩码级缓存 + 底色（切片一，方案 §8-
     expect(await readdir(join(previewDir(), 'masks'))).toHaveLength(2);
   });
 
+  it('界面那句掩码尺寸：命中成品缓存也要报裁边后的真实值，不是输入形状', async () => {
+    const inputDims = getModel('portrait-cutout', 'u2netp')!.inputDims;
+    await store.markPresent();
+    const first = await service.run({ absPath: photoPath, capabilityId: 'portrait-cutout' });
+    // 8×4 的原图在方形输入里要裁掉上下补边，真实掩码必然矮于输入形状
+    expect(first.maskHeight).toBeLessThan(first.maskWidth);
+
+    const again = await service.run({ absPath: photoPath, capabilityId: 'portrait-cutout' });
+    expect(again.cacheHit).toBe(true);
+    expect(again.maskWidth).toBe(first.maskWidth);
+    expect(again.maskHeight).toBe(first.maskHeight);
+    // 命中分支若退回"拿 inputDims 充数"的旧写法，高度会变成方形输入的 320（这张图真实是 160）
+    expect(again.maskHeight).not.toBe(inputDims[2]);
+  });
+
+  it('掩码被 LRU 淘汰、成品还在时，那句尺寸退回输入形状而不是报 0', async () => {
+    const inputDims = getModel('portrait-cutout', 'u2netp')!.inputDims;
+    await store.markPresent();
+    await service.run({ absPath: photoPath, capabilityId: 'portrait-cutout' });
+    for (const f of await readdir(join(previewDir(), 'masks'))) {
+      await rm(join(previewDir(), 'masks', f), { force: true });
+    }
+    const again = await service.run({ absPath: photoPath, capabilityId: 'portrait-cutout' });
+    expect(again.cacheHit).toBe(true);
+    expect(again.maskWidth).toBe(inputDims[3]);
+    expect(again.maskHeight).toBe(inputDims[2]);
+  });
+
   it('未点保存：掩码与成品都只在暂存内，照片目录不多一个文件', async () => {
     await store.markPresent();
     const before = await readdir(photoDir);

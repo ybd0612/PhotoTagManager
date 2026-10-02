@@ -1,4 +1,4 @@
-import { stat, writeFile, access, readFile, rename, rm, mkdir } from 'fs/promises';
+import { stat, writeFile, access, readFile, rename, rm, mkdir, open } from 'fs/promises';
 import { isAbsolute, join, normalize, sep, basename, dirname, extname, relative } from 'path';
 
 import { capabilities, type CapabilitySpec, type ModelSpec } from './capabilityCatalog';
@@ -12,6 +12,7 @@ import {
   composeCutoutPng,
   cropMaskPlane,
   getPostprocessor,
+  MASK_HEADER_BYTES,
   maskFromBytes,
   maskToBytes,
   resolveBgColorId,
@@ -693,17 +694,34 @@ export class AiService {
     });
     const tempPath = previewFile(`${key}${cap.outputExt}`);
 
+    // 掩码键**不含**后处理参数（附录 A）。两条分支都要它：命中成品缓存时靠它找回真实掩码尺寸，
+    // 没命中时它就是"这张图的掩码算过没有"的门牌（方案 §2 的分界线）。
+    const maskPath = maskFile(
+      maskFileName(
+        computeMaskCacheKey({
+          source,
+          modelSha256: model.sha256,
+          inputDims: model.inputDims,
+          pipelineVersion: PIPELINE_VERSION
+        })
+      )
+    );
+
     if (await exists(tempPath)) {
       // 命中缓存：不调 runner，直接给预览（§5.2 秒出预览的依据）
       this.throwIfCancelled(taskId);
+      // 界面那句「掩码在 N×N 下计算」读的就是这两个数。裁掉补边后的掩码随图片长宽比变
+      // （真机实测 677×431 的图是 320×204），拿模型的方形输入形状充数等于报错数。
+      // 所以这里只读掩码文件的 8 字节头（不整份载入）；文件已被清理时才退回输入形状。
+      const cachedDims = await readMaskDims(maskPath);
       const cached: RunResult = {
         taskId,
         tempPath,
         sourceAbsPath: req.absPath,
         cacheHit: true,
         didApplySigmoid: false,
-        maskWidth: model.inputDims[3] ?? 0,
-        maskHeight: model.inputDims[2] ?? 0,
+        maskWidth: cachedDims?.width ?? model.inputDims[3] ?? 0,
+        maskHeight: cachedDims?.height ?? model.inputDims[2] ?? 0,
         capabilityId: cap.id,
         modelId: model.id,
         actionTag: cap.actionTag
@@ -713,14 +731,6 @@ export class AiService {
     }
 
     // ── 分界线：这张图的掩码算过没有（方案 §2）────────────────────────────
-    // 掩码键**不含**后处理参数（附录 A），所以换底色会走到这里就停住，不必回头重跑 GPU。
-    const maskKey = computeMaskCacheKey({
-      source,
-      modelSha256: model.sha256,
-      inputDims: model.inputDims,
-      pipelineVersion: PIPELINE_VERSION
-    });
-    const maskPath = maskFile(maskFileName(maskKey));
     const cachedMask = await readMaskPlane(maskPath);
     let mask: MaskPlane;
     if (cachedMask) {
@@ -931,6 +941,34 @@ async function readMaskPlane(path: string): Promise<MaskPlane | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * 只读掩码文件头部的宽高（界面那句「掩码在 N×N 下计算」用）。
+ *
+ * 走这条而不是 `readMaskPlane` 是因为那份数据 260 KB 量级，而这里只要那对数字；
+ * 只读 8 字节、不整份载入。文件不在（成品缓存在、掩码已被 LRU 淘汰）、太短、
+ * 或者头部写的数不合法，都返回 null 由调用方退回输入形状。
+ */
+async function readMaskDims(path: string): Promise<{ width: number; height: number } | null> {
+  let header: Buffer | null = null;
+  try {
+    const handle = await open(path, 'r');
+    try {
+      const buf = Buffer.alloc(MASK_HEADER_BYTES);
+      const { bytesRead } = await handle.read(buf, 0, MASK_HEADER_BYTES, 0);
+      header = bytesRead === MASK_HEADER_BYTES ? buf : null;
+    } finally {
+      await handle.close().catch(() => undefined);
+    }
+  } catch {
+    return null; // 文件不在（掩码已被 LRU 淘汰）是正常事件，不是错误
+  }
+  if (!header) return null;
+  const width = header.readUInt32LE(0);
+  const height = header.readUInt32LE(4);
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) return null;
+  return { width, height };
 }
 
 /**

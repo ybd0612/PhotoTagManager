@@ -83,8 +83,8 @@ export interface MaskPlane {
   height: number;
 }
 
-/** 掩码落盘格式的头部宽度：uint32 宽 + uint32 高。 */
-const MASK_HEADER_BYTES = 8;
+/** 掩码落盘格式的头部宽度：uint32 宽 + uint32 高。导出给"只读头部拿尺寸"的调用方复用。 */
+export const MASK_HEADER_BYTES = 8;
 
 /**
  * 掩码平面 → 字节流（掩码级缓存的落盘形态）。
