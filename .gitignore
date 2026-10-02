@@ -16,6 +16,7 @@ Thumbs.db
 # editor
 .vscode/
 .idea/
+.qoder/
 
 # vitest
 coverage/
