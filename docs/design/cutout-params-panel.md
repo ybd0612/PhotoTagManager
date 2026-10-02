@@ -122,3 +122,35 @@
 - **参数流转**：`DEFAULT_CUTOUT_PARAMS` 目前在 `execute()` 里写死（`toCacheParams(DEFAULT_CUTOUT_PARAMS)`），要改成从 `RunRequest` 带进来；渲染层 → IPC → 主进程这条链的载荷形状要同步加字段。
 - **`postprocess.ts` 的 `toAlphaBytes` 现在是 `void params;`（恒等映射）**——底色不进这条恒等路径，它属于合成阶段（`composeCutoutPng`），别去改 alpha 计算。
 - **不许动的东西**：`aiSettings.test.tsx` 的零 `input` 断言；`capabilityCatalog.ts` 里"具体形状只允许出现在清单"这条（面板不得写死 320/512）；D12「绝不自动回落 CPU」；成品 PNG 的 ICC 保留（`keepIccProfile()`）。
+
+---
+
+## 附录 B：切片一实施记录与接续点（2026-10-02）
+
+**已完成一次实现尝试，产物可参考但那个分支禁止合并。**
+
+一个实现代理按本文做过切片一，产出 18 个文件的改动（掩码级缓存 `computeMaskCacheKey` / `maskFileName` / `MASK_FILE_EXT` 已落地、`bgcolor` 从渲染层流到主进程已打通、新组件 `src/components/CutoutParamsPanel.tsx` 已建），但**跑到 150 轮上限中断，且中断时正写"底色真的改变输出像素"那条断言**。
+
+产物保存在分支 `worktree-agent-general-purpose-95c18365`，提交 `5f52828`（工作树 `.qoder/worktrees/agent-general-purpose-95c18365`）。
+
+### 为什么不能直接合回来
+
+代理的隔离工作树**基线取错了**：它从 **`bef2b4c`（v0.1.5 标签，09-29 10:07）** 拉出，而不是当时 master 的 `d6f4a13`。后果：
+
+- 那份代码里**没有 MODNet 条目**（`capabilityCatalog.ts` 里 `modnet` 出现 0 次），也**没有本方案文档**；
+- `bef2b4c..master` 之间有 **72 笔提交、动了 84 个文件**；
+- 代理改的 18 个文件里**有 9 个在那 72 笔里被并发改过**：`electron/ai/aiService.ts`、`electron/ipc.ts`、`shared/types.ts`、`src/components/AiCompareView.tsx`、`src/components/PreviewOverlay.tsx`、`src/store/useAiStore.ts`、`tests/ai/aiService.test.ts`、`tests/ai/aiUi.test.tsx`、`tests/ai/previewActions.test.tsx`。
+
+**cherry-pick 会在这些文件上冲突，更坏的情况是"代理那份旧实现赢了"，把并发会话的界面修复静默回退掉。** 所以这个分支只当参考实现读，不合并。
+
+### 接续怎么做
+
+| 类别 | 文件 | 做法 |
+|---|---|---|
+| **无漂移，可直接照搬** | `electron/ai/cacheKey.ts`、`electron/ai/paths.ts`、`electron/ai/postprocess.ts`、`src/components/CutoutParamsPanel.tsx` | 读 `git show 5f52828 -- <文件>`，按现状重新落一遍（键、掩码文件名、底色合成、面板组件的形态都可用） |
+| **已在 master 上漂移，必须在新基线上重做** | 上面那 9 个 | **不要搬 diff**，只参考它的思路：掩码缓存插在 `cropMaskPlane` 与 `composeCutoutPng` 之间、参数走 `RunRequest` 进来、`DEFAULT_CUTOUT_PARAMS` 那处写死点要拆掉 |
+| **中断时未做** | — | 断言 b（底色改变输出像素）只做到一半；断言 a 的"能失败"自证、`Esc` 关闭与键盘可达的组件测试、性能实测（拖动一帧到画面变化多少毫秒）**全部未做** |
+
+### 下一次派活的纪律（这次踩出来的）
+
+派隔离工作树的实现代理之前，**必须先确认工作树基线等于当前 master 的 HEAD**（`git -C <worktree> log -1 --format='%h'` 对一下 `git rev-parse --short master`），不等就先别派——基线错位的代价不是冲突，是**静默回退别人的提交**。
