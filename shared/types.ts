@@ -230,6 +230,11 @@ export interface AiSaveResult {
   targetName: string;
   /** true 表示首选举了名，实际写成 .cutout.N.png（§4.4 同名冲突） */
   renamed: boolean;
+  /**
+   * true 表示覆盖的是我们自己上一轮导出的那张（同名文件带着行为标签）。
+   * §6 裁定 1 要求"覆盖 + 一句提示"，所以界面必须把这一种单独说出来，不许静默替换。
+   */
+  overwrote: boolean;
   tagsWritten: string[];
 }
 

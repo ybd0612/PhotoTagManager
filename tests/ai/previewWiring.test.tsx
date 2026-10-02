@@ -107,7 +107,7 @@ beforeEach(async () => {
     })
   );
   api.aiSave.mockReset().mockResolvedValue(
-    ok({ savedPath: 'C:/photos/a.cutout.png', targetName: 'a.cutout.png', renamed: false, tagsWritten: [] })
+    ok({ savedPath: 'C:/photos/a.cutout.png', targetName: 'a.cutout.png', renamed: false, overwrote: false, tagsWritten: [] })
   );
   useAppStore.setState({
     selectedRootId: 'r1',

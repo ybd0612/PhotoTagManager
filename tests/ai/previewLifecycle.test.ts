@@ -54,17 +54,28 @@ class FakeMeta implements MetadataGateway {
   calls: { op: string; absPath: string; add?: string[]; from?: string }[] = [];
   sourceTags = ['旅行', '2024'];
   failWrite = false;
+  /** 只对这一个路径读失败：模拟"认不出同名文件是不是我们出的"这一步 */
+  failReadFor: string | null = null;
+  /**
+   * 写进"文件"的标签：writeTags 之后 readTags 必须读得回来，
+   * 否则主进程"同名派生文件是不是我们自己出的"这个判据在假件上永远不成立（假绿）。
+   */
+  private written = new Map<string, string[]>();
 
   async readTags(absPath: string): Promise<string[]> {
     this.calls.push({ op: 'read', absPath });
-    return [...this.sourceTags];
+    if (this.failReadFor === absPath) throw new Error('exiftool 读取失败');
+    return this.written.get(absPath) ?? [...this.sourceTags];
   }
   async writeTags(absPath: string, add: string[]): Promise<void> {
     this.calls.push({ op: 'write', absPath, add });
     if (this.failWrite) throw new Error('XMP 写入失败：只读');
+    this.written.set(absPath, [...add]);
   }
   async copyBase(fromPath: string, toPath: string): Promise<void> {
     this.calls.push({ op: 'copy', absPath: toPath, from: fromPath });
+    // 与 exiftool 的 -all:all 同语义：目标文件从此带着源图的元数据（含标签）
+    this.written.set(toPath, await this.readTags(fromPath));
   }
 }
 
@@ -131,12 +142,41 @@ describe('ai/aiService.save —— 移入原图旁', () => {
     const first = await service.save((await newPreview()).taskId);
     expect(first.savedPath).toBe(join(photoDir, 'IMG_0001.cutout.2.png'));
     expect(first.renamed).toBe(true);
+    // 这张同名文件不是我们出的（没带着行为标签）→ 绝不覆盖
+    expect(first.overwrote).toBe(false);
 
     // 第二个也冲突 → .3
     const second = await service.save((await newPreview()).taskId);
     expect(second.savedPath).toBe(join(photoDir, 'IMG_0001.cutout.3.png'));
     // 已存在的那个文件没被动过
     expect((await readFile(join(photoDir, 'IMG_0001.cutout.png'), 'utf8')).trim()).toBe('existing');
+  });
+
+  it('⑥ §6 裁定 1：改底色后再保存 → 覆盖我们自己出的那张，不堆 .cutout.2.png', async () => {
+    const first = await service.save((await newPreview()).taskId);
+    expect(first.savedPath).toBe(join(photoDir, 'IMG_0001.cutout.png'));
+    const bytesBefore = await readFile(first.savedPath);
+
+    const white = await service.run({ absPath: photoPath, capabilityId: 'portrait-cutout', cutout: { bgcolor: 'white' } });
+    const second = await service.save(white.taskId);
+    expect(second.savedPath).toBe(first.savedPath);
+    expect(second.overwrote).toBe(true);
+    expect(second.renamed).toBe(false);
+    // 目录里仍然只有一张派生文件，而且内容换成新的那张
+    expect((await readdir(photoDir)).filter((f) => f.includes('.cutout.'))).toEqual(['IMG_0001.cutout.png']);
+    expect((await readFile(second.savedPath)).equals(bytesBefore)).toBe(false);
+    // 覆盖后标签依旧是「继承 + 行为」，没被 copyBase 从源图刷掉
+    expect(second.tagsWritten).toEqual(['旅行', '2024', actionTag]);
+  });
+
+  it('⑥ 认不出来源就不覆盖：读同名文件标签失败时退回递增', async () => {
+    const first = await service.save((await newPreview()).taskId);
+    meta.failReadFor = first.savedPath;
+    const second = await service.save((await newPreview()).taskId);
+    // 宁可多一个文件，也不可覆盖我们读不出来源的东西
+    expect(second.overwrote).toBe(false);
+    expect(second.savedPath).toBe(join(photoDir, 'IMG_0001.cutout.2.png'));
+    expect(existsSync(first.savedPath)).toBe(true);
   });
 
   it('② 元数据：先读原图标签，再往派生文件写「继承的标签 + 清单里的行为标签」', async () => {

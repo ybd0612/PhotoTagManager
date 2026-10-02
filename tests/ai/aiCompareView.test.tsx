@@ -56,7 +56,7 @@ beforeEach(() => {
   vi.stubGlobal('api', api);
   api.aiSave.mockReset().mockResolvedValue({
     ok: true as const,
-    data: { savedPath: 'C:/photos/portrait.cutout.png', targetName: 'portrait.cutout.png', renamed: false, tagsWritten: [] }
+    data: { savedPath: 'C:/photos/portrait.cutout.png', targetName: 'portrait.cutout.png', renamed: false, overwrote: false, tagsWritten: [] }
   });
   useAiStore.setState({
     result: payload(),

@@ -87,6 +87,11 @@ export interface SaveResult {
   targetName: string;
   /** true 表示首选举了名，实际写成 .cutout.N.png */
   renamed: boolean;
+  /**
+   * true 表示覆盖的是**我们自己上一轮导出的**那张（判据：同名文件身上带着本次的行为标签）。
+   * §6 裁定 1：派生文件本来就是"当前结果"，改完底色再保存不该堆出 .cutout.2 / .cutout.3。
+   */
+  overwrote: boolean;
   tagsWritten: string[];
 }
 
@@ -432,8 +437,11 @@ export class AiService {
 
     const dir = dirname(run.sourceAbsPath);
     const stem = basename(run.sourceAbsPath, extname(run.sourceAbsPath));
-    const wanted = await pickTargetName(dir, stem, cap.outputSuffix, cap.outputExt);
     const firstChoice = join(dir, `${stem}.${cap.outputSuffix}${cap.outputExt}`);
+    // §6 裁定 1：派生文件是"当前结果"，改完底色再保存要覆盖同一张。认不出来源时一律递增——
+    // 宁可多一个文件，也不可覆盖我们不认识的东西（用户手工放的同名文件、或旧版本导出的）
+    const overwrote = (await exists(firstChoice)) && (await this.isOurDerivedFile(firstChoice, cap.actionTag));
+    const wanted = overwrote ? firstChoice : await pickTargetName(dir, stem, cap.outputSuffix, cap.outputExt);
 
     try {
       await (this.deps.moveFile ?? rename)(run.tempPath, wanted);
@@ -466,7 +474,29 @@ export class AiService {
       }
     }
 
-    return { savedPath: wanted, targetName: basename(wanted), renamed: wanted !== firstChoice, tagsWritten };
+    return {
+      savedPath: wanted,
+      targetName: basename(wanted),
+      renamed: !overwrote && wanted !== firstChoice,
+      overwrote,
+      tagsWritten
+    };
+  }
+
+  /**
+   * 同名派生文件是不是我们自己导出的？判据是它身上带着本次的行为标签——
+   * 上一次保存时 `writeTags` 就是把这对标签写进去的。
+   *
+   * 没有元数据通道、或读标签失败一律答"不是"：认不出来源就去递增，别覆盖。
+   * 这条宁可多留一个文件，也不可静默替用户删掉一张我们不认识的照片。
+   */
+  private async isOurDerivedFile(absPath: string, actionTag: string): Promise<boolean> {
+    if (!this.deps.meta) return false;
+    try {
+      return (await this.deps.meta.readTags(absPath)).includes(actionTag);
+    } catch {
+      return false;
+    }
   }
 
   /**

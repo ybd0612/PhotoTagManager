@@ -95,7 +95,7 @@ function createMockApi(): PhotoTagApi {
     aiCatalog: vi.fn(async () => ({ ok: true as const, data: { capabilities: [] } })),
     aiRun: vi.fn(async () => ({ ok: true as const, data: { taskId: 'ai-1' } })),
     aiCancel: vi.fn(async () => ({ ok: true as const, data: true })),
-    aiSave: vi.fn(async () => ({ ok: true as const, data: { savedPath: '', targetName: '', renamed: false, tagsWritten: [] } })),
+    aiSave: vi.fn(async () => ({ ok: true as const, data: { savedPath: '', targetName: '', renamed: false, overwrote: false, tagsWritten: [] } })),
     aiModelDownload: vi.fn(async () => ({ ok: true as const, data: { modelId: 'u2netp', status: 'present' as const } })),
     aiModelDelete: vi.fn(async () => ({ ok: true as const, data: { modelId: 'u2netp', status: 'absent' as const } })),
     aiModelUnload: vi.fn(async () => ({ ok: true as const, data: { modelId: 'u2netp', status: 'present' as const } })),

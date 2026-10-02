@@ -164,11 +164,13 @@ export function PreviewOverlay(): JSX.Element | null {
    * 走 rescan() 而不是把新文件本地塞进列表：目录节点的 directCount / totalCount
    * 是扫描算出来的，只改 imagesByDir 会让文件夹徽标与磁盘悄悄对不上。
    */
-  const handleAiSaved = (saved: { targetName: string; renamed: boolean }): void => {
+  const handleAiSaved = (saved: { targetName: string; renamed: boolean; overwrote: boolean }): void => {
     setSnackbar(
-      saved.renamed
-        ? '已保存为 ' + saved.targetName + '（同名已存在，序号顺延），正在刷新列表'
-        : '已保存为 ' + saved.targetName + '，正在刷新列表'
+      saved.overwrote
+        ? '已覆盖 ' + saved.targetName + '（同一张图的最新结果），正在刷新列表'
+        : saved.renamed
+          ? '已保存为 ' + saved.targetName + '（同名已存在，序号顺延），正在刷新列表'
+          : '已保存为 ' + saved.targetName + '，正在刷新列表'
     );
     void rescan();
   };

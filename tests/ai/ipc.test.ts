@@ -90,7 +90,7 @@ class FakeAiService implements AiServiceView {
   async save(taskId: string) {
     if (this.saveError) throw this.saveError;
     this.savedTaskIds.push(taskId);
-    return { savedPath: `C:/p/IMG_0001.cutout.png`, targetName: 'IMG_0001.cutout.png', renamed: false, tagsWritten: [] };
+    return { savedPath: `C:/p/IMG_0001.cutout.png`, targetName: 'IMG_0001.cutout.png', renamed: false, overwrote: false, tagsWritten: [] };
   }
 
   async previewStats() {

@@ -117,7 +117,7 @@ beforeEach(async () => {
   api.aiCatalog.mockReset().mockImplementation(async () => ok(useAiStore.getState().catalog ?? catalogFixture));
   api.aiRun.mockReset().mockResolvedValue(ok({ taskId: 'ai-1' }));
   api.aiCancel.mockReset().mockResolvedValue(ok(true));
-  api.aiSave.mockReset().mockResolvedValue(ok({ savedPath: 'C:/p/a.cutout.png', targetName: 'a.cutout.png', renamed: false, tagsWritten: [] }));
+  api.aiSave.mockReset().mockResolvedValue(ok({ savedPath: 'C:/p/a.cutout.png', targetName: 'a.cutout.png', renamed: false, overwrote: false, tagsWritten: [] }));
   api.aiModelDownload.mockReset().mockResolvedValue(ok({ modelId: 'u2netp', status: 'present' }));
   api.aiModelDelete.mockReset().mockResolvedValue(ok({ modelId: 'u2netp', status: 'absent' }));
   api.aiModelUnload.mockReset().mockResolvedValue(ok({ modelId: 'u2netp', status: 'present' }));
