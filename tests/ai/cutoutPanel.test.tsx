@@ -5,6 +5,8 @@
 // ② 一次 Esc 只退一层（关面板，不许把整个预览关掉）；③ 选完底色面板不许消失。
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, within, waitFor, act } from '@testing-library/react';
+import { readFileSync, readdirSync } from 'fs';
+import { join } from 'path';
 
 import { CutoutParamsPanel } from '../../src/components/CutoutParamsPanel';
 import { useAiStore } from '../../src/store/useAiStore';
@@ -224,5 +226,55 @@ describe('CutoutParamsPanel —— Esc 只退一层 + 不抢宿主手势', () =>
     fireEvent.doubleClick(within(panel).getByTestId('cutout-panel-close'));
     expect(container).toBeTruthy();
     expect(host).not.toHaveBeenCalled();
+  });
+});
+
+// 结构绊线（照 tests/structuralPins.test.ts 的写法）：下面这几条在真机上"看不见"——
+// 面板挪进底栏只是照片矮了 40 px、设置页摆个参数控件只是那天你恰好没打开设置页。
+// 不钉死就会静默复发（判据 5 / 红线 1 / 红线 2）。
+describe('CutoutParamsPanel —— 结构绊线', () => {
+  const root = process.cwd();
+  const read = (p: string) => readFileSync(join(root, p), 'utf8');
+  const overlaySrc = read(join('src', 'components', 'PreviewOverlay.tsx'));
+  const panelSrc = read(join('src', 'components', 'CutoutParamsPanel.tsx'));
+
+  it('面板挂在 preview-stage 之内、底栏之前（§8-5：展开不吃大图高度）', () => {
+    // 上界取大图区自己的收尾 </Box>（从图内的缩放读数之后找），不能取"错误条之前"——
+    // 实测那样写会把"面板被挪出大图区、成了外层 Box 的子项"这种真回归判成通过
+    const stage = overlaySrc.indexOf('data-testid="preview-stage"');
+    const panel = overlaySrc.indexOf('<CutoutParamsPanel');
+    const badge = overlaySrc.indexOf('preview-zoom-badge');
+    const stageEnd = badge === -1 ? -1 : overlaySrc.indexOf('</Box>', badge);
+    expect(stage).toBeGreaterThan(-1);
+    expect(badge).toBeGreaterThan(stage);
+    expect(stageEnd).toBeGreaterThan(badge); // 锚点失效时这条先红，而不是让下面两条空转
+    expect(panel).toBeGreaterThan(stage);
+    expect(panel).toBeLessThan(stageEnd);
+  });
+
+  it('组件自己声明 absolute 浮层（挪掉这行就红）', () => {
+    // 判据 5 由两条一起钉：这条钉"自己声明浮层"，上面那条钉"它挂在大图区里而不是底栏"。
+    // 不去禁 flex 相关写法——面板内部的标题行本来就在用它排版，那类断言永不失败。
+    expect(panelSrc).toMatch(/position:\s*'absolute'/);
+  });
+
+  it('抠图参数不进设置页（红线 1）', () => {
+    const dir = join(root, 'src', 'components', 'settings');
+    const files = readdirSync(dir);
+    expect(files.length).toBeGreaterThan(0); // 一个文件都没扫到就是这条在空转
+    for (const f of files) expect(read(`src/components/settings/${f}`)).not.toContain('CutoutParamsPanel');
+  });
+
+  it('aiSettings 那条"设置分区零输入控件"断言未被削弱', () => {
+    const line = read(join('tests', 'ai', 'aiSettings.test.tsx'))
+      .split('\n')
+      .find((l) => l.includes('input:not([type=range])'));
+    expect(line).toBeDefined();
+    expect(line).toMatch(/toHaveLength\(0\)/);
+  });
+
+  it('面板源码不写死模型形状（红线 2：320 / 512 只允许出现在清单里）', () => {
+    expect(panelSrc).not.toMatch(/\b(320|512)\b/);
+    expect(panelSrc).toContain('result.maskWidth'); // 尺寸一律从结果里读
   });
 });

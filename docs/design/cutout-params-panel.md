@@ -163,5 +163,5 @@
 - **两级键**：掩码键 = 五元组去掉 `postprocessParams`（新增 `computeMaskCacheKey`，与成品键共用同一个 `canonical()`）；成品键结构不动，底色已经在第四个分量里。
 - **底色流转**：`AiRunRequest.cutout.bgcolor`（只传预设 id）→ `resolveCutoutParams` → `BG_COLOR_PRESETS`（RGBA 的唯一事实源）→ `composeCutoutPng` 内的 `flatten`。`execute()` 里 `DEFAULT_CUTOUT_PARAMS` 那处写死点已拆掉；`toAlphaBytes` 的恒等路径没碰（底色不进 alpha）。面板在 `src/components/CutoutParamsPanel.tsx`，挂在 `preview-stage` 里做 absolute 浮层。
 - **与参考实现的两处不同（有意）**：① 没有再缓存"透明成品 PNG"这一层——掩码命中后直接从原图合成，代价是多一次解码，收益是少一处缓存条目与失效面；② `RunResult` / `AiDonePayload` 未新增 `appliedBgcolor` 字段——铺过底色后成品已无透明像素，棋盘格本来就透不出来，不值得为它扩一次 IPC 契约。
-- **验收覆盖**：判据 1（改底色不重推理）、2（底色真改像素）、3（参数进成品键）、4（面板键盘可达、`Esc` 关得掉）、6（未保存时照片目录不动）、7（`aiSettings.test.tsx` 那条零输入控件断言未被改动）都有能失败的断言；判据 1 做过反证自证（把掩码读路径拿掉，推理次数读数 1→2 立刻变红）。判据 5 由 `position:absolute` 在构造上保证，未做真机测量。**§7 的性能实测（拖一帧到画面变化多少毫秒）本轮未做。**
+- **验收覆盖**：判据 1（改底色不重推理）、2（底色真改像素）、3（参数进成品键）、4（面板键盘可达、`Esc` 关得掉）、6（未保存时照片目录不动）、7（`aiSettings.test.tsx` 那条零输入控件断言未被改动）都有能失败的断言；判据 1 做过反证自证（把掩码读路径拿掉，推理次数读数 1→2 立刻变红）。判据 5 由 `tests/ai/cutoutPanel.test.tsx` 的结构绊线钉住——面板 JSX 必须落在大图区收尾 `</Box>` 之前，且组件自己声明 `position: 'absolute'`；这两条也做过反证（把 JSX 挪到大图区外、把声明改成 `static`，各红一次）。**真机的像素与高度测量、以及 §7 的性能实测（拖一帧到画面变化多少毫秒）本轮都没做。**
 - **被掩码条目影响的既有断言**已在 `tests/ai/previewLifecycle.test.ts` 按新语义改写三处：保存后索引里仍留掩码条目（成品条目才算"已保存成果"）、容量阈值必须按全部条目总字节算、`previewStats` 一次处理的条目数 1→2。
