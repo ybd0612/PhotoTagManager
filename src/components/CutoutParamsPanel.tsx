@@ -132,7 +132,7 @@ export function CutoutParamsPanel({ absPath }: Props) {
         width: 208,
         maxWidth: 'calc(100% - 24px)',
         p: 1.25,
-        borderRadius: 1.5,
+        borderRadius: '12px',
         bgcolor: overlay.captionScrim,
         border: 1,
         borderColor: overlay.fieldBorder,
