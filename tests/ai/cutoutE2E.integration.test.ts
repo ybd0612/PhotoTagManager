@@ -193,6 +193,33 @@ describe.skipIf(!networkOk)('端到端：人像抠图全链路（真下载 / 真
     expect(saved.tagsWritten).toContain(CAP.actionTag);
   }, 180_000);
 
+  it('§6 裁定 1（真 exiftool）：改底色后再保存 → 覆盖同一张，判据来自真实标签回读', async () => {
+    // 上一用例已把透明底存成 IMG_E2E.cutout.png。能不能覆盖，取决于主进程能否从那张 PNG
+    // 真读出行为标签——假件里这条是模拟的，这里换成真 exiftool 走一遍。
+    const inferBefore = runner.inferCount;
+    const white = await service.run({ absPath: photoPath, capabilityId: CAP.id, cutout: { bgcolor: 'white' } });
+    expect(runner.inferCount, '换底色不该重跑推理').toBe(inferBefore);
+
+    const saved = await service.save(white.taskId);
+    expect(saved.savedPath).toBe(join(photoDir, 'IMG_E2E.cutout.png'));
+    expect(saved.overwrote).toBe(true);
+    expect((await readdir(photoDir)).filter((f) => f.includes('.cutout.'))).toEqual(['IMG_E2E.cutout.png']);
+
+    // 覆盖之后标签还在：copyBase 会把 XMP-ptm:Tags 从源图刷回去，顺序错了行为标签就没了
+    const derived = await xmp.read(saved.savedPath);
+    expect(derived.subjects).toContain(CAP.actionTag);
+    expect(derived.subjects).toContain('旅行');
+
+    // 白底成品已经没有 alpha（铺过底色），与透明底那张不是同一份字节
+    const png = await sharp(saved.savedPath).metadata();
+    expect(png.hasAlpha ?? false).toBe(false);
+    const corner = await sharp(saved.savedPath).raw().toBuffer({ resolveWithObject: true });
+    const last = (corner.info.width - 1) * corner.info.channels;
+    expect(Array.from(corner.data.subarray(last, last + corner.info.channels))).toEqual([255, 255, 255]);
+    // 原图依旧没被碰过
+    expect(createHash('sha256').update(readFileSync(photoPath)).digest('hex')).toBe(sourceSha);
+  }, 180_000);
+
   it('§8-13 不保存就退出：结果只在暂存，照片目录不多任何新文件', async () => {
     const before = await readdir(photoDir);
     const result = await service.run({ absPath: photoPath, capabilityId: CAP.id });

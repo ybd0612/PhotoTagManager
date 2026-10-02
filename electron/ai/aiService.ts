@@ -119,6 +119,14 @@ export interface PreviewIndexEntry {
    * 缺省视为 'result'——旧索引文件里没有这个字段，不能因为升级就把成品当掩码处理。
    */
   kind?: PreviewEntryKind;
+  /**
+   * 本次成品实际用的掩码尺寸（裁掉补边后的那张）。只有成品条目会写它。
+   * 记下来的理由不是省一次读盘，而是**别去猜**：缓存命中时若只能拿模型的方形输入形状充数，
+   * 界面那句「掩码在 N×N 下计算」就是个错数（真机上就这么错过，见方案附录 B）。
+   * 缺省表示这条条目写在本字段之前，读取方退回"问掩码文件头"那一级。
+   */
+  maskWidth?: number;
+  maskHeight?: number;
 }
 
 interface PreviewIndex {
@@ -591,12 +599,14 @@ export class AiService {
     return result;
   }
 
-  /** 登记成品条目，索引与掩码共用同一份。 */
+  /** 登记成品条目，索引与掩码共用同一份；尺寸一并记下，供下次缓存命中时报真实值。 */
   private async recordPreviewEntry(result: RunResult): Promise<void> {
     await this.upsertPreviewEntry(result.tempPath, {
       sourceAbsPath: result.sourceAbsPath,
       capabilityId: result.capabilityId,
-      modelId: result.modelId
+      modelId: result.modelId,
+      maskWidth: result.maskWidth,
+      maskHeight: result.maskHeight
     });
   }
 
@@ -606,7 +616,8 @@ export class AiService {
    */
   private async upsertPreviewEntry(
     absPath: string,
-    meta: Pick<PreviewIndexEntry, 'sourceAbsPath' | 'capabilityId' | 'modelId'>
+    meta: Pick<PreviewIndexEntry, 'sourceAbsPath' | 'capabilityId' | 'modelId'> &
+      Partial<Pick<PreviewIndexEntry, 'maskWidth' | 'maskHeight'>>
   ): Promise<void> {
     const index = await this.readPreviewIndex();
     const now = (this.deps.previewRetention?.now ?? Date.now)();
@@ -637,13 +648,19 @@ export class AiService {
     await this.writePreviewIndex(index);
   }
 
-  /** 缓存命中也要刷时间，否则 LRU 记的是"第一次生成"而不是"最近在用"。 */
-  private async touchPreviewEntry(tempPath: string): Promise<void> {
+  /**
+   * 缓存命中也要刷时间，否则 LRU 记的是"第一次生成"而不是"最近在用"。
+   * 顺手把刷到的条目回给调用方：成品条目里记着本次的掩码尺寸，界面那句注明要用它，
+   * 别拿模型输入形状猜。索引里没有这条（索引被清过而文件还在）就返回 null。
+   */
+  private async touchPreviewEntry(tempPath: string): Promise<PreviewIndexEntry | null> {
     const index = await this.readPreviewIndex();
     const key = indexKeyOf(previewRelName(tempPath));
-    if (!index.entries[key]) return;
-    index.entries[key].lastAccessedAt = (this.deps.previewRetention?.now ?? Date.now)();
+    const entry = index.entries[key];
+    if (!entry) return null;
+    entry.lastAccessedAt = (this.deps.previewRetention?.now ?? Date.now)();
     await this.writePreviewIndex(index);
+    return entry;
   }
 
   private async readPreviewIndex(): Promise<PreviewIndex> {
@@ -710,23 +727,28 @@ export class AiService {
     if (await exists(tempPath)) {
       // 命中缓存：不调 runner，直接给预览（§5.2 秒出预览的依据）
       this.throwIfCancelled(taskId);
-      // 界面那句「掩码在 N×N 下计算」读的就是这两个数。裁掉补边后的掩码随图片长宽比变
-      // （真机实测 677×431 的图是 320×204），拿模型的方形输入形状充数等于报错数。
-      // 所以这里只读掩码文件的 8 字节头（不整份载入）；文件已被清理时才退回输入形状。
-      const cachedDims = await readMaskDims(maskPath);
+      const entry = await this.touchPreviewEntry(tempPath);
+      // 界面那句「掩码在 N×N 下计算」的来源，按可信度从高到低：
+      // ① 成品条目写入时记下的真实裁边尺寸；② 掩码文件的 8 字节头（本字段之前的旧条目）；
+      // ③ 模型输入形状——只有索引被清过、掩码也已被淘汰时才走到这里，此时它是方形上限，
+      //    会偏大，但报 0 更糟。真机上那句曾经一直报 512×512 而真实是 512×326，就是缺了①②。
+      const entryDims =
+        typeof entry?.maskWidth === 'number' && typeof entry?.maskHeight === 'number'
+          ? { width: entry.maskWidth, height: entry.maskHeight }
+          : null;
+      const dims = entryDims ?? (await readMaskDims(maskPath));
       const cached: RunResult = {
         taskId,
         tempPath,
         sourceAbsPath: req.absPath,
         cacheHit: true,
         didApplySigmoid: false,
-        maskWidth: cachedDims?.width ?? model.inputDims[3] ?? 0,
-        maskHeight: cachedDims?.height ?? model.inputDims[2] ?? 0,
+        maskWidth: dims?.width ?? model.inputDims[3] ?? 0,
+        maskHeight: dims?.height ?? model.inputDims[2] ?? 0,
         capabilityId: cap.id,
         modelId: model.id,
         actionTag: cap.actionTag
       };
-      await this.touchPreviewEntry(tempPath);
       return this.settleRun(cached);
     }
 

@@ -7,7 +7,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import sharp from 'sharp';
 
-import { configureAiPaths, resetAiPaths, previewDir, modelDir } from '../../electron/ai/paths';
+import { configureAiPaths, resetAiPaths, previewDir, previewFile, modelDir } from '../../electron/ai/paths';
 import { AiService, resolveModel, type AiProgress, type InferenceRunner, type ModelGateway } from '../../electron/ai/aiService';
 import { getModel, getCapability } from '../../electron/ai/capabilityCatalog';
 import type { CapabilitySpec } from '../../electron/ai/capabilityCatalog';
@@ -553,10 +553,35 @@ describe('ai/aiService —— 掩码级缓存 + 底色（切片一，方案 §8-
     expect(again.maskHeight).not.toBe(inputDims[2]);
   });
 
-  it('掩码被 LRU 淘汰、成品还在时，那句尺寸退回输入形状而不是报 0', async () => {
+  it('成品条目里真的记下本次掩码尺寸（界面那句注明的来源）', async () => {
+    await store.markPresent();
+    const first = await service.run({ absPath: photoPath, capabilityId: 'portrait-cutout' });
+    const index = JSON.parse(await readFile(join(previewDir(), 'index.json'), 'utf8')) as {
+      entries: Record<string, { kind?: string; maskWidth?: number; maskHeight?: number }>;
+    };
+    const resultEntry = Object.values(index.entries).find((e) => (e.kind ?? 'result') === 'result');
+    expect(resultEntry, '成品条目没进索引').toBeDefined();
+    expect([resultEntry!.maskWidth, resultEntry!.maskHeight]).toEqual([first.maskWidth, first.maskHeight]);
+  });
+
+  it('掩码文件被 LRU 淘汰、成品还在时，那句尺寸仍是真实值（靠索引，不靠猜）', async () => {
+    await store.markPresent();
+    const first = await service.run({ absPath: photoPath, capabilityId: 'portrait-cutout' });
+    for (const f of await readdir(join(previewDir(), 'masks'))) {
+      await rm(join(previewDir(), 'masks', f), { force: true });
+    }
+    const again = await service.run({ absPath: photoPath, capabilityId: 'portrait-cutout' });
+    expect(again.cacheHit).toBe(true);
+    expect([again.maskWidth, again.maskHeight]).toEqual([first.maskWidth, first.maskHeight]);
+    // 没有索引那一级时这里会退回方形输入尺寸
+    expect(again.maskHeight).toBeLessThan(getModel('portrait-cutout', 'u2netp')!.inputDims[2]);
+  });
+
+  it('索引和掩码都没了才退回输入形状，并且绝不报 0', async () => {
     const inputDims = getModel('portrait-cutout', 'u2netp')!.inputDims;
     await store.markPresent();
     await service.run({ absPath: photoPath, capabilityId: 'portrait-cutout' });
+    await rm(previewFile('index.json'), { force: true });
     for (const f of await readdir(join(previewDir(), 'masks'))) {
       await rm(join(previewDir(), 'masks', f), { force: true });
     }
