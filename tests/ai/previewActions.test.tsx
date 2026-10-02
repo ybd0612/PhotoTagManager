@@ -155,6 +155,28 @@ describe('G9 预览动作条分层', () => {
     expect(img().src).toContain('deadbeef');
   });
 
+  it('焦点落在参数面板的色板上时，空格是"选中这块底色"，不许被当成"按住看原图"', () => {
+    render(<PreviewOverlay />);
+    fireEvent.click(screen.getByTestId('cutout-panel-trigger'));
+    const swatch = screen.getByLabelText('底色：白');
+    swatch.focus();
+    expect(document.activeElement).toBe(swatch);
+    // 浏览器里按钮靠空格激活；全局那条"按住看原图"若在面板范围内照样 preventDefault，
+    // 结果就是画面切回原图、色板也没选中——键盘用户按标准方式操作会一无所获
+    fireEvent.keyDown(swatch, { key: ' ' });
+    expect(useAiStore.getState().holdingOriginal).toBe(false);
+    fireEvent.keyUp(swatch, { key: ' ' });
+    expect(useAiStore.getState().holdingOriginal).toBe(false);
+  });
+
+  it('反面腿：焦点不在面板上时，空格照旧是"按住看原图"（D15 不许因为加了面板而失效）', () => {
+    render(<PreviewOverlay />);
+    fireEvent.keyDown(document.body, { key: ' ' });
+    expect(useAiStore.getState().holdingOriginal).toBe(true);
+    fireEvent.keyUp(document.body, { key: ' ' });
+    expect(useAiStore.getState().holdingOriginal).toBe(false);
+  });
+
   it('大图上给一条浮层提示，写明空格与按住两种触发', () => {
     render(<PreviewOverlay />);
     const hint = screen.getByTestId('ai-hold-hint');

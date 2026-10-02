@@ -45,6 +45,16 @@ const swallowHostGestures = {
   onDoubleClick: (e: React.MouseEvent) => e.stopPropagation()
 };
 
+/**
+ * 空格必须在大图区范围内截住冒泡。预览层在 window 上监听空格当"按住看原图"，判据只排除了
+ * 输入框（`isTyping`），而这里的触发钮与四块色板都是可聚焦的 `<button>`：空格一按，全局那条
+ * `preventDefault()` 既把画面切回原图、又把按钮自身的激活一起取消——键盘用户按标准方式选色板
+ * 就变成"按了个寂寞"。Enter 不走这条路，所以只截空格。
+ */
+const swallowSpace = (e: React.KeyboardEvent): void => {
+  if (e.key === ' ') e.stopPropagation();
+};
+
 interface Props {
   absPath: string;
 }
@@ -82,6 +92,7 @@ export function CutoutParamsPanel({ absPath }: Props) {
         aria-label="抠图参数"
         data-testid="cutout-panel-trigger"
         {...swallowHostGestures}
+        onKeyDown={swallowSpace}
         sx={{
           position: 'absolute',
           top: 12,
@@ -106,6 +117,7 @@ export function CutoutParamsPanel({ absPath }: Props) {
       tabIndex={-1}
       {...swallowHostGestures}
       onKeyDown={(e) => {
+        swallowSpace(e);
         // 一次 Esc 只退一层：关掉面板，不让它冒泡成"关闭整个预览"
         if (e.key === 'Escape') {
           e.stopPropagation();
