@@ -23,21 +23,17 @@ const sharp = require('sharp');
 const SIZES = [16, 24, 32, 48, 64, 128, 256];
 const OUT = path.resolve(__dirname, '..', 'build', 'icon.ico');
 const OUT_MODULE = path.resolve(__dirname, '..', 'electron', 'appIcon.ts');
+/** 品牌图的唯一来源：界面（src/components/BrandLogo.tsx）import 的也是这个文件 */
+const BRAND_SVG = path.resolve(__dirname, '..', 'shared', 'brand-mark.svg');
 /** 窗口图标在高 DPI 下会被系统放大，取 64 留足余量；托盘沿用原先的 32 */
 const RUNTIME = { window: 64, tray: 32 };
 
-/** 品牌 indigo（与 src/App.tsx 的 primary.main 同色）：圆角方底 + 一张照片 + 一枚标签 */
-const SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
-  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-    <stop offset="0" stop-color="#4f46e5"/><stop offset="1" stop-color="#4338ca"/>
-  </linearGradient></defs>
-  <rect x="8" y="8" width="240" height="240" rx="52" fill="url(#g)"/>
-  <rect x="56" y="62" width="144" height="108" rx="14" fill="#ffffff" opacity="0.95"/>
-  <circle cx="95" cy="99" r="13" fill="#818cf8"/>
-  <path d="M62 162l46-48 33 33 27-25 30 40H62z" fill="#4f46e5"/>
-  <path d="M146 148h60a12 12 0 0 1 12 12v46a12 12 0 0 1-12 12h-60l-26-35 26-35z" fill="#0ea5e9"/>
-  <circle cx="188" cy="196" r="9" fill="#ffffff"/>
-</svg>`;
+/**
+ * 品牌 indigo（与 src/App.tsx 的 primary.main 同色）：圆角方底 + 一张照片 + 一枚标签。
+ * 从 shared/brand-mark.svg 读，不写在这里——渲染进程顶栏那颗（src/components/BrandLogo.tsx）
+ * import 的是同一个文件，两处各存一份必然漂移成两张图。
+ */
+const SVG = fs.readFileSync(BRAND_SVG, 'utf8');
 
 async function pngAt(size) {
   return sharp(Buffer.from(SVG), { density: 300 })
@@ -114,7 +110,8 @@ function pngSize(buf) {
   const trayPng = images.find((x) => x.size === RUNTIME.tray).buf;
   const moduleSrc = `/**
  * 由 scripts/make-icon.cjs 生成（npm run icon），请勿手改。
- * 与 build/icon.ico 出自同一张品牌 SVG，让安装包 exe、开发态窗口/任务栏、系统托盘是同一张图。
+ * 画稿唯一来源是 shared/brand-mark.svg，与 build/icon.ico 及界面顶栏那颗（src/components/BrandLogo.tsx）同源，
+ * 让安装包 exe、开发态窗口/任务栏、系统托盘和界面是同一张图。
  */
 export const APP_ICON_WINDOW_DATA_URL = 'data:image/png;base64,${windowPng.toString('base64')}';
 export const APP_ICON_TRAY_DATA_URL = 'data:image/png;base64,${trayPng.toString('base64')}';

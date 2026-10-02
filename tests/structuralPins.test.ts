@@ -1,9 +1,10 @@
 // @vitest-environment node
-// 三处守卫检查：U4（userData 目录名）、U5（界面读的字段必须在契约里）、U6（原生菜单不许回来）。
-// 共同点：这三件事在真机上都"看不见"——目录换了只是数据凭空消失、字段读错只是界面少个数字、
+// 守卫检查清单：U4（userData 目录名）、U5（界面读的字段必须在契约里）、U6（原生菜单不许回来）、
+// UiPrefs 落盘白名单、窗口控件自绘、品牌图唯一来源。
+// 共同点：这些事在真机上都"看不见"——目录换了只是数据凭空消失、字段读错只是界面少个数字、
 // 菜单回来了只是按 Alt 多一排按钮。不在测试里钉死，下次改动就会静默复发。
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { join, sep } from 'path';
 
 import { USER_DATA_DIR_NAME, legacyUserDataDirFor, userDataDirFor } from '../electron/userDataDir';
@@ -150,6 +151,37 @@ describe('窗口控件自绘，原生覆盖层不许回来', () => {
       preview,
       '预览覆盖层必须挂在 MUI 模态带上（zIndex.modal），否则它和弹出浮层的先后就没人管'
     ).toMatch(/zIndex:[^\n]*\.zIndex\.modal/);
+  });
+});
+
+/**
+ * 品牌 mark 的画稿只有一份：shared/brand-mark.svg，生成脚本和界面都指向它。
+ * 起因（2026-09-30）：顶栏左上角挂的是 MUI 通用 PhotoLibrary 图标，和任务栏/托盘/安装包那张
+ * 品牌图是两张脸。"同一张图存两份"在真机上不报错，只是哪天又漂成两张，所以钉在源码里。
+ */
+describe('品牌图唯一来源，界面与系统图标不许分家', () => {
+  /** 判代码用法，不判注释：BrandLogo.tsx 的注释里原样写着 PhotoLibrary，剥注释这条会误报 */
+  const codeOnly = (p: string): string =>
+    read(p).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+  it('画稿文件在，生成脚本与界面组件都读它', () => {
+    expect(existsSync(join(root, 'shared', 'brand-mark.svg')), '画稿文件没了就是分家第一步').toBe(true);
+    expect(read(join('shared', 'brand-mark.svg'))).toContain('<svg');
+    expect(codeOnly(join('scripts', 'make-icon.cjs'))).toMatch(/readFileSync\(\s*BRAND_SVG/);
+    expect(codeOnly(join('src', 'components', 'BrandLogo.tsx'))).toMatch(/shared\/brand-mark\.svg/);
+  });
+
+  it('画稿不许再以内联 SVG 的形式回到生成脚本里', () => {
+    // 反证：把那段 <linearGradient> 字面量塞回 make-icon.cjs，这条必须红
+    expect(codeOnly(join('scripts', 'make-icon.cjs'))).not.toContain('<linearGradient');
+  });
+
+  it('顶栏品牌位用 BrandLogo，不许再用 MUI 通用图标', () => {
+    const layout = codeOnly(join('src', 'components', 'AppLayout.tsx'));
+    expect(layout, '顶栏没挂 BrandLogo，界面和任务栏又是两张脸').toMatch(/<BrandLogo\s*\/>/);
+    expect(layout, '顶栏再挂 color="primary" 的 PhotoLibrary 就是回到两张脸').not.toMatch(
+      /<PhotoLibraryIcon[^>]*color="primary"/
+    );
   });
 });
 

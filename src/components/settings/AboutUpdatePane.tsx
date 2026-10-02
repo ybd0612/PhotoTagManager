@@ -10,6 +10,7 @@ import {
   Typography
 } from '@mui/material';
 import { call, getApi } from '../../api';
+import { BrandLogo } from '../BrandLogo';
 import { Hint } from '../Hint';
 import { updateActionLabel, updatePrimaryAction, updateStatusLabel } from '../../utils/updateStatus';
 import packageJson from '../../../package.json';
@@ -35,9 +36,10 @@ export function AboutUpdatePane({ update }: { update: UpdateController }): JSX.E
   return (
     <Stack spacing={2} data-testid="settings-about">
       <Box>
-        <Typography variant="h6" gutterBottom>
-          图片管家 PhotoTagManager
-        </Typography>
+        <Stack direction="row" spacing={1.25} alignItems="center" sx={{ mb: 0.75 }}>
+          <BrandLogo size={32} />
+          <Typography variant="h6">图片管家 PhotoTagManager</Typography>
+        </Stack>
         <Typography variant="body2" color="text.secondary">
           一款 Windows 本机图片管理工具：浏览、搜索、打标、清理，并在本机做 AI 处理。标签直接写进图片文件自身的 XMP 元数据——不搬文件、不建数据库，图片复制或移动后标签跟着走，照片内容不出本机。
         </Typography>
