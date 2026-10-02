@@ -209,17 +209,28 @@ describe('ai/aiService.save —— 移入原图旁', () => {
     await expect(service.save(result.taskId)).rejects.toMatchObject({ code: 'TASK_NOT_FOUND' });
   });
 
-  it('⑤ 保存后暂存文件与索引条目都消失——清理逻辑碰不到已保存成果', async () => {
+  it('⑤ 保存后成品从暂存与索引里消失——清理逻辑碰不到已保存成果', async () => {
     const result = await newPreview();
     await service.save(result.taskId);
     const files = (await readdir(previewDir())).filter((f) => f.endsWith('.png'));
     expect(files).toEqual([]);
-    expect(await service.previewStats()).toMatchObject({ entries: 0, totalBytes: 0 });
+    // 掩码级缓存与成品共用同一份索引：保存只移走成品，掩码必须留着给下次换底色复用
+    // （方案 §6 裁定 3）。所以这里断言的是"没有成品条目"，不是"索引空了"。
+    const index = JSON.parse(await readFile(previewFile('index.json'), 'utf8')) as {
+      entries: Record<string, { fileName: string; kind?: string }>;
+    };
+    const remaining = Object.values(index.entries);
+    expect(remaining.filter((e) => e.fileName.endsWith('.png'))).toEqual([]);
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]!.kind).toBe('mask');
+    expect(await service.previewStats()).toMatchObject({ entries: 1 });
   });
 });
 
 describe('ai/aiService.cleanup —— 双条件 LRU 与安全边界（§5.0 红线 3）', () => {
-  async function readIndex(): Promise<{ entries: Record<string, { fileName: string; sizeBytes: number; lastAccessedAt: number }> }> {
+  async function readIndex(): Promise<{
+    entries: Record<string, { fileName: string; sizeBytes: number; lastAccessedAt: number; kind?: string }>;
+  }> {
     return JSON.parse(await readFile(previewFile('index.json'), 'utf8'));
   }
 
@@ -277,11 +288,13 @@ describe('ai/aiService.cleanup —— 双条件 LRU 与安全边界（§5.0 红�
 
     const size = async (p: string): Promise<number> => (await stat(p)).size;
     const [s1, s2, s3] = [await size(r1.tempPath), await size(r2.tempPath), await size(r3.tempPath)];
-    // 上限给到"必须淘汰最旧一条才装得下"：三条总大小减去最旧那条再加 1 字节
+    // 上限给到"必须淘汰最旧一条才装得下"：索引里除三条成品还有三条掩码（同一套 LRU），
+    // 所以阈值按**全部条目总字节**算，只减掉最旧那条成品的大小
     await setAged(r1.tempPath, 30); // r1 最久未访问
     await setAged(r2.tempPath, 20);
     await setAged(r3.tempPath, 10);
-    await makeService({ retentionDays: 3650, maxBytes: s2 + s3 + 1 });
+    const total = (await service.previewStats()).totalBytes;
+    await makeService({ retentionDays: 3650, maxBytes: total - s1 });
 
     const report = await service.cleanup();
     expect(report.deleted).toBe(1);
@@ -289,6 +302,9 @@ describe('ai/aiService.cleanup —— 双条件 LRU 与安全边界（§5.0 红�
     expect(existsSync(r2.tempPath)).toBe(true);
     expect(existsSync(r3.tempPath)).toBe(true);
     expect(s1 + s2 + s3).toBeGreaterThan(s2 + s3);
+    // 淘汰的是最旧的**成品**，不是刚写的掩码：掩码条目仍完好在索引里
+    const afterIndex = await readIndex();
+    expect(Object.values(afterIndex.entries).filter((e) => e.kind === 'mask')).toHaveLength(3);
   });
 
   it('安全边界：索引被篡改成指向暂存外的绝对路径 → 拒绝删除，外部文件必须还在', async () => {
@@ -303,7 +319,9 @@ describe('ai/aiService.cleanup —— 双条件 LRU 与安全边界（§5.0 红�
       await writeFile(previewFile('index.json'), JSON.stringify(index));
 
       const report = await service.cleanup({ maxBytes: 0 });
-      expect(report).toMatchObject({ deleted: 0, refused: 1 });
+      // 被篡改那条**只清索引不删文件**：refused 1；deleted 1 是掩码条目——
+      // maxBytes:0 的语义就是"把所有缓存清空"，这一条顺带证明掩码也在同一套 LRU 里管着
+      expect(report).toMatchObject({ deleted: 1, refused: 1 });
       expect(existsSync(victim)).toBe(true);
       expect(existsSync(result.tempPath)).toBe(true);
     } finally {
@@ -318,7 +336,8 @@ describe('ai/aiService.cleanup —— 双条件 LRU 与安全边界（§5.0 红�
     await writeFile(previewFile('index.json'), JSON.stringify(index));
 
     const report = await service.cleanup({ maxBytes: 0 });
-    expect(report).toMatchObject({ deleted: 0, refused: 1 });
+    // 越界条目只清索引不删文件（refused 1）；deleted 1 是与它同索引的掩码条目
+    expect(report).toMatchObject({ deleted: 1, refused: 1 });
     expect(existsSync(result.tempPath)).toBe(true);
   });
 
@@ -332,7 +351,8 @@ describe('ai/aiService.cleanup —— 双条件 LRU 与安全边界（§5.0 红�
   it('previewStats 报条目数与总字节，供设置页只读统计', async () => {
     await newPreview();
     const stats = await service.previewStats();
-    expect(stats.entries).toBe(1);
+    // 一次处理留两条条目：成品 PNG + 掩码级缓存（掩码真占着磁盘，统计不许漏它）
+    expect(stats.entries).toBe(2);
     expect(stats.totalBytes).toBeGreaterThan(0);
   });
 });

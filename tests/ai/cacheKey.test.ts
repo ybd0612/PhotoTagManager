@@ -5,8 +5,10 @@ import { createHash } from 'crypto';
 
 import {
   computeCacheKey,
+  computeMaskCacheKey,
   sourceFingerprint,
-  type CacheKeyInput
+  type CacheKeyInput,
+  type CacheMaskKeyInput
 } from '../../electron/ai/cacheKey';
 
 const BASE: CacheKeyInput = {
@@ -110,5 +112,65 @@ describe('ai/cacheKey —— 五元组', () => {
     ).not.toBe(
       computeCacheKey(withOverrides({ postprocessParams: { alphaMatting: { erodeSize: 11 } } }))
     );
+  });
+
+  it('底色：透明 ↔ 白，成品键必须变（§8-3，改参数还拿旧图是静默出错）', () => {
+    const transparent = withOverrides({ postprocessParams: { ...BASE.postprocessParams, bgcolor: null } });
+    const white = withOverrides({ postprocessParams: { ...BASE.postprocessParams, bgcolor: [255, 255, 255, 255] } });
+    expect(computeCacheKey(transparent)).not.toBe(computeCacheKey(white));
+  });
+
+  it('含底色的同一份参数按不同键序书写 → 成品键相同（否则缓存永远不命中）', () => {
+    expect(
+      computeCacheKey(withOverrides({ postprocessParams: { bgcolor: null, threshold: 240, alphaMatting: false } }))
+    ).toBe(
+      computeCacheKey(withOverrides({ postprocessParams: { alphaMatting: false, bgcolor: null, threshold: 240 } }))
+    );
+  });
+});
+
+describe('ai/cacheKey —— 掩码级缓存键（方案 §2 的分界线）', () => {
+  const MASK_BASE = {
+    source: BASE.source,
+    modelSha256: BASE.modelSha256,
+    inputDims: BASE.inputDims,
+    pipelineVersion: BASE.pipelineVersion
+  };
+
+  function maskWithOverrides(patch: Partial<CacheMaskKeyInput>): CacheMaskKeyInput {
+    return { ...MASK_BASE, ...patch };
+  }
+
+  it('掩码键是 40 位 sha1 十六进制', () => {
+    expect(computeMaskCacheKey(MASK_BASE)).toMatch(/^[0-9a-f]{40}$/);
+  });
+
+  it('后处理参数不进掩码键的材料（这条是"分界线"的判据）', () => {
+    // 把 postprocessParams 硬塞进输入对象：实现若把它算进材料，这两个键就会分开。
+    // 成品键同样用这份参数算，两种底色得到两个成品键（上面那条已钉）。
+    const withParams = { ...MASK_BASE, postprocessParams: { bgcolor: [255, 255, 255, 255] } } as CacheMaskKeyInput;
+    expect(computeMaskCacheKey(withParams)).toBe(computeMaskCacheKey(MASK_BASE));
+  });
+
+  it('掩码键 ≠ 同输入的成品键（两级缓存不会互相覆盖）', () => {
+    expect(computeMaskCacheKey(MASK_BASE)).not.toBe(computeCacheKey(BASE));
+  });
+
+  it('分量 1 变：原图 mtime 变 → 掩码键变（原图动过就不许复用旧掩码）', () => {
+    expect(computeMaskCacheKey(maskWithOverrides({ source: { ...BASE.source, mtimeMs: BASE.source.mtimeMs + 1 } }))).not.toBe(
+      computeMaskCacheKey(MASK_BASE)
+    );
+  });
+
+  it('分量 2 变：模型指纹变 → 掩码键变（换模型必须重算）', () => {
+    expect(computeMaskCacheKey(maskWithOverrides({ modelSha256: 'other' }))).not.toBe(computeMaskCacheKey(MASK_BASE));
+  });
+
+  it('分量 3 变：输入尺寸变 → 掩码键变', () => {
+    expect(computeMaskCacheKey(maskWithOverrides({ inputDims: [1, 3, 512, 512] }))).not.toBe(computeMaskCacheKey(MASK_BASE));
+  });
+
+  it('分量 5 变：管线版本变 → 掩码键变', () => {
+    expect(computeMaskCacheKey(maskWithOverrides({ pipelineVersion: 2 }))).not.toBe(computeMaskCacheKey(MASK_BASE));
   });
 });

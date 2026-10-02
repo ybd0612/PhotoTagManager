@@ -1,7 +1,7 @@
 // aiService 编排单测：一次点击串完 下载→加载→推理→写暂存，缓存命中不重跑。
 // 全部注入假 runner / 假下载器，不碰原生推理（真机链路在 inference.integration 与 T14）。
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdir, mkdtemp, rm, readdir, utimes, writeFile } from 'fs/promises';
+import { mkdir, mkdtemp, rm, readdir, utimes, writeFile, stat, readFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -21,6 +21,8 @@ class FakeRunner implements InferenceRunner {
   maxLiveInfer = 0;
   inferError: Error | null = null;
   inferDelayMs = 0;
+  /** 注入掩码内容（默认整幅为 1）；底色类断言需要背景区真的透明 */
+  maskOf: ((w: number, h: number) => Float32Array) | null = null;
   lastDims: number[] | null = null;
   loadedModelId: string | null = null;
   unloadCalls = 0;
@@ -42,7 +44,9 @@ class FakeRunner implements InferenceRunner {
       if (this.inferDelayMs) await new Promise((r) => setTimeout(r, this.inferDelayMs));
       if (this.inferError) throw this.inferError;
       const [, , h, w] = req.dims;
-      return { data: new Float32Array(w * h).fill(1), dims: [1, 1, h, w], outputName: 'fake-out', inferMs: 1 };
+      // 默认整幅为 1（成品全不透明）；底色那条断言要"背景区真的透明"才读得出像素差
+      const data = this.maskOf ? this.maskOf(w, h) : new Float32Array(w * h).fill(1);
+      return { data, dims: [1, 1, h, w], outputName: 'fake-out', inferMs: 1 };
     } finally {
       this.liveInfer -= 1;
     }
@@ -280,12 +284,22 @@ describe('ai/aiService —— 一次点击走完 下载→加载→推理→写�
   it('红线：结果只落 userData/ai-preview，照片目录一个字节都不许多', async () => {
     await store.markPresent();
     const before = await readdir(photoDir);
+    const original = await stat(photoPath);
     await service.run({ absPath: photoPath, capabilityId: 'portrait-cutout' });
     expect(await readdir(photoDir)).toEqual(before);
     const pngs = (await readdir(previewDir())).filter((f) => f.endsWith('.png'));
     expect(pngs).toHaveLength(1);
     expect(pngs[0]).toMatch(/^[0-9a-f]{40}\.png$/);
     expect(before.some((f) => f.endsWith('.png'))).toBe(false);
+
+    // 换底色同样只是往暂存里再写一张成品 + 留一份掩码，照片目录依旧一字节不动（§8-6）
+    await service.run({ absPath: photoPath, capabilityId: 'portrait-cutout', cutout: { bgcolor: 'white' } });
+    expect(await readdir(photoDir)).toEqual(before);
+    expect((await readdir(previewDir())).filter((f) => f.endsWith('.png'))).toHaveLength(2);
+    // 原图本体也没被就地改过：任何一次写入都会动 mtime 或 size
+    const after = await stat(photoPath);
+    expect(after.size).toBe(original.size);
+    expect(after.mtimeMs).toBe(original.mtimeMs);
   });
 
   it('推理输入形状取自清单，服务侧不写死', async () => {
@@ -429,5 +443,108 @@ describe('ai/aiService —— 连续空闲自动释放驻留模型（§5.2 末�
     expect(runner.loadCalls).toEqual(['u2netp', 'u2netp']);
     expect(runner.loadedModelId).toBe('u2netp');
     await service.dispose();
+  });
+});
+
+describe('ai/aiService —— 掩码级缓存 + 底色（切片一，方案 §8-1/2/3）', () => {
+  /** 左 40% 前景、其余透明的掩码：底色要读得出像素差，整幅填 1 的默认假掩码读不出 */
+  function halfForeground(w: number, h: number): Float32Array {
+    const d = new Float32Array(w * h);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) d[y * w + x] = x < w * 0.4 ? 1 : 0;
+    }
+    return d;
+  }
+
+  /** 成品右上角那颗像素（带着通道数一起返回，通道数本身就是"alpha 有没有被铺掉"的读数） */
+  async function cornerPixel(path: string): Promise<number[]> {
+    const raw = await sharp(await readFile(path)).raw().toBuffer({ resolveWithObject: true });
+    const i = (raw.info.width - 1) * raw.info.channels;
+    return Array.from(raw.data.subarray(i, i + raw.info.channels));
+  }
+
+  it('① 改底色不重跑推理：第一次 infer=1，换白底后 infer 仍是 1', async () => {
+    await store.markPresent();
+    const first = await service.run({ absPath: photoPath, capabilityId: 'portrait-cutout' });
+    expect(runner.inferCalls).toBe(1);
+
+    const white = await service.run({
+      absPath: photoPath,
+      capabilityId: 'portrait-cutout',
+      cutout: { bgcolor: 'white' }
+    });
+    expect(runner.inferCalls).toBe(1);
+    expect(white.cacheHit).toBe(false); // 不是拿旧图：成品键含参数（§8-3）
+    expect(white.tempPath).not.toBe(first.tempPath);
+    expect(existsSync(white.tempPath)).toBe(true);
+
+    // 掩码确实**落盘**在 ai-preview/masks 内，不是只活在内存里的一次性对象
+    const masks = await readdir(join(previewDir(), 'masks'));
+    expect(masks).toHaveLength(1);
+    expect(masks[0]).toMatch(/^[0-9a-f]{40}\.mask\.bin$/);
+    // 头部 8 字节写宽高，其余是 float32 逐点数据。尺寸取本次结果报回的那对数：
+    // 形状不在这里写死（红线 2），且裁掉补边后的掩码随图片长宽比变
+    expect(white.maskWidth).toBeGreaterThan(0);
+    expect(white.maskHeight).toBeGreaterThan(0);
+    expect((await stat(join(previewDir(), 'masks', masks[0]!))).size).toBe(
+      8 + white.maskWidth * white.maskHeight * 4
+    );
+
+    // 再换一个底色仍然不重跑；同一份参数第二次直接命中成品缓存
+    await service.run({ absPath: photoPath, capabilityId: 'portrait-cutout', cutout: { bgcolor: 'blue' } });
+    expect(runner.inferCalls).toBe(1);
+    const again = await service.run({ absPath: photoPath, capabilityId: 'portrait-cutout', cutout: { bgcolor: 'blue' } });
+    expect(again.cacheHit).toBe(true);
+    expect(runner.inferCalls).toBe(1);
+  });
+
+  it('① 掩码缓存是"每张图"的，不是全局旁路：换一张图仍然要真推理', async () => {
+    await store.markPresent();
+    await service.run({ absPath: photoPath, capabilityId: 'portrait-cutout' });
+    expect(runner.inferCalls).toBe(1);
+    await service.run({ absPath: photoPath2, capabilityId: 'portrait-cutout' });
+    expect(runner.inferCalls).toBe(2);
+    await service.run({ absPath: photoPath2, capabilityId: 'portrait-cutout', cutout: { bgcolor: 'red' } });
+    expect(runner.inferCalls).toBe(2); // 这张图的掩码已经在了
+    expect(await readdir(join(previewDir(), 'masks'))).toHaveLength(2);
+  });
+
+  it('② 底色真的改变成品像素（读回文件，不是读 store）', async () => {
+    await store.markPresent();
+    runner.maskOf = halfForeground;
+    const transparent = await service.run({ absPath: photoPath, capabilityId: 'portrait-cutout' });
+    const white = await service.run({ absPath: photoPath, capabilityId: 'portrait-cutout', cutout: { bgcolor: 'white' } });
+    expect(runner.inferCalls).toBe(1); // 两张图之间只推理过一次
+
+    // 背景区：透明底留着 alpha=0；白底被铺成纯白且 alpha 通道整个消失（4 通道 → 3 通道）
+    expect((await cornerPixel(transparent.tempPath)).at(-1)).toBe(0);
+    expect(await cornerPixel(white.tempPath)).toEqual([255, 255, 255]);
+
+    // 前景区不受底色污染：两种底的同一颗像素 rgb 相同
+    const raw = await sharp(await readFile(white.tempPath)).raw().toBuffer({ resolveWithObject: true });
+    const fg = Array.from(raw.data.subarray(0, 3));
+    const tRaw = await sharp(await readFile(transparent.tempPath)).raw().toBuffer({ resolveWithObject: true });
+    expect(Array.from(tRaw.data.subarray(0, 3))).toEqual(fg);
+  });
+
+  it('② 原图被改过，掩码缓存必须失效（不许拿旧掩码套新图）', async () => {
+    await store.markPresent();
+    await service.run({ absPath: photoPath, capabilityId: 'portrait-cutout', cutout: { bgcolor: 'white' } });
+    expect(runner.inferCalls).toBe(1);
+    const touched = new Date(Date.now() + 5000);
+    await utimes(photoPath, touched, touched);
+    await service.run({ absPath: photoPath, capabilityId: 'portrait-cutout' });
+    expect(runner.inferCalls).toBe(2);
+    expect(await readdir(join(previewDir(), 'masks'))).toHaveLength(2);
+  });
+
+  it('未点保存：掩码与成品都只在暂存内，照片目录不多一个文件', async () => {
+    await store.markPresent();
+    const before = await readdir(photoDir);
+    const white = await service.run({ absPath: photoPath, capabilityId: 'portrait-cutout', cutout: { bgcolor: 'white' } });
+    expect(white.tempPath.startsWith(previewDir())).toBe(true);
+    const masks = await readdir(join(previewDir(), 'masks'));
+    expect(masks.every((f) => join(previewDir(), 'masks', f).startsWith(previewDir()))).toBe(true);
+    expect(await readdir(photoDir)).toEqual(before);
   });
 });

@@ -61,3 +61,29 @@ export function computeCacheKey(input: CacheKeyInput): string {
   ]);
   return createHash('sha1').update(material).digest('hex');
 }
+
+/**
+ * 掩码级缓存键 = 上面五元组**去掉** `postprocessParams`（方案 §2 的分界线 / 附录 A）。
+ *
+ * 必须去掉它：掩码只是「原图 + 模型 + 输入尺寸 + 预处理管线」的函数，底色这些后处理
+ * 参数改不动它。留在键里就等于把刚拆出来的轻层又焊回重层——换一次底色 → 掩码键跟着变
+ * → 缓存不命中 → 连推理一起重跑，本方案白做。
+ *
+ * 与成品键共用同一个 `canonical()`，不存在"同一份输入两处算出不同结果"的可能。
+ */
+export interface CacheMaskKeyInput {
+  source: SourceImageFingerprint;
+  modelSha256: string;
+  inputDims: number[];
+  pipelineVersion: number;
+}
+
+export function computeMaskCacheKey(input: CacheMaskKeyInput): string {
+  const material = canonical([
+    sourceFingerprint(input.source),
+    input.modelSha256,
+    input.inputDims,
+    input.pipelineVersion
+  ]);
+  return createHash('sha1').update(material).digest('hex');
+}

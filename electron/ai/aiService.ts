@@ -1,17 +1,22 @@
-import { stat, writeFile, access, readFile, rename, rm } from 'fs/promises';
-import { isAbsolute, join, normalize, sep, basename, dirname, extname } from 'path';
+import { stat, writeFile, access, readFile, rename, rm, mkdir } from 'fs/promises';
+import { isAbsolute, join, normalize, sep, basename, dirname, extname, relative } from 'path';
 
 import { capabilities, type CapabilitySpec, type ModelSpec } from './capabilityCatalog';
-import { computeCacheKey } from './cacheKey';
-import { modelDir, previewDir, previewFile, settingsFile } from './paths';
+import { computeCacheKey, computeMaskCacheKey } from './cacheKey';
+import { modelDir, previewDir, previewFile, settingsFile, maskFile, maskFileName, MASK_FILE_EXT } from './paths';
 import { PIPELINE_VERSION, preprocessImage } from './preprocess';
 import { classifyGpuError } from './gpuErrorText';
+import type { AiCutoutParamsPayload } from '../../shared/types';
 import {
   DEFAULT_CUTOUT_PARAMS,
   composeCutoutPng,
   cropMaskPlane,
   getPostprocessor,
+  maskFromBytes,
+  maskToBytes,
+  resolveBgColorId,
   toCacheParams,
+  type CutoutParams,
   type MaskPlane
 } from './postprocess';
 import type { InferenceRunner } from './runner';
@@ -53,6 +58,14 @@ export interface RunRequest {
   /** 首次下载的代价告知已由界面确认过（AG2）。已下载时不需要该标志。 */
   downloadApproved?: boolean;
   backend?: 'dml' | 'cpu';
+  /**
+   * 抠图后处理参数（第一版只有底色）。
+   *
+   * 以前 `execute()` 里把 `DEFAULT_CUTOUT_PARAMS` 写死，"改个参数"在渲染层根本没有入口。
+   * 方案 §2 的分界线要求参数只作用于轻的那一层，前提是它得先从请求里进来（附录 A
+   * 「参数流转」），所以**不许**在主进程另配一份默认值当事实源。未提供时取默认值，与旧行为等价。
+   */
+  cutout?: AiCutoutParamsPayload;
 }
 
 export interface RunResult {
@@ -86,7 +99,7 @@ export interface CleanupReport {
 }
 
 export interface PreviewIndexEntry {
-  /** 相对暂存目录的文件名（正常就是 `<五元组键>.png`） */
+  /** 相对暂存目录的文件名（成品 `<五元组键>.png`，掩码 `masks/<掩码键>.mask.bin`） */
   fileName: string;
   sizeBytes: number;
   sourceAbsPath: string;
@@ -94,11 +107,44 @@ export interface PreviewIndexEntry {
   modelId: string;
   createdAt: number;
   lastAccessedAt: number;
+  /**
+   * 暂存条目的种类：成品图 / 掩码。两级缓存共用**同一份**索引，
+   * 于是保留期与容量上限那套 LRU 天然覆盖掩码，不需要第二套清理（§6 裁定 3）。
+   * 缺省视为 'result'——旧索引文件里没有这个字段，不能因为升级就把成品当掩码处理。
+   */
+  kind?: PreviewEntryKind;
 }
 
 interface PreviewIndex {
   version: 1;
   entries: Record<string, PreviewIndexEntry>;
+}
+
+export type PreviewEntryKind = 'result' | 'mask';
+
+/** 掩码文件按后缀认（`<掩码键>.mask.bin` 带两个点，不能用 extname 判类型）。 */
+function isMaskFileName(fileName: string): boolean {
+  return fileName.endsWith(MASK_FILE_EXT);
+}
+
+function kindOfFileName(fileName: string): PreviewEntryKind {
+  return isMaskFileName(fileName) ? 'mask' : 'result';
+}
+
+/**
+ * 索引的键空间。成品与掩码的键都是 40 位 sha1，各自独立算出来撞不上，但也没人保证——
+ * 所以掩码加 `mask/` 前缀，两类互不覆盖。
+ * 成品键保持**裸键**（剥单个扩展名，与升级前一致）：老索引里留下的成品条目仍能被删得掉，
+ * 不会变成"占着盘查不到"的幽灵。
+ */
+function indexKeyOf(fileName: string): string {
+  if (isMaskFileName(fileName)) return `mask/${basename(fileName, MASK_FILE_EXT)}`;
+  return basename(fileName, extname(fileName));
+}
+
+/** 索引里的 fileName 一律是**相对暂存目录**的路径：掩码在 masks/ 子目录里。 */
+function previewRelName(absPath: string): string {
+  return relative(previewDir(), absPath);
 }
 
 /** 默认保留 30 天（§4.7 建议值，设置页可改）。 */
@@ -508,10 +554,65 @@ export class AiService {
     return { entries, totalBytes };
   }
 
-  /** 记录一次可保存的结果，并登记进暂存索引（供 LRU 与保存用）。 */
+  /** 记录一次可保存的结果（`ai:save(taskId)` 靠它找回暂存文件与原图）。 */
   private async settleRun(result: RunResult): Promise<RunResult> {
     this.finished.set(result.taskId, result);
     return result;
+  }
+
+  /** 登记成品条目，索引与掩码共用同一份。 */
+  private async recordPreviewEntry(result: RunResult): Promise<void> {
+    await this.upsertPreviewEntry(result.tempPath, {
+      sourceAbsPath: result.sourceAbsPath,
+      capabilityId: result.capabilityId,
+      modelId: result.modelId
+    });
+  }
+
+  /**
+   * 把一个暂存文件登记进**同一份**索引（成品与掩码共用），于是保留期与容量上限那套
+   * LRU 天然覆盖掩码，不需要第二套清理机制（§6 裁定 3）。
+   */
+  private async upsertPreviewEntry(
+    absPath: string,
+    meta: Pick<PreviewIndexEntry, 'sourceAbsPath' | 'capabilityId' | 'modelId'>
+  ): Promise<void> {
+    const index = await this.readPreviewIndex();
+    const now = (this.deps.previewRetention?.now ?? Date.now)();
+    let sizeBytes = 0;
+    try {
+      sizeBytes = (await stat(absPath)).size;
+    } catch {
+      return;
+    }
+    const fileName = previewRelName(absPath);
+    const key = indexKeyOf(fileName);
+    index.entries[key] = {
+      fileName,
+      sizeBytes,
+      ...meta,
+      createdAt: index.entries[key]?.createdAt ?? now,
+      lastAccessedAt: now,
+      kind: kindOfFileName(fileName)
+    };
+    await this.writePreviewIndex(index);
+  }
+
+  private async removePreviewEntry(tempPath: string): Promise<void> {
+    const index = await this.readPreviewIndex();
+    const key = indexKeyOf(previewRelName(tempPath));
+    if (!index.entries[key]) return;
+    delete index.entries[key];
+    await this.writePreviewIndex(index);
+  }
+
+  /** 缓存命中也要刷时间，否则 LRU 记的是"第一次生成"而不是"最近在用"。 */
+  private async touchPreviewEntry(tempPath: string): Promise<void> {
+    const index = await this.readPreviewIndex();
+    const key = indexKeyOf(previewRelName(tempPath));
+    if (!index.entries[key]) return;
+    index.entries[key].lastAccessedAt = (this.deps.previewRetention?.now ?? Date.now)();
+    await this.writePreviewIndex(index);
   }
 
   private async readPreviewIndex(): Promise<PreviewIndex> {
@@ -527,45 +628,6 @@ export class AiService {
     const tmp = previewFile(`${PREVIEW_INDEX_NAME}.tmp`);
     await writeFile(tmp, JSON.stringify(index, null, 2));
     await rename(tmp, previewFile(PREVIEW_INDEX_NAME));
-  }
-
-  private async recordPreviewEntry(result: RunResult): Promise<void> {
-    const index = await this.readPreviewIndex();
-    const now = (this.deps.previewRetention?.now ?? Date.now)();
-    let sizeBytes = 0;
-    try {
-      sizeBytes = (await stat(result.tempPath)).size;
-    } catch {
-      return;
-    }
-    const key = basename(result.tempPath, extname(result.tempPath));
-    index.entries[key] = {
-      fileName: basename(result.tempPath),
-      sizeBytes,
-      sourceAbsPath: result.sourceAbsPath,
-      capabilityId: result.capabilityId,
-      modelId: result.modelId,
-      createdAt: index.entries[key]?.createdAt ?? now,
-      lastAccessedAt: now
-    };
-    await this.writePreviewIndex(index);
-  }
-
-  private async removePreviewEntry(tempPath: string): Promise<void> {
-    const index = await this.readPreviewIndex();
-    const key = basename(tempPath, extname(tempPath));
-    if (!index.entries[key]) return;
-    delete index.entries[key];
-    await this.writePreviewIndex(index);
-  }
-
-  /** 缓存命中也要刷时间，否则 LRU 记的是"第一次生成"而不是"最近在用"。 */
-  private async touchPreviewEntry(tempPath: string): Promise<void> {
-    const index = await this.readPreviewIndex();
-    const key = basename(tempPath, extname(tempPath));
-    if (!index.entries[key]) return;
-    index.entries[key].lastAccessedAt = (this.deps.previewRetention?.now ?? Date.now)();
-    await this.writePreviewIndex(index);
   }
 
   private async execute(taskId: string, req: RunRequest, signal: AbortSignal): Promise<RunResult> {
@@ -588,9 +650,12 @@ export class AiService {
     }
     if (!sourceStat.isFile()) throw new AiTaskError('SOURCE_MISSING', `这个目标不是一张图片：${req.absPath}`);
 
-    const params = toCacheParams(DEFAULT_CUTOUT_PARAMS);
+    // 参数从请求里带进来（附录 A「参数流转」）：写死在这里就等于面板改了也没人读。
+    const cutout = resolveCutoutParams(req.cutout);
+    const params = toCacheParams(cutout);
+    const source = { absPath: req.absPath, mtimeMs: sourceStat.mtimeMs, size: sourceStat.size };
     const key = computeCacheKey({
-      source: { absPath: req.absPath, mtimeMs: sourceStat.mtimeMs, size: sourceStat.size },
+      source,
       modelSha256: model.sha256,
       inputDims: model.inputDims,
       postprocessParams: params,
@@ -617,6 +682,75 @@ export class AiService {
       return this.settleRun(cached);
     }
 
+    // ── 分界线：这张图的掩码算过没有（方案 §2）────────────────────────────
+    // 掩码键**不含**后处理参数（附录 A），所以换底色会走到这里就停住，不必回头重跑 GPU。
+    const maskKey = computeMaskCacheKey({
+      source,
+      modelSha256: model.sha256,
+      inputDims: model.inputDims,
+      pipelineVersion: PIPELINE_VERSION
+    });
+    const maskPath = maskFile(maskFileName(maskKey));
+    const cachedMask = await readMaskPlane(maskPath);
+    let mask: MaskPlane;
+    if (cachedMask) {
+      mask = cachedMask;
+      await this.touchPreviewEntry(maskPath);
+    } else {
+      mask = await this.inferMaskPlane(taskId, req, model, signal);
+      // 写失败不致命：这一次照样能出图，只是下次还要重跑推理；
+      // 抛错反而是把已经花掉的 GPU 时间扔掉。
+      await writeMaskPlane(maskPath, mask).catch(() => undefined);
+      if (await exists(maskPath)) {
+        await this.upsertPreviewEntry(maskPath, {
+          sourceAbsPath: req.absPath,
+          capabilityId: cap.id,
+          modelId: model.id
+        });
+      }
+    }
+    this.throwIfCancelled(taskId);
+
+    // ── 合成（底色在这一步铺，方案附录 A）→ 写暂存 ─────────────────────────
+    this.emit(taskId, 'encode', 0);
+    const composed = await composeCutoutPng(req.absPath, mask, cutout);
+    try {
+      await writeFile(tempPath, composed.png);
+    } catch (err) {
+      // §6：写盘失败要把半成品清掉，别在暂存里留下半个文件
+      await removeQuietly(tempPath);
+      throw new AiTaskError('WRITE_PREVIEW_FAILED', `写入预览暂存失败：${errorMessage(err)}`);
+    }
+    this.throwIfCancelled(taskId);
+
+    const fresh: RunResult = {
+      taskId,
+      tempPath,
+      sourceAbsPath: req.absPath,
+      cacheHit: false,
+      didApplySigmoid: composed.didApplySigmoid,
+      maskWidth: composed.maskWidth,
+      maskHeight: composed.maskHeight,
+      capabilityId: cap.id,
+      modelId: model.id,
+      actionTag: cap.actionTag
+    };
+    await this.recordPreviewEntry(fresh);
+    return this.settleRun(fresh);
+  }
+
+  /**
+   * 分界线**以上**那一段（方案 §2 的"重"侧）：确保模型就绪 → 预处理 → 推理 → 裁掉补边。
+   *
+   * 只在掩码缓存没命中时才走到这里。一次点击走完 下载→加载→推理 是 D14 的口径，
+   * 唯一的询问是首次下载前那一句代价告知（AG2）。
+   */
+  private async inferMaskPlane(
+    taskId: string,
+    req: RunRequest,
+    model: ModelSpec,
+    signal: AbortSignal
+  ): Promise<MaskPlane> {
     // ── 确保模型就绪（下载是这一步的内部细节，不是用户步骤）─────────────
     const status = await this.deps.store.status(model.id);
     if (status === 'downloading') {
@@ -679,39 +813,14 @@ export class AiService {
     }
     this.throwIfCancelled(taskId);
 
-    // ── 掩码裁掉补边 → 映回原图 → 合成 → 写暂存 ─────────────────────────
-    this.emit(taskId, 'encode', 0);
+    // 掩码裁掉补边：这一步之后的产物就是本方案缓存的那一层
     const full = toMaskPlane(reply.data, reply.dims);
-    const mask = cropMaskPlane(full, {
+    return cropMaskPlane(full, {
       x: input.padX,
       y: input.padY,
       width: input.contentWidth,
       height: input.contentHeight
     });
-    const composed = await composeCutoutPng(req.absPath, mask, DEFAULT_CUTOUT_PARAMS);
-    try {
-      await writeFile(tempPath, composed.png);
-    } catch (err) {
-      // §6：写盘失败要把半成品清掉，别在暂存里留下半个文件
-      await removeQuietly(tempPath);
-      throw new AiTaskError('WRITE_PREVIEW_FAILED', `写入预览暂存失败：${errorMessage(err)}`);
-    }
-    this.throwIfCancelled(taskId);
-
-    const fresh: RunResult = {
-      taskId,
-      tempPath,
-      sourceAbsPath: req.absPath,
-      cacheHit: false,
-      didApplySigmoid: composed.didApplySigmoid,
-      maskWidth: composed.maskWidth,
-      maskHeight: composed.maskHeight,
-      capabilityId: cap.id,
-      modelId: model.id,
-      actionTag: cap.actionTag
-    };
-    await this.recordPreviewEntry(fresh);
-    return this.settleRun(fresh);
   }
 
   private throwIfCancelled(taskId: string): void {
@@ -765,6 +874,33 @@ function toMaskPlane(data: Float32Array, dims: number[]): MaskPlane {
     throw new AiTaskError('UNEXPECTED_OUTPUT', `模型返回的数据不完整，已中止（需要 ${width}×${height}，实际 ${data.length}）`);
   }
   return { data: data.subarray(0, width * height), width, height };
+}
+
+/**
+ * 请求带来的抠图参数 → 完整 `CutoutParams`。
+ *
+ * 底色只认渲染层传来的预设 id：RGBA 数值本身留在 `BG_COLOR_PRESETS`，界面不抄第二份，
+ * 于是"证件照蓝底到底是哪个蓝"只有一处定义。认不出来的 id 当透明处理，
+ * 宁可不铺底色，也不要替用户猜一个颜色写进他的成品里。
+ */
+export function resolveCutoutParams(raw: AiCutoutParamsPayload | undefined): CutoutParams {
+  if (!raw?.bgcolor) return { ...DEFAULT_CUTOUT_PARAMS };
+  return { ...DEFAULT_CUTOUT_PARAMS, bgcolor: resolveBgColorId(raw.bgcolor) };
+}
+
+/** 掩码缓存落盘（`ai-preview/masks/<掩码键>.mask.bin`）；目录随首次写入创建。 */
+async function writeMaskPlane(path: string, mask: MaskPlane): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, maskToBytes(mask));
+}
+
+/** 读掩码缓存。文件不在、读坏了、形状对不上一律返回 null——按"没有缓存"重跑推理。 */
+async function readMaskPlane(path: string): Promise<MaskPlane | null> {
+  try {
+    return maskFromBytes(await readFile(path));
+  } catch {
+    return null;
+  }
 }
 
 /**

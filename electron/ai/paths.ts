@@ -67,6 +67,31 @@ export function previewFile(fileName: string): string {
   return join(previewDir(), fileName);
 }
 
+/**
+ * 掩码级缓存目录：预览暂存**之内**的子目录（方案 §6 裁定 3 / 附录 A）。
+ *
+ * 放在 `ai-preview/` 里而不是另起一个目录，是为了让现成的那套 LRU 索引和
+ * "清理只允许作用于暂存目录"这条红线（§5.0 红线 3）天然把它一起管住——
+ * 不新建第二套清理机制，也就少一处会被忘记加前缀校验的删除入口。
+ * 目录本身不在 `configureAiPaths` 里预建：只有真算出掩码才会写，空目录是纯噪音。
+ */
+const MASKS_DIR_NAME = 'masks';
+
+export function masksDir(): string {
+  return join(previewDir(), MASKS_DIR_NAME);
+}
+
+export function maskFile(fileName: string): string {
+  return join(masksDir(), fileName);
+}
+
+/** 掩码文件名 = `<掩码键>.mask.bin`；文件头自带宽高，所以键本身就够定位一个掩码。 */
+export const MASK_FILE_EXT = '.mask.bin';
+
+export function maskFileName(cacheKey: string): string {
+  return `${cacheKey}${MASK_FILE_EXT}`;
+}
+
 /** AI 偏好（后处理参数、暂存保留期与容量上限）。 */
 export function settingsFile(): string {
   return join(root(), SETTINGS_FILE_NAME);

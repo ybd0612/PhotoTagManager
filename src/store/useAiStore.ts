@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { call, getApi } from '../api';
 import type {
   AiBackend,
+  AiBgColorId,
   AiCapabilityView,
   AiCatalogResult,
   AiDonePayload,
@@ -65,6 +66,12 @@ interface AiState {
    */
   backend: AiBackend;
   /**
+   * 抠图底色（详情页参数面板第一版唯一的参数）。与 backend 同一条口径：**会话内记住、
+   * 重启回默认**，不写进 settings.json（方案 §6 裁定 2）——它是"我正在处理这张图"的现场
+   * 设置，不是全局偏好，所以也不进设置页（§3 表格里那条零输入控件的断言仍然成立）。
+   */
+  bgcolor: AiBgColorId;
+  /**
    * 对比模式与按住态。舞台在大图区、动作在底栏，是两个组件共享同一份状态，
    * 所以放这里而不是留在某个组件的 local state（放组件里就得把它们再合并回去）。
    */
@@ -82,6 +89,8 @@ interface AiState {
   /** 主按钮文案：恒定取清单里的行为名，不随内部状态变（D13） */
   primaryLabel: (capabilityId?: string) => string;
   setBackend: (backend: AiBackend) => void;
+  /** 面板选底色：写入状态后对**当前这张图**重跑一次处理（走掩码缓存，不重推理）。 */
+  setBgColor: (bgcolor: AiBgColorId, absPath?: string, capabilityId?: string) => Promise<void>;
   setCompareMode: (mode: AiCompareMode) => void;
   setHoldingOriginal: (holding: boolean) => void;
   requestRun: (absPath: string, capabilityId?: string) => Promise<void>;
@@ -101,6 +110,7 @@ export const useAiStore = create<AiState>((set, get) => ({
   catalog: null,
   stats: null,
   backend: 'dml',
+  bgcolor: 'transparent',
   compareMode: 'hold',
   holdingOriginal: false,
   task: null,
@@ -170,6 +180,20 @@ export const useAiStore = create<AiState>((set, get) => ({
 
   setBackend: (backend) => set({ backend }),
 
+  /**
+   * 选底色 = 写状态 + 对当前这张图重跑一次处理。
+   *
+   * "重跑"听着像又要等 GPU，其实不会：成品缓存键含参数所以拿不到旧图（这是对的），
+   * 而掩码缓存键**不含**参数，于是主进程直接复用现成掩码，只重算合成那一段。
+   * 这条口径要靠集成测试的推理次数钉住（方案 §8-1），不能靠"感觉变快了"。
+   */
+  setBgColor: async (bgcolor, absPath, capabilityId) => {
+    set({ bgcolor });
+    const target = absPath ?? get().result?.sourceAbsPath;
+    if (!target) return; // 还没有结果可选底色：面板此时也不会出现
+    await get().startRun(target, capabilityId ?? get().result?.capabilityId);
+  },
+
   setCompareMode: (compareMode) => set({ compareMode }),
 
   setHoldingOriginal: (holdingOriginal) => set({ holdingOriginal }),
@@ -197,10 +221,19 @@ export const useAiStore = create<AiState>((set, get) => ({
     const caps = get().usableCapabilities();
     const cap = capabilityId ? caps.find((c) => c.id === capabilityId) : caps[0];
     if (!cap) return;
-    set({ result: null, error: null, ...COMPARE_RESET });
+    // 同一张图重跑（换底色走的就是这条路）时保留上一次结果：清掉会让大图区从抠图结果
+    // 闪回原图、浮层面板跟着消失，用户选完一个颜色就找不到第二个颜色的入口。换图才复位。
+    const prev = get().result;
+    set({ result: prev?.sourceAbsPath === absPath ? prev : null, error: null, ...COMPARE_RESET });
     try {
       const ack = await call(
-        getApi().aiRun({ absPath, capabilityId: cap.id, downloadApproved, backend: get().backend })
+        getApi().aiRun({
+          absPath,
+          capabilityId: cap.id,
+          downloadApproved,
+          backend: get().backend,
+          cutout: { bgcolor: get().bgcolor }
+        })
       );
       set({ task: { taskId: ack.taskId, absPath, capabilityId: cap.id, phase: 'load', percent: 0 } });
     } catch (err) {

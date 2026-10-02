@@ -8,12 +8,18 @@ import { inflateSync } from 'zlib';
 import sharp from 'sharp';
 
 import {
+  BG_COLOR_PRESETS,
   DEFAULT_CUTOUT_PARAMS,
   isAlreadyProbability,
+  maskFromBytes,
+  maskToBytes,
+  normalizeBgColor,
+  resolveBgColorId,
   toAlphaBytes,
   toCacheParams,
   composeCutoutPng,
   getPostprocessor,
+  type CutoutParams,
   type MaskPlane
 } from '../../electron/ai/postprocess';
 import { computeCacheKey, type CacheKeyInput } from '../../electron/ai/cacheKey';
@@ -247,5 +253,125 @@ describe('ai/postprocess —— 后处理函数注册表（D7 ②）', () => {
 
   it('未注册的 id 报可读错误，不静默返回 undefined', () => {
     expect(() => getPostprocessor('no-such-thing')).toThrow(/no-such-thing/);
+  });
+});
+
+/** 左半前景、右半透明的掩码：右上角那颗像素就是"底色有没有真铺上"的读数点 */
+function halfForegroundMask(): MaskPlane {
+  return plane(8, 4, (x) => (x < 4 ? 1 : 0));
+}
+
+async function rawOf(png: Buffer): Promise<{ data: Buffer; channels: number; width: number }> {
+  const raw = await sharp(png).raw().toBuffer({ resolveWithObject: true });
+  return { data: raw.data, channels: raw.info.channels, width: raw.info.width };
+}
+
+/** 取某个像素（按该图的通道数定位） */
+function pixelAt(img: { data: Buffer; channels: number; width: number }, x: number, y: number): number[] {
+  const i = (y * img.width + x) * img.channels;
+  return Array.from(img.data.subarray(i, i + img.channels));
+}
+
+describe('ai/postprocess —— 底色（切片一唯一的可调参数）', () => {
+  it('底色真的改变输出像素（§8-2）：透明底 vs 白/蓝/红，背景那颗像素各不相同', async () => {
+    const src = await pngWithColors();
+    const mask = halfForegroundMask();
+
+    const transparent = await composeCutoutPng(src, mask, { ...DEFAULT_CUTOUT_PARAMS, bgcolor: null });
+    const tRaw = await rawOf(transparent.png);
+    expect(tRaw.channels).toBe(4);
+    // 透明像素本身不带颜色信息（成品里那颗是 0,0,0），所以这里只钉 alpha
+    expect(pixelAt(tRaw, 7, 0)).toEqual([0, 0, 0, 0]);
+
+    for (const preset of BG_COLOR_PRESETS) {
+      if (!preset.rgba) continue;
+      const out = await composeCutoutPng(src, mask, { ...DEFAULT_CUTOUT_PARAMS, bgcolor: preset.rgba });
+      const raw = await rawOf(out.png);
+      // 铺上底色 = alpha 这一波段被压掉（实测 flatten 把通道从 4 降到 3）
+      expect(raw.channels).toBe(3);
+      expect(pixelAt(raw, 7, 0)).toEqual(preset.rgba.slice(0, 3));
+      expect(out.png.equals(transparent.png)).toBe(false);
+    }
+  });
+
+  it('底色不许污染前景：同一片前景像素在透明底与白底下完全一致', async () => {
+    const src = await pngWithColors();
+    const mask = halfForegroundMask();
+    const transparent = await rawOf((await composeCutoutPng(src, mask)).png);
+    const white = await rawOf(
+      (await composeCutoutPng(src, mask, { ...DEFAULT_CUTOUT_PARAMS, bgcolor: [255, 255, 255, 255] })).png
+    );
+    expect(pixelAt(white, 0, 0)).toEqual(pixelAt(transparent, 0, 0).slice(0, 3));
+  });
+
+  it('铺过底色后 iCCP 仍在（§4.4：宽色域照片不得因为重编码偏色）', async () => {
+    const src = await pngWithColors();
+    const out = await composeCutoutPng(src, halfForegroundMask(), {
+      ...DEFAULT_CUTOUT_PARAMS,
+      bgcolor: [67, 135, 242, 255]
+    });
+    expect(iccOf(out.png)).not.toBeNull();
+  });
+
+  it('底色不进 alpha 计算：同一份掩码换底色，alpha 字节必须一模一样', () => {
+    const m = halfForegroundMask();
+    const asParams = (bgcolor: [number, number, number, number] | null): CutoutParams => ({
+      ...DEFAULT_CUTOUT_PARAMS,
+      bgcolor
+    });
+    const transparent = toAlphaBytes(m, { min: 0, max: 1 }, asParams(null));
+    const white = toAlphaBytes(m, { min: 0, max: 1 }, asParams([255, 255, 255, 255]));
+    expect(Array.from(white.alpha)).toEqual(Array.from(transparent.alpha));
+  });
+
+  it('残缺或非法的底色一律当透明，绝不猜一个颜色', () => {
+    expect(normalizeBgColor([255])).toBeNull(); // 会被 sharp 读成纯红——用户选白、出图变红且不报错
+    expect(normalizeBgColor([255, 255, 255])).toBeNull();
+    expect(normalizeBgColor([255, 255, 255, 999])).toBeNull();
+    expect(normalizeBgColor(['255', '255', '255', '255'])).toBeNull();
+    expect(normalizeBgColor(null)).toBeNull();
+    expect(normalizeBgColor([255, 255, 255, 255])).toEqual([255, 255, 255, 255]);
+    expect(normalizeBgColor([254.6, 255.2, 255, 255])).toEqual([255, 255, 255, 255]); // 四舍五入后仍在合法区间
+  });
+
+  it('预设 id 认不出来就当透明；透明这个 id 也当透明', () => {
+    expect(resolveBgColorId('transparent')).toBeNull();
+    expect(resolveBgColorId('chartreuse')).toBeNull();
+    expect(resolveBgColorId('white')).toEqual([255, 255, 255, 255]);
+  });
+
+  it('四块色板齐备，且 id 与面板上的四选一对得上（方案 §4）', () => {
+    expect(BG_COLOR_PRESETS.map((p) => p.id)).toEqual(['transparent', 'white', 'blue', 'red']);
+  });
+});
+
+describe('ai/postprocess —— 掩码级缓存的字节往返', () => {
+  it('写出去再读回来，宽高与逐点数据完全一致', () => {
+    const m = plane(5, 3, (x, y) => (x * 7 + y) / 100);
+    const back = maskFromBytes(maskToBytes(m));
+    expect(back).not.toBeNull();
+    expect(back!.width).toBe(5);
+    expect(back!.height).toBe(3);
+    expect(Array.from(back!.data)).toEqual(Array.from(m.data));
+  });
+
+  it('文件被截断或头部尺寸对不上 → 判为"没有缓存"，不许把垃圾当掩码合成出去', () => {
+    const m = plane(4, 4, () => 0.5);
+    const bytes = maskToBytes(m);
+    expect(maskFromBytes(bytes.subarray(0, bytes.length - 4))).toBeNull();
+    expect(maskFromBytes(bytes.subarray(0, 20))).toBeNull();
+    expect(maskFromBytes(Buffer.alloc(0))).toBeNull();
+    // 头部写着 4×4，实际数据只有 2×2：尺寸校验必须拦住
+    const lying = Buffer.alloc(8 + 4 * 4);
+    lying.writeUInt32LE(4, 0);
+    lying.writeUInt32LE(4, 4);
+    expect(maskFromBytes(lying)).toBeNull();
+  });
+
+  it('零掩码（全透明）也能往返——不许把合法的全 0 数据当成空文件', () => {
+    const m = plane(3, 2, () => 0);
+    const back = maskFromBytes(maskToBytes(m));
+    expect(back).not.toBeNull();
+    expect(Array.from(back!.data)).toEqual([0, 0, 0, 0, 0, 0]);
   });
 });

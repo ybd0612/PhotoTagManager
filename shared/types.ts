@@ -158,6 +158,18 @@ export interface AiCatalogResult {
 /** 用户显式选择的推理后端：默认走 GPU（DirectML），CPU 是慢速兜底、只能由人勾选 */
 export type AiBackend = 'dml' | 'cpu';
 
+/**
+ * 抠图底色预设的标识（方案 §4：第一版面板只放这一个参数）。
+ * 渲染层与主进程之间**只传这个 id、不传颜色数组**——RGBA 的唯一事实源在主进程
+ * `BG_COLOR_PRESETS`，界面里再抄一份就成了第二处事实源（"证件照蓝底是哪个蓝"两处答案）。
+ */
+export type AiBgColorId = 'transparent' | 'white' | 'blue' | 'red';
+
+/** 详情页参数面板带过去的抠图参数。 */
+export interface AiCutoutParamsPayload {
+  bgcolor?: AiBgColorId;
+}
+
 export interface AiRunRequest {
   absPath: string;
   capabilityId: string;
@@ -166,6 +178,12 @@ export interface AiRunRequest {
   downloadApproved?: boolean;
   /** 显式选 CPU 慢速模式（D12：必须用户显式勾选，不允许无声降级）。变化时主进程必须重建会话 */
   backend?: AiBackend;
+  /**
+   * 抠图后处理参数。以前主进程把默认值写死在 `execute()` 里，改参数在请求上没有入口；
+   * 面板改了要在这里带上，否则"改了就能看出效果"无从谈起（方案附录 A「参数流转」）。
+   * 与 backend 同一条口径：会话内记住、重启回默认，不写进 settings.json（§6 裁定 2）。
+   */
+  cutout?: AiCutoutParamsPayload;
 }
 
 /** ai:run 立刻回 taskId；进度与结果一律走事件（一次点击内部走完下载与加载） */

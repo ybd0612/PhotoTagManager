@@ -26,6 +26,7 @@ import { useAppStore } from '../store/useAppStore';
 import { useAiStore } from '../store/useAiStore';
 import { AiActionSplitButton } from './AiActionSplitButton';
 import { AiCompareActions, AiCompareStage, useCompareResult } from './AiCompareView';
+import { CutoutParamsPanel } from './CutoutParamsPanel';
 import { overlay, px, tokens } from '../theme/tokens';
 import type { ImageInfo } from '../../shared/types';
 
@@ -442,6 +443,9 @@ export function PreviewOverlay(): JSX.Element | null {
             {Math.round(zoom * 100)}% · 双击还原
           </Typography>
         )}
+        {/* 参数面板是**浮层**，挂在大图区里而不是底栏的 flex 子项：
+            展开前后大图区高度必须一样（方案 §8-5），底栏那 103 px 不能再被吃一行 */}
+        {compare && <CutoutParamsPanel absPath={image.absPath} />}
       </Box>
 
       {/* AI 失败要看得见：一条错误条，不弹窗、不打断浏览 */}
