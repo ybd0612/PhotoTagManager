@@ -93,6 +93,10 @@ class FakeAiService implements AiServiceView {
     return { savedPath: `C:/p/IMG_0001.cutout.png`, targetName: 'IMG_0001.cutout.png', renamed: false, overwrote: false, tagsWritten: [] };
   }
 
+  async editMask() {
+    return { tempPath: 'C:/userData/ai-preview/edited.png', maskCanUndo: true, maskCanRedo: false };
+  }
+
   async previewStats() {
     return { entries: 2, totalBytes: 3000 };
   }

@@ -7,6 +7,7 @@ import type {
   AiCatalogResult,
   AiDonePayload,
   AiErrorPayload,
+  AiMaskEditRequest,
   AiPhase,
   AiProgressPayload,
   AiSaveResult,
@@ -79,6 +80,7 @@ interface AiState {
   holdingOriginal: boolean;
   task: AiTask | null;
   result: AiDonePayload | null;
+  maskEditing: boolean;
   error: AiErrorPayload | null;
   pendingConfirm: AiPendingConfirm | null;
   init: () => void;
@@ -99,6 +101,7 @@ interface AiState {
   dismissConfirm: () => void;
   cancelRun: () => Promise<void>;
   saveResult: () => Promise<AiSaveResult | null>;
+  editMask: (request: AiMaskEditRequest) => Promise<void>;
   clearResult: () => void;
   modelAction: (modelId: string, action: 'download' | 'unload' | 'delete' | 'set-default') => Promise<void>;
   dismissError(): void;
@@ -115,6 +118,7 @@ export const useAiStore = create<AiState>((set, get) => ({
   holdingOriginal: false,
   task: null,
   result: null,
+  maskEditing: false,
   error: null,
   pendingConfirm: null,
 
@@ -130,7 +134,7 @@ export const useAiStore = create<AiState>((set, get) => ({
     });
     api.onAiDone((payload) => {
       // 完成后清进行中标记，但保留结果给对比视图
-      set({ task: null, result: payload, error: null });
+      set({ task: null, result: payload, maskEditing: false, bgcolor: payload.cutout?.bgcolor ?? get().bgcolor, error: null });
       // 驻留状态是清单里从主进程取来的快照：不重取，跑完这一次也显示不出"已加载"。
       // 缓存命中同样要刷——那时驻留可能早被用户点卸载改掉了
       void get().refreshCatalog();
@@ -188,6 +192,7 @@ export const useAiStore = create<AiState>((set, get) => ({
    * 这条口径要靠集成测试的推理次数钉住（方案 §8-1），不能靠"感觉变快了"。
    */
   setBgColor: async (bgcolor, absPath, capabilityId) => {
+    if (get().maskEditing) return;
     set({ bgcolor });
     const target = absPath ?? get().result?.sourceAbsPath;
     if (!target) return; // 还没有结果可选底色：面板此时也不会出现
@@ -199,8 +204,10 @@ export const useAiStore = create<AiState>((set, get) => ({
   setHoldingOriginal: (holdingOriginal) => set({ holdingOriginal }),
 
   requestRun: async (absPath, capabilityId) => {
+    if (get().maskEditing) return;
     // 清单可能还没回来（首帧就点了）：先自愈，不能静默什么都不做
     await get().ensureCatalog();
+    if (get().maskEditing) return;
     const caps = get().usableCapabilities();
     const cap = capabilityId ? caps.find((c) => c.id === capabilityId) : caps[0];
     if (!cap) return;
@@ -217,7 +224,9 @@ export const useAiStore = create<AiState>((set, get) => ({
   },
 
   startRun: async (absPath, capabilityId, downloadApproved) => {
+    if (get().maskEditing) return;
     await get().ensureCatalog();
+    if (get().maskEditing) return;
     const caps = get().usableCapabilities();
     const cap = capabilityId ? caps.find((c) => c.id === capabilityId) : caps[0];
     if (!cap) return;
@@ -263,13 +272,36 @@ export const useAiStore = create<AiState>((set, get) => ({
 
   saveResult: async () => {
     const result = get().result;
-    if (!result) return null;
-    const saved = await call(getApi().aiSave(result.taskId));
-    set({ result: null, ...COMPARE_RESET });
-    return saved;
+    if (!result || get().maskEditing) return null;
+    set({ maskEditing: true });
+    try {
+      const saved = await call(getApi().aiSave(result.taskId));
+      if (get().result?.taskId === result.taskId) set({ result: null, maskEditing: false, ...COMPARE_RESET });
+      return saved;
+    } finally {
+      if (get().result?.taskId === result.taskId) set({ maskEditing: false });
+    }
   },
 
-  clearResult: () => set({ result: null, error: null, ...COMPARE_RESET }),
+  editMask: async (request) => {
+    const { result, maskEditing } = get();
+    if (!result?.maskEditable || maskEditing) return;
+    set({ maskEditing: true, error: null });
+    try {
+      const edited = await call(getApi().aiMaskEdit(result.taskId, request));
+      if (get().result?.taskId !== result.taskId) return;
+      set({ result: { ...result, tempPath: edited.tempPath, maskCanUndo: edited.maskCanUndo, maskCanRedo: edited.maskCanRedo } });
+    } catch (err) {
+      set({ error: { taskId: result.taskId, code: 'MASK_EDIT_FAILED', message: err instanceof Error ? err.message : String(err) } });
+    } finally {
+      if (get().result?.taskId === result.taskId) set({ maskEditing: false });
+    }
+  },
+
+  clearResult: () => {
+    if (get().maskEditing) return;
+    set({ result: null, error: null, ...COMPARE_RESET });
+  },
 
   /** 只关错误条：不能顺手清掉 result，用户可能正看着上一次抠出来的图 */
   dismissError: () => set({ error: null }),

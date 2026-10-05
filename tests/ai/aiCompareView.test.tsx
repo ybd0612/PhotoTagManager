@@ -16,6 +16,7 @@ const api = {
   aiRun: vi.fn(),
   aiCancel: vi.fn(),
   aiSave: vi.fn(),
+  aiMaskEdit: vi.fn(),
   aiModelDownload: vi.fn(),
   aiModelDelete: vi.fn(),
   aiModelUnload: vi.fn(),
@@ -58,8 +59,13 @@ beforeEach(() => {
     ok: true as const,
     data: { savedPath: 'C:/photos/portrait.cutout.png', targetName: 'portrait.cutout.png', renamed: false, overwrote: false, tagsWritten: [] }
   });
+  api.aiMaskEdit.mockReset().mockResolvedValue({
+    ok: true as const,
+    data: { tempPath: 'C:/Users/x/AppData/ai-preview/bbbb.png', maskCanUndo: true, maskCanRedo: false }
+  });
   useAiStore.setState({
-    result: payload(),
+    result: payload({ maskEditable: true, maskCanUndo: false, maskCanRedo: false }),
+    maskEditing: false,
     task: null,
     error: null,
     pendingConfirm: null,
@@ -84,6 +90,44 @@ async function actClick(el: HTMLElement): Promise<void> {
 }
 
 describe('ai/AiCompareStage —— 原位替换 + 按住看原图（默认模式）', () => {
+  it('笔刷工具、撤销和重做按结果历史状态工作', async () => {
+    useAiStore.setState({ result: payload({ maskEditable: true, maskCanUndo: true }) });
+    api.aiMaskEdit
+      .mockResolvedValueOnce({ ok: true as const, data: { tempPath: 'C:/preview/undo.png', maskCanUndo: false, maskCanRedo: true } })
+      .mockResolvedValueOnce({ ok: true as const, data: { tempPath: 'C:/preview/redo.png', maskCanUndo: true, maskCanRedo: false } });
+    render(<Harness />);
+    expect(screen.getByRole('button', { name: '撤销' }).hasAttribute('disabled')).toBe(false);
+    await actClick(screen.getByRole('button', { name: '擦除背景' }));
+    expect(screen.getByRole('button', { name: '完成' }).textContent).toBe('完成');
+    expect(screen.getByTestId('mask-brush-overlay')).toBeTruthy();
+
+    await actClick(screen.getByRole('button', { name: '撤销' }));
+    expect(api.aiMaskEdit).toHaveBeenNthCalledWith(1, 'ai-7', { action: 'undo' });
+    expect(useAiStore.getState().result?.tempPath).toBe('C:/preview/undo.png');
+    expect(screen.getByRole('button', { name: '重做' }).hasAttribute('disabled')).toBe(false);
+
+    await actClick(screen.getByRole('button', { name: '重做' }));
+    expect(api.aiMaskEdit).toHaveBeenNthCalledWith(2, 'ai-7', { action: 'redo' });
+    expect(useAiStore.getState().result?.tempPath).toBe('C:/preview/redo.png');
+  });
+
+  it('画笔拖动映射到掩码坐标，并在捕获后将终点限制在图像边缘', async () => {
+    render(<Harness />);
+    await actClick(screen.getByRole('button', { name: '擦除背景' }));
+    const svg = screen.getByTestId('mask-brush-overlay');
+    Object.defineProperty(svg, 'getBoundingClientRect', { configurable: true, value: () => ({ x: 10, y: 20, left: 10, top: 20, right: 330, bottom: 340, width: 320, height: 320, toJSON: () => ({}) }) });
+    await act(async () => {
+      fireEvent(svg, new MouseEvent('pointerdown', { bubbles: true, clientX: 90, clientY: 100 }));
+      fireEvent(svg, new MouseEvent('pointermove', { bubbles: true, clientX: 400, clientY: 420 }));
+      fireEvent(svg, new MouseEvent('pointerup', { bubbles: true, clientX: 400, clientY: 420 }));
+      await Promise.resolve();
+    });
+    expect(api.aiMaskEdit).toHaveBeenCalledWith('ai-7', {
+      action: 'stroke',
+      stroke: { mode: 'erase', radius: 16, radiusY: 16, points: [{ x: 80, y: 80 }, { x: 319, y: 319 }] }
+    });
+  });
+
   it('默认显示的就是抠好的结果，且舞台只有一个 img：同位同尺寸由构造保证', () => {
     render(<Harness />);
     expect(screen.getAllByTestId('ai-compare-img')).toHaveLength(1);

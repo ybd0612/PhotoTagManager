@@ -205,8 +205,8 @@ export function PreviewOverlay(): JSX.Element | null {
       else if (e.ctrlKey && (e.key === 'c' || e.key === 'C')) {
         e.preventDefault();
         void copyFileToClipboard(preview.image.absPath);
-      } else if (e.key === ' ' && compare && !isTyping(e)) {
-        // 标签输入框里打空格必须照常输字，所以 isTyping 挡在前面；
+      } else if (e.key === ' ' && compare && !isTyping(e) && !(e.target as HTMLElement | null)?.closest?.('[data-mask-brush="true"]')) {
+        // 标签输入框里打空格必须照常输字，所以 isTyping 挡在前面；笔刷工具内空格留给按钮使用。
         // 没有这张图的对比结果时空格什么都不做（compare 为空），不进入"按住了个寂寞"的状态
         e.preventDefault();
         if (!e.repeat) setHoldingOriginal(true);
@@ -373,9 +373,11 @@ export function PreviewOverlay(): JSX.Element | null {
         sx={{ touchAction: 'none' }}
         onContextMenu={(e) => {
           e.preventDefault();
+          if ((e.target as HTMLElement).closest('[data-mask-brush="true"]')) return;
           setImageMenu({ x: e.clientX, y: e.clientY });
         }}
         onMouseDown={(e) => {
+          if ((e.target as HTMLElement).closest('[data-mask-brush="true"]')) return;
           if (zoomRef.current !== 1) {
             dragRef.current = {
               startX: e.clientX,

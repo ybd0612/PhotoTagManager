@@ -5,6 +5,7 @@ import type {
   AiGpuMemory,
   AiRunAck,
   AiRunRequest,
+  AiMaskEditRequest,
   IpcResult,
   SortDir,
   SortKey,
@@ -51,6 +52,7 @@ export interface AiServiceView {
   startRun(req: RunRequest): { taskId: string; promise: Promise<RunResult> };
   cancel(taskId: string): boolean;
   save(taskId: string): Promise<SaveResult>;
+  editMask(taskId: string, request: AiMaskEditRequest): Promise<import('../shared/types').AiMaskEditResult>;
   previewStats(): Promise<{ entries: number; totalBytes: number }>;
   subscribe(listener: (event: AiEvent) => void): () => void;
   usableCatalog(): CapabilitySpec[];
@@ -402,6 +404,8 @@ export function registerIpc(deps: IpcDeps): void {
   });
 
   handle('ai:cancel', (taskId: string): boolean => deps.ai.service.cancel(taskId));
+
+  handle('ai:mask-edit', (taskId: string, request: AiMaskEditRequest): Promise<unknown> => deps.ai.service.editMask(taskId, request));
 
   handle('ai:save', (taskId: string): Promise<unknown> => deps.ai.service.save(taskId));
 

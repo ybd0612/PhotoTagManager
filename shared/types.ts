@@ -199,6 +199,25 @@ export interface AiProgressPayload {
   percent?: number;
 }
 
+export interface AiMaskStroke {
+  mode: 'restore' | 'erase';
+  radius: number;
+  radiusY?: number;
+  points: Array<{ x: number; y: number }>;
+}
+
+export interface AiMaskEditResult {
+  tempPath: string;
+  maskCanUndo: boolean;
+  maskCanRedo: boolean;
+}
+
+export interface AiMaskEditRequest {
+  action: 'stroke' | 'undo' | 'redo' | 'render';
+  stroke?: AiMaskStroke;
+  bgcolor?: AiBgColorId;
+}
+
 export interface AiDonePayload {
   taskId: string;
   /** 暂存文件的绝对路径（userData 下，不在照片目录内） */
@@ -217,6 +236,10 @@ export interface AiDonePayload {
   capabilityId: string;
   modelId: string;
   actionTag: string;
+  maskEditable?: boolean;
+  maskCanUndo?: boolean;
+  maskCanRedo?: boolean;
+  cutout?: AiCutoutParamsPayload;
 }
 
 export interface AiErrorPayload {
@@ -369,6 +392,7 @@ export interface PhotoTagApi {
   aiCatalog(): Promise<IpcResult<AiCatalogResult>>;
   aiRun(req: AiRunRequest): Promise<IpcResult<AiRunAck>>;
   aiCancel(taskId: string): Promise<IpcResult<boolean>>;
+  aiMaskEdit(taskId: string, request: AiMaskEditRequest): Promise<IpcResult<AiMaskEditResult>>;
   aiSave(taskId: string): Promise<IpcResult<AiSaveResult>>;
   aiModelDownload(modelId: string): Promise<IpcResult<AiModelOpResult>>;
   aiModelDelete(modelId: string): Promise<IpcResult<AiModelOpResult>>;

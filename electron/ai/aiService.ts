@@ -1,4 +1,5 @@
 import { stat, writeFile, access, readFile, rename, rm, mkdir, open } from 'fs/promises';
+import { randomUUID } from 'crypto';
 import { isAbsolute, join, normalize, sep, basename, dirname, extname, relative } from 'path';
 
 import { capabilities, type CapabilitySpec, type ModelSpec } from './capabilityCatalog';
@@ -6,7 +7,8 @@ import { computeCacheKey, computeMaskCacheKey } from './cacheKey';
 import { modelDir, previewDir, previewFile, settingsFile, maskFile, maskFileName, MASK_FILE_EXT } from './paths';
 import { PIPELINE_VERSION, preprocessImage } from './preprocess';
 import { classifyGpuError } from './gpuErrorText';
-import type { AiCutoutParamsPayload } from '../../shared/types';
+import type { AiCutoutParamsPayload, AiMaskEditRequest, AiMaskEditResult, AiMaskStroke } from '../../shared/types';
+import { paintMaskStroke } from '../../shared/maskBrush';
 import {
   DEFAULT_CUTOUT_PARAMS,
   composeCutoutPng,
@@ -16,6 +18,8 @@ import {
   maskFromBytes,
   maskToBytes,
   resolveBgColorId,
+  isAlreadyProbability,
+  scanRange,
   toCacheParams,
   type CutoutParams,
   type MaskPlane
@@ -71,6 +75,9 @@ export interface RunRequest {
 
 export interface RunResult {
   taskId: string;
+  maskEditable?: boolean;
+  maskCanUndo?: boolean;
+  maskCanRedo?: boolean;
   tempPath: string;
   /** 派生文件要落在它旁边，标签也从它继承 */
   sourceAbsPath: string;
@@ -81,6 +88,7 @@ export interface RunResult {
   capabilityId: string;
   modelId: string;
   actionTag: string;
+  cutout?: AiCutoutParamsPayload;
 }
 
 export interface SaveResult {
@@ -268,6 +276,7 @@ export class AiService {
   private readonly cancelled = new Set<string>();
   /** taskId → 最近一次成功结果，`ai:save(taskId)` 靠它找回暂存文件与原图 */
   private readonly finished = new Map<string, RunResult>();
+  private readonly maskSessions = new Map<string, { base: MaskPlane; strokes: AiMaskStroke[]; cursor: number; params: CutoutParams; editPath?: string }>();
   private readonly listeners = new Set<(event: AiEvent) => void>();
   private seq = 0;
   /**
@@ -431,6 +440,76 @@ export class AiService {
    * 顺序上有讲究：**先移动成功再写元数据**。移动失败（Windows 上文件被占用是日常事件）
    * 时暂存结果必须原样保留，用户看过并认可的东西不能因为一次写入失败就消失（§6 / A5）。
    */
+  async editMask(taskId: string, request: AiMaskEditRequest): Promise<AiMaskEditResult> {
+    const run = this.finished.get(taskId);
+    if (!run || run.capabilityId !== 'portrait-cutout') throw new AiTaskError('TASK_NOT_FOUND', '该抠图结果已失效，请重新处理一次');
+    let session = this.maskSessions.get(taskId);
+    if (!session) {
+      const model = this.catalog.find((item) => item.id === run.capabilityId)?.models.find((item) => item.id === run.modelId);
+      if (!model) throw new AiTaskError('MODEL_UNAVAILABLE', '找不到本次抠图使用的模型');
+      const sourceStat = await stat(run.sourceAbsPath);
+      const maskPath = maskFile(maskFileName(computeMaskCacheKey({ source: { absPath: run.sourceAbsPath, mtimeMs: sourceStat.mtimeMs, size: sourceStat.size }, modelSha256: model.sha256, inputDims: model.inputDims, pipelineVersion: PIPELINE_VERSION })));
+      const base = await readMaskPlane(maskPath);
+      if (!base) throw new AiTaskError('MASK_MISSING', '原始掩码已清理，请重新处理这张照片');
+      session = { base, strokes: [], cursor: 0, params: resolveCutoutParams(run.cutout) };
+    }
+
+    const strokes = session.strokes.slice(0, request.action === 'stroke' ? session.cursor : session.strokes.length);
+    let cursor = Math.min(session.cursor, strokes.length);
+    if (request.action === 'undo') cursor = Math.max(0, cursor - 1);
+    else if (request.action === 'redo') cursor = Math.min(strokes.length, cursor + 1);
+    else if (request.action === 'stroke') {
+      const stroke = request.stroke;
+      if (!stroke || (stroke.mode !== 'restore' && stroke.mode !== 'erase') || !stroke.points.length || stroke.points.length > 20000 || !Number.isFinite(stroke.radius) || stroke.radius <= 0 || stroke.radius > Math.max(session.base.width, session.base.height) || (stroke.radiusY !== undefined && (!Number.isFinite(stroke.radiusY) || stroke.radiusY <= 0 || stroke.radiusY > Math.max(session.base.width, session.base.height)))) {
+        throw new AiTaskError('INVALID_MASK_STROKE', '笔刷笔画参数无效');
+      }
+      if (stroke.points.some((point) => !Number.isFinite(point.x) || !Number.isFinite(point.y) || point.x < 0 || point.y < 0 || point.x >= session.base.width || point.y >= session.base.height)) {
+        throw new AiTaskError('INVALID_MASK_STROKE', '笔刷坐标超出掩码范围');
+      }
+      strokes.push(stroke);
+      cursor = strokes.length;
+    }
+
+    const candidate = {
+      base: session.base,
+      strokes,
+      cursor,
+      params: request.bgcolor ? resolveCutoutParams({ bgcolor: request.bgcolor }) : session.params,
+      editPath: session.editPath
+    };
+    const mask: MaskPlane = { ...candidate.base, data: new Float32Array(candidate.base.data) };
+    const baseRange = scanRange(mask.data);
+    if (!isAlreadyProbability(baseRange)) {
+      for (let i = 0; i < mask.data.length; i++) mask.data[i] = 1 / (1 + Math.exp(-mask.data[i]));
+    }
+    for (const stroke of candidate.strokes.slice(0, candidate.cursor)) paintMaskStroke(mask.data, mask.width, mask.height, stroke);
+    const composed = await composeCutoutPng(run.sourceAbsPath, mask, candidate.params);
+    const nextPath = previewFile(`${randomUUID()}${this.catalog.find((item) => item.id === run.capabilityId)?.outputExt ?? '.png'}`);
+    try {
+      await writeFile(nextPath, composed.png);
+    } catch (error) {
+      await removeQuietly(nextPath);
+      throw error;
+    }
+    const nextRun = { ...run, tempPath: nextPath, cutout: request.bgcolor ? { bgcolor: request.bgcolor } : run.cutout, maskEditable: true, maskCanUndo: candidate.cursor > 0, maskCanRedo: candidate.cursor < candidate.strokes.length };
+    try {
+      await this.recordPreviewEntry(nextRun);
+    } catch (error) {
+      await removeQuietly(nextPath);
+      throw error;
+    }
+
+    const previousEditPath = session.editPath;
+    candidate.editPath = nextPath;
+    this.maskSessions.set(taskId, candidate);
+    this.finished.set(taskId, nextRun);
+    if (previousEditPath) {
+      await this.removePreviewEntry(previousEditPath).catch(() => undefined);
+      await removeQuietly(previousEditPath);
+    }
+    return { tempPath: nextPath, maskCanUndo: nextRun.maskCanUndo!, maskCanRedo: nextRun.maskCanRedo! };
+  }
+
   async save(taskId: string): Promise<SaveResult> {
     const run = this.finished.get(taskId);
     if (!run) throw new AiTaskError('TASK_NOT_FOUND', '该任务的结果已保存或已失效，请重新处理一次');
@@ -464,6 +543,7 @@ export class AiService {
 
     await this.removePreviewEntry(run.tempPath);
     this.finished.delete(taskId);
+    this.maskSessions.delete(taskId);
 
     let tagsWritten: string[] = [];
     if (this.deps.meta) {
@@ -594,8 +674,15 @@ export class AiService {
   }
 
   /** 记录一次可保存的结果（`ai:save(taskId)` 靠它找回暂存文件与原图）。 */
-  private async settleRun(result: RunResult): Promise<RunResult> {
+  private async settleRun(result: RunResult, mask?: MaskPlane, params: CutoutParams = DEFAULT_CUTOUT_PARAMS): Promise<RunResult> {
     this.finished.set(result.taskId, result);
+    if (mask && result.capabilityId === 'portrait-cutout') {
+      const base = { ...mask, data: new Float32Array(mask.data) };
+      this.maskSessions.set(result.taskId, { base, strokes: [], cursor: 0, params });
+      result.maskEditable = true;
+      result.maskCanUndo = false;
+      result.maskCanRedo = false;
+    }
     return result;
   }
 
@@ -724,14 +811,17 @@ export class AiService {
       )
     );
 
-    if (await exists(tempPath)) {
-      // 命中缓存：不调 runner，直接给预览（§5.2 秒出预览的依据）
+    const cachedMask = await readMaskPlane(maskPath);
+    if (cachedMask && (await exists(tempPath))) {
+      // 命中缓存：不调 runner，直接给预览（§5.2 秒出预览的依据）。
+      // 但笔刷编辑依赖掩码平面，所以**掩码文件必须在**才允许走这条捷径：
+      // 掩码被清理、成品还留着时宁可重推理一次，也不能给出一张悄悄不能编辑的预览。
       this.throwIfCancelled(taskId);
       const entry = await this.touchPreviewEntry(tempPath);
       // 界面那句「掩码在 N×N 下计算」的来源，按可信度从高到低：
-      // ① 成品条目写入时记下的真实裁边尺寸；② 掩码文件的 8 字节头（本字段之前的旧条目）；
-      // ③ 模型输入形状——只有索引被清过、掩码也已被淘汰时才走到这里，此时它是方形上限，
-      //    会偏大，但报 0 更糟。真机上那句曾经一直报 512×512 而真实是 512×326，就是缺了①②。
+      // ① 成品条目写入时记下的真实裁边尺寸；② 掩码文件的 8 字节头（本字段之前的旧条目）。
+      // 走到这条分支时掩码文件必然在（cachedMask 非空），② 是可靠的兜底；
+      // ③ 模型输入形状只剩理论意义——真机上那句曾一直报 512×512 而真实是 512×326，就是缺了①②。
       const entryDims =
         typeof entry?.maskWidth === 'number' && typeof entry?.maskHeight === 'number'
           ? { width: entry.maskWidth, height: entry.maskHeight }
@@ -747,13 +837,15 @@ export class AiService {
         maskHeight: dims?.height ?? model.inputDims[2] ?? 0,
         capabilityId: cap.id,
         modelId: model.id,
-        actionTag: cap.actionTag
+        actionTag: cap.actionTag,
+        cutout: req.cutout
       };
-      return this.settleRun(cached);
+      return this.settleRun(cached, cachedMask, cutout);
     }
 
     // ── 分界线：这张图的掩码算过没有（方案 §2）────────────────────────────
-    const cachedMask = await readMaskPlane(maskPath);
+    // 能走到这里要么成品缺失、要么掩码文件已不在（成品缓存在上面已拦），
+    // 所以 mask 一定会在下面被赋值——掩码缺失时重新推理一次。
     let mask: MaskPlane;
     if (cachedMask) {
       mask = cachedMask;
@@ -795,10 +887,11 @@ export class AiService {
       maskHeight: composed.maskHeight,
       capabilityId: cap.id,
       modelId: model.id,
-      actionTag: cap.actionTag
+      actionTag: cap.actionTag,
+      cutout: req.cutout
     };
     await this.recordPreviewEntry(fresh);
-    return this.settleRun(fresh);
+    return this.settleRun(fresh, mask, cutout);
   }
 
   /**

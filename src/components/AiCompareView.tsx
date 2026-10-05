@@ -1,16 +1,17 @@
-import { useState } from 'react';
-import type { CSSProperties } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import Slider from '@mui/material/Slider';
 import Stack from '@mui/material/Stack';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Typography from '@mui/material/Typography';
-import { call, getApi, toFileUrl } from '../api';
+import { toFileUrl } from '../api';
 import { HOLD_TO_COMPARE } from '../utils/strings';
 import { overlay, px, tokens } from '../theme/tokens';
 import { useAiStore, type AiCompareMode } from '../store/useAiStore';
-import type { AiDonePayload, AiSaveResult } from '../../shared/types';
+import type { AiDonePayload, AiMaskStroke, AiSaveResult } from '../../shared/types';
 
 /**
  * 对比视图（§4.5 / D15）。**舞台在大图区、动作在底栏**，两者共享 store 里的
@@ -60,10 +61,96 @@ export function AiCompareStage({ absPath, alt, onError, viewStyle }: StageProps)
   const result = useCompareResult(absPath);
   const mode = useAiStore((s) => s.compareMode);
   const holding = useAiStore((s) => s.holdingOriginal);
+  const editMask = useAiStore((s) => s.editMask);
+  const maskEditing = useAiStore((s) => s.maskEditing);
+  const task = useAiStore((s) => s.task);
+  const [brushEnabled, setBrushEnabled] = useState(false);
+  const [brushMode, setBrushMode] = useState<AiMaskStroke['mode']>('restore');
+  const [brushSize, setBrushSize] = useState(5);
+  const [draft, setDraft] = useState<{ maskPoints: AiMaskStroke['points']; viewPoints: Array<{ x: number; y: number }>; radius: number; radiusY: number } | null>(null);
+  const [cursor, setCursor] = useState<{ x: number; y: number; radius: number; radiusY: number } | null>(null);
+  const [stageSize, setStageSize] = useState({ width: 1, height: 1 });
+  const [imageAspect, setImageAspect] = useState(result?.maskWidth && result.maskHeight ? result.maskWidth / result.maskHeight : 1);
+  const resultImage = useRef<HTMLImageElement>(null);
+  const brushOverlay = useRef<SVGSVGElement>(null);
+  const stageView = useRef<HTMLDivElement>(null);
+  const draftRef = useRef<typeof draft>(null);
+  useEffect(() => {
+    setBrushEnabled(false);
+    setDraft(null);
+    draftRef.current = null;
+    setCursor(null);
+  }, [result?.taskId, mode, task?.taskId, holding]);
+  useEffect(() => {
+    setImageAspect(result?.maskWidth && result.maskHeight ? result.maskWidth / result.maskHeight : 1);
+  }, [result?.taskId, result?.maskWidth, result?.maskHeight]);
+  useEffect(() => {
+    const stage = stageView.current;
+    if (!stage || typeof ResizeObserver === 'undefined') return;
+    const updateSize = (): void => setStageSize({ width: stage.clientWidth || 1, height: stage.clientHeight || 1 });
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(stage);
+    return () => observer.disconnect();
+  }, [result?.taskId, mode]);
   if (!result) return null;
 
   const originalSrc = toFileUrl(result.sourceAbsPath);
   const resultSrc = toFileUrl(result.tempPath);
+  const canBrush = result.maskEditable === true && mode === 'hold' && !holding && !task;
+  const maskPointAt = (clientX: number, clientY: number, clamp = false) => {
+    const image = resultImage.current;
+    const svg = brushOverlay.current;
+    if (!image || !svg) return null;
+    const rect = svg.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    if (!clamp && (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom)) return null;
+    const x = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    const y = Math.max(0, Math.min(1, (clientY - rect.top) / rect.height));
+    const maskPoint = { x: Math.min(result.maskWidth - 1, x * result.maskWidth), y: Math.min(result.maskHeight - 1, y * result.maskHeight) };
+    const radius = (brushSize / 100) * Math.min(rect.width, rect.height) * (result.maskWidth / rect.width);
+    const radiusY = (brushSize / 100) * Math.min(rect.width, rect.height) * (result.maskHeight / rect.height);
+    return { maskPoint, viewPoint: { x: x * result.maskWidth, y: y * result.maskHeight }, radius, radiusY };
+  };
+  const stopBrushEvent = (event: ReactPointerEvent<SVGSVGElement>): void => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+  const beginBrush = (event: ReactPointerEvent<SVGSVGElement>): void => {
+    stopBrushEvent(event);
+    const point = maskPointAt(event.clientX, event.clientY);
+    if (!point || !canBrush || maskEditing) return;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    const next = { maskPoints: [point.maskPoint], viewPoints: [point.viewPoint], radius: point.radius, radiusY: point.radiusY };
+    draftRef.current = next;
+    setDraft(next);
+    setCursor({ ...point.viewPoint, radius: point.radius, radiusY: point.radiusY });
+  };
+  const moveBrush = (event: ReactPointerEvent<SVGSVGElement>): void => {
+    stopBrushEvent(event);
+    const point = maskPointAt(event.clientX, event.clientY, draftRef.current !== null);
+    if (!point) return;
+    setCursor({ ...point.viewPoint, radius: point.radius, radiusY: point.radiusY });
+    const current = draftRef.current;
+    if (!current || current.maskPoints.length >= 20000) return;
+    const previous = current.maskPoints[current.maskPoints.length - 1];
+    if (Math.hypot(point.maskPoint.x - previous.x, point.maskPoint.y - previous.y) < 0.5) return;
+    current.maskPoints.push(point.maskPoint);
+    current.viewPoints.push(point.viewPoint);
+    setDraft({ ...current });
+  };
+  const finishBrush = (event: ReactPointerEvent<SVGSVGElement>): void => {
+    stopBrushEvent(event);
+    const completed = draftRef.current;
+    draftRef.current = null;
+    setDraft(null);
+    if (!completed?.maskPoints.length) return;
+    const points = completed.maskPoints.slice();
+    const end = maskPointAt(event.clientX, event.clientY, true);
+    const last = points[points.length - 1];
+    if (end && points.length < 20000 && Math.hypot(end.maskPoint.x - last.x, end.maskPoint.y - last.y) >= 0.5) points.push(end.maskPoint);
+    void editMask({ action: 'stroke', stroke: { mode: brushMode, radius: completed.radius, radiusY: completed.radiusY, points } });
+  };
 
   if (mode === 'split') {
     return (
@@ -108,27 +195,80 @@ export function AiCompareStage({ absPath, alt, onError, viewStyle }: StageProps)
   // 默认：看到的就是抠好的图；按住大图或按住空格才切回原图
   return (
     <>
-      <img
-        data-testid="ai-compare-img"
-        src={holding ? originalSrc : resultSrc}
-        alt={holding ? '原图' : alt}
-        draggable={false}
-        onError={onError}
-        className="max-h-full max-w-full object-contain"
-        style={{ ...viewStyle, ...(holding ? {} : checkerBg) }}
-      />
+      <Box
+        ref={stageView}
+        data-testid="ai-stage-view"
+        sx={{ position: 'absolute', inset: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'visible', pointerEvents: 'none' }}
+      >
+        <Box
+          sx={{ position: 'relative', flex: '0 0 auto', width: Math.min(stageSize.width || 1, (stageSize.height || 1) * imageAspect), height: Math.min(stageSize.height || 1, (stageSize.width || 1) / imageAspect), transformOrigin: 'center', transform: viewStyle?.transform, transition: viewStyle?.transition, lineHeight: 0, pointerEvents: 'auto' }}
+        >
+        <img
+          ref={resultImage}
+          data-testid="ai-compare-img"
+          src={holding ? originalSrc : resultSrc}
+          alt={holding ? '原图' : alt}
+          draggable={false}
+          onLoad={(event) => {
+            const image = event.currentTarget;
+            if (image.naturalWidth > 0 && image.naturalHeight > 0) setImageAspect(image.naturalWidth / image.naturalHeight);
+          }}
+          onError={onError}
+          width="100%"
+          height="100%"
+          className="block h-full w-full object-fill"
+          style={holding ? {} : checkerBg}
+        />
+        {canBrush && (
+          <svg
+            ref={brushOverlay}
+            data-testid="mask-brush-overlay"
+            data-mask-brush="true"
+            className="absolute inset-0 h-full w-full"
+            viewBox={`0 0 ${result.maskWidth} ${result.maskHeight}`} preserveAspectRatio="none"
+            style={{ touchAction: 'none', cursor: brushEnabled ? 'none' : undefined, pointerEvents: brushEnabled ? 'auto' : 'none' }}
+            onPointerDown={brushEnabled ? beginBrush : undefined}
+            onPointerMove={brushEnabled ? moveBrush : undefined}
+            onPointerUp={brushEnabled ? finishBrush : undefined}
+            onPointerCancel={brushEnabled ? (event) => {
+              stopBrushEvent(event);
+              draftRef.current = null;
+              setDraft(null);
+            } : undefined}
+          >
+            {draft && draft.viewPoints.length > 0 && (
+              <polyline points={draft.viewPoints.map((point) => `${point.x},${point.y / (draft.radiusY / draft.radius)}`).join(' ')} fill="none" stroke={brushMode === 'restore' ? '#32d583' : '#f97066'} strokeWidth={draft.radius * 2} strokeLinecap="round" strokeLinejoin="round" opacity="0.45" transform={`scale(1 ${draft.radiusY / draft.radius})`} />
+            )}
+            {brushEnabled && cursor && <ellipse cx={cursor.x} cy={cursor.y} rx={cursor.radius} ry={cursor.radiusY} fill="none" stroke={brushMode === 'restore' ? '#32d583' : '#f97066'} strokeWidth="1.5" />}
+          </svg>
+        )}
+        </Box>
+      </Box>
+      {result.maskEditable && (
+        <Stack
+          data-mask-brush="true"
+          direction="row"
+          alignItems="center"
+          spacing={0.5}
+          sx={{ position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', px: 1, py: 0.5, bgcolor: 'rgba(20, 22, 26, 0.88)', borderRadius: px(tokens.radius.sm), zIndex: 3 }}
+          onPointerDown={(event) => event.stopPropagation()}
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          <Button size="small" disabled={maskEditing || Boolean(task)} color={brushMode === 'restore' ? 'success' : 'inherit'} variant={brushMode === 'restore' ? 'contained' : 'outlined'} onClick={() => { setBrushMode('restore'); setBrushEnabled(true); }}>恢复前景</Button>
+          <Button size="small" disabled={maskEditing || Boolean(task)} color={brushMode === 'erase' ? 'error' : 'inherit'} variant={brushMode === 'erase' ? 'contained' : 'outlined'} onClick={() => { setBrushMode('erase'); setBrushEnabled(true); }}>擦除背景</Button>
+          <Button size="small" variant={brushEnabled ? 'contained' : 'outlined'} disabled={maskEditing || Boolean(task)} onClick={() => setBrushEnabled((value) => !value)}>{brushEnabled ? '完成' : '笔刷'}</Button>
+          <Button size="small" disabled={maskEditing || Boolean(task) || !result.maskCanUndo} onClick={() => void editMask({ action: 'undo' })}>撤销</Button>
+          <Button size="small" disabled={maskEditing || Boolean(task) || !result.maskCanRedo} onClick={() => void editMask({ action: 'redo' })}>重做</Button>
+          <Slider aria-label="笔刷大小" size="small" min={1} max={20} value={brushSize} disabled={maskEditing || Boolean(task)} onChange={(_, value) => setBrushSize(value as number)} sx={{ width: 92, color: 'white', mx: 1 }} />
+          {maskEditing && <Typography variant="caption" sx={{ color: 'white', whiteSpace: 'nowrap' }}>更新中…</Typography>}
+        </Stack>
+      )}
       {/* 触发方式从按钮挪到图上，所以说明也得跟着挪；分屏不用它（原图本来就同屏） */}
       <Typography
         data-testid="ai-hold-hint"
         variant="caption"
         className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2"
-        sx={{
-          color: overlay.textStrong,
-          bgcolor: overlay.chip,
-          px: 1.25,
-          py: 0.5,
-          borderRadius: px(tokens.radius.sm)
-        }}
+        sx={{ color: overlay.textStrong, bgcolor: overlay.chip, px: 1.25, py: 0.5, borderRadius: px(tokens.radius.sm) }}
       >
         {HOLD_TO_COMPARE}
       </Typography>
@@ -147,6 +287,8 @@ export function AiCompareActions({
   const mode = useAiStore((s) => s.compareMode);
   const setCompareMode = useAiStore((s) => s.setCompareMode);
   const clearResult = useAiStore((s) => s.clearResult);
+  const saveResult = useAiStore((s) => s.saveResult);
+  const maskEditing = useAiStore((s) => s.maskEditing);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -156,9 +298,9 @@ export function AiCompareActions({
     setSaving(true);
     setSaveError(null);
     try {
-      const saved = await call(getApi().aiSave(result.taskId));
-      clearResult();
-      onSaved?.(saved);
+      const saved = await saveResult();
+      if (saved) onSaved?.(saved);
+      else if (useAiStore.getState().maskEditing) setSaveError('笔刷更新中，请稍后再保存');
     } catch (err) {
       // 保存失败不能把结果弄丢：预览留着，用户可以直接重试（§6 / A5）
       setSaveError(err instanceof Error ? err.message : String(err));
@@ -215,14 +357,14 @@ export function AiCompareActions({
         <Button
           size="small"
           variant="contained"
-          disabled={saving}
+          disabled={saving || maskEditing}
           onClick={() => void save()}
           sx={{ textTransform: 'none' }}
         >
           {saving ? '保存中…' : '保存'}
         </Button>
         {/* 不保存 ≠ 删除：文件留在暂存由清理策略回收，所以没有「丢弃」按钮 */}
-        <Button size="small" color="inherit" onClick={() => clearResult()} sx={{ textTransform: 'none' }}>
+        <Button size="small" color="inherit" disabled={maskEditing} onClick={() => clearResult()} sx={{ textTransform: 'none' }}>
           不保存
         </Button>
       </Stack>

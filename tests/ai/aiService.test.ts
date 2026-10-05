@@ -456,12 +456,60 @@ describe('ai/aiService —— 掩码级缓存 + 底色（切片一，方案 §8-
     return d;
   }
 
-  /** 成品右上角那颗像素（带着通道数一起返回，通道数本身就是"alpha 有没有被铺掉"的读数） */
+  /** 成品右下角像素（带着通道数一起返回，通道数本身就是"alpha 有没有被铺掉"的读数） */
   async function cornerPixel(path: string): Promise<number[]> {
     const raw = await sharp(await readFile(path)).raw().toBuffer({ resolveWithObject: true });
-    const i = (raw.info.width - 1) * raw.info.channels;
+    const i = (raw.info.width * raw.info.height - 1) * raw.info.channels;
     return Array.from(raw.data.subarray(i, i + raw.info.channels));
   }
+
+  async function alphaAt(path: string, x: number, y: number): Promise<number> {
+    const { data, info } = await sharp(await readFile(path)).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    return data[(y * info.width + x) * info.channels + info.channels - 1];
+  }
+
+  it('笔刷修改掩码后可撤销/重做，保存的 PNG 使用重做后的 alpha', async () => {
+    await store.markPresent();
+    runner.maskOf = halfForeground;
+    const result = await service.run({ absPath: photoPath, capabilityId: 'portrait-cutout' });
+    expect(await alphaAt(result.tempPath, 0, 1)).toBeGreaterThan(240);
+
+    const erased = await service.editMask(result.taskId, {
+      action: 'stroke',
+      stroke: {
+        mode: 'erase',
+        radius: result.maskWidth * 0.18,
+        points: [{ x: result.maskWidth / 16, y: (result.maskHeight * 3) / 8 }]
+      }
+    });
+    expect(await alphaAt(erased.tempPath, 0, 1)).toBeLessThan(16);
+    expect(await alphaAt(erased.tempPath, 2, 0)).toBeGreaterThan(240);
+    expect(erased.maskCanUndo).toBe(true);
+
+    const undone = await service.editMask(result.taskId, { action: 'undo' });
+    expect(await alphaAt(undone.tempPath, 0, 1)).toBeGreaterThan(240);
+    expect(undone.maskCanRedo).toBe(true);
+
+    const redone = await service.editMask(result.taskId, { action: 'redo' });
+    expect(await alphaAt(redone.tempPath, 0, 1)).toBeLessThan(16);
+    const saved = await service.save(result.taskId);
+    expect(await alphaAt(saved.savedPath, 0, 1)).toBeLessThan(16);
+  });
+
+  it('笔刷可以恢复背景像素为前景，并撤销恢复', async () => {
+    await store.markPresent();
+    runner.maskOf = halfForeground;
+    const result = await service.run({ absPath: photoPath, capabilityId: 'portrait-cutout' });
+    expect((await cornerPixel(result.tempPath)).at(-1)).toBeLessThan(16);
+
+    const restored = await service.editMask(result.taskId, {
+      action: 'stroke',
+      stroke: { mode: 'restore', radius: result.maskWidth * 0.18, radiusY: result.maskHeight * 0.18, points: [{ x: result.maskWidth * 0.9, y: result.maskHeight * 0.9 }] }
+    });
+    expect((await cornerPixel(restored.tempPath)).at(-1)).toBeGreaterThan(240);
+    const undone = await service.editMask(result.taskId, { action: 'undo' });
+    expect((await cornerPixel(undone.tempPath)).at(-1)).toBeLessThan(16);
+  });
 
   it('① 改底色不重跑推理：第一次 infer=1，换白底后 infer 仍是 1', async () => {
     await store.markPresent();
@@ -564,31 +612,37 @@ describe('ai/aiService —— 掩码级缓存 + 底色（切片一，方案 §8-
     expect([resultEntry!.maskWidth, resultEntry!.maskHeight]).toEqual([first.maskWidth, first.maskHeight]);
   });
 
-  it('掩码文件被 LRU 淘汰、成品还在时，那句尺寸仍是真实值（靠索引，不靠猜）', async () => {
+  it('掩码文件被 LRU 淘汰、成品还在时：宁可重推理一次，也要给出可编辑的真实尺寸', async () => {
     await store.markPresent();
     const first = await service.run({ absPath: photoPath, capabilityId: 'portrait-cutout' });
     for (const f of await readdir(join(previewDir(), 'masks'))) {
       await rm(join(previewDir(), 'masks', f), { force: true });
     }
+    const before = runner.inferCalls;
     const again = await service.run({ absPath: photoPath, capabilityId: 'portrait-cutout' });
-    expect(again.cacheHit).toBe(true);
+    // 旧契约曾让这条走成品缓存（cacheHit=true）——于是笔刷悄悄不可用，真机 2026-07-31 翻车。
+    // 新契约：掩码不在就不命中，重推理；真实裁边尺寸照样带回来，不靠猜。
+    expect(again.cacheHit).toBe(false);
+    expect(runner.inferCalls).toBe(before + 1);
     expect([again.maskWidth, again.maskHeight]).toEqual([first.maskWidth, first.maskHeight]);
-    // 没有索引那一级时这里会退回方形输入尺寸
     expect(again.maskHeight).toBeLessThan(getModel('portrait-cutout', 'u2netp')!.inputDims[2]);
+    expect(again.maskEditable).toBe(true);
   });
 
-  it('索引和掩码都没了才退回输入形状，并且绝不报 0', async () => {
+  it('索引和掩码都没了也只是重推理：尺寸来自本次合成，绝不报 0', async () => {
     const inputDims = getModel('portrait-cutout', 'u2netp')!.inputDims;
     await store.markPresent();
-    await service.run({ absPath: photoPath, capabilityId: 'portrait-cutout' });
+    const first = await service.run({ absPath: photoPath, capabilityId: 'portrait-cutout' });
     await rm(previewFile('index.json'), { force: true });
     for (const f of await readdir(join(previewDir(), 'masks'))) {
       await rm(join(previewDir(), 'masks', f), { force: true });
     }
     const again = await service.run({ absPath: photoPath, capabilityId: 'portrait-cutout' });
-    expect(again.cacheHit).toBe(true);
-    expect(again.maskWidth).toBe(inputDims[3]);
-    expect(again.maskHeight).toBe(inputDims[2]);
+    expect(again.cacheHit).toBe(false);
+    expect(again.maskWidth).toBe(first.maskWidth);
+    expect(again.maskHeight).toBe(first.maskHeight);
+    expect(again.maskHeight).toBeLessThan(inputDims[2]);
+    expect(again.maskEditable).toBe(true);
   });
 
   it('未点保存：掩码与成品都只在暂存内，照片目录不多一个文件', async () => {
