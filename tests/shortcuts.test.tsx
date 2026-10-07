@@ -39,6 +39,7 @@ const api: Record<string, ReturnType<typeof vi.fn>> = {
   addRoot: vi.fn(async () => ok({ id: 'r1', path: 'C:/P', alias: 'P', addedAt: 1 })),
   removeRoot: vi.fn(async () => ok(undefined)),
   renameRoot: vi.fn(async () => ok(null)),
+  reorderRoots: vi.fn(async () => ok(undefined)),
   trashFiles: vi.fn(async () => ok({ trashed: [], failed: [] })),
   getPrefs: vi.fn(async () => ok({ sortKey: 'name', sortDir: 'asc', thumbSize: 'small', scanDoneToast: false })),
   setPrefs: vi.fn(async () => ok({ sortKey: 'name', sortDir: 'asc', thumbSize: 'small', scanDoneToast: false })),
@@ -94,7 +95,9 @@ describe('G11 设置里的快捷键分区', () => {
     fireEvent.click(within(dialog).getByRole('tab', { name: /快捷键/ }));
     const pane = screen.getByTestId('shortcut-list');
     expect(within(pane).getAllByRole('row')).toHaveLength(SHORTCUTS.length + 1); // +1 表头
-    expect(pane.textContent).toContain('按住空格或按住图片看原图');
+    expect(pane.textContent).toContain('按住空格看原图');
+    // 反面腿：左键已让给点提示，快捷键表里不得再出现「按住图片」的说法
+    expect(pane.textContent).not.toContain('按住图片');
   });
 
   it('initialTab 能把对话框直接开到快捷键分区（? 唤出走的是这条路）', () => {

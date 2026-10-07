@@ -19,7 +19,7 @@ export interface Shortcut {
 
 export const SHORTCUTS: Shortcut[] = [
   { keys: '← / →', action: '预览中看上一张 / 下一张', scope: '预览' },
-  { keys: 'Esc', action: '关闭预览、对话框或菜单', scope: '全局' },
+  { keys: 'Esc', action: '关闭预览、对话框或菜单（点提示模式下先退出该模式）', scope: '全局' },
   { keys: '空格（按住）', action: HOLD_TO_COMPARE, scope: '预览 · 有对比结果时' },
   { keys: 'Ctrl + C', action: '把当前文件复制到剪贴板，可在资源管理器粘贴', scope: '预览' },
   { keys: 'Enter', action: '在标签输入框里确认并写入标签', scope: '预览' },

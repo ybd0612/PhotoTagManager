@@ -197,19 +197,33 @@ describe('G9 预览动作条分层', () => {
     expect(useAiStore.getState().holdingOriginal).toBe(false);
   });
 
-  it('在大图上按下看原图，松手回到结果', () => {
+  // G9 原先是「按大图 / 按空格都能看原图」。左键现已让给点提示（左=前景、右=背景），
+  // 两个功能抢同一个手势时按下左键看到的是原图闪一下再跳回结果，像点提示没生效。
+  // 所以按住看原图只剩空格，这里断言反向：大图上按下/松手都不改变 holdingOriginal。
+  it('在大图上按下不再切原图（按住看原图只认空格），且画面始终是抠图结果', () => {
     render(<PreviewOverlay />);
     const stage = screen.getByTestId('preview-stage');
     const img = () => screen.getByTestId('ai-compare-img') as HTMLImageElement;
     fireEvent.mouseDown(stage);
-    expect(useAiStore.getState().holdingOriginal).toBe(true);
-    expect(img().src).toContain('a.jpg');
+    expect(useAiStore.getState().holdingOriginal).toBe(false);
+    expect(img().src).toContain('deadbeef');
     fireEvent.mouseUp(stage);
     expect(useAiStore.getState().holdingOriginal).toBe(false);
     expect(img().src).toContain('deadbeef');
   });
 
-  it('反面腿：分屏模式在大图上按下不抢鼠标（原图同屏已在，按下要留给拖动平移）', () => {
+  it('按住空格才切原图，松手回到结果', () => {
+    render(<PreviewOverlay />);
+    const img = () => screen.getByTestId('ai-compare-img') as HTMLImageElement;
+    fireEvent.keyDown(window, { key: ' ' });
+    expect(useAiStore.getState().holdingOriginal).toBe(true);
+    expect(img().src).toContain('a.jpg');
+    fireEvent.keyUp(window, { key: ' ' });
+    expect(useAiStore.getState().holdingOriginal).toBe(false);
+    expect(img().src).toContain('deadbeef');
+  });
+
+  it('反面腿：分屏模式在大图上按下同样不抢鼠标（两栏模式下左键留给右图的点提示）', () => {
     useAiStore.setState({ compareMode: 'split' });
     render(<PreviewOverlay />);
     fireEvent.mouseDown(screen.getByTestId('preview-stage'));

@@ -23,7 +23,9 @@ import type {
 export type AiCompareMode = 'hold' | 'split';
 
 /** 结果离场或重新发起处理时的视图复位：下一张不该继承上一张的模式与按住态 */
-const COMPARE_RESET = { compareMode: 'hold' as AiCompareMode, holdingOriginal: false };
+// 切图 / 结果被清 / 跑完丢结果时一并复位。点提示模式也归位——
+// 否则新图一进来就自动接管右键，用户会以为右键菜单坏了。
+const COMPARE_RESET = { compareMode: 'hold' as AiCompareMode, holdingOriginal: false, maskPromptMode: false };
 
 /** 实测下载速率区间 0.39~1.27 MB/s，粗估取偏慢的一档，宁可报长不报短 */
 const CONSERVATIVE_RATE_BYTES_PER_SEC = 0.45 * 1024 * 1024;
@@ -78,6 +80,15 @@ interface AiState {
    */
   compareMode: AiCompareMode;
   holdingOriginal: boolean;
+  /**
+   * 点提示模式开关（用户显式进入，默认关）。
+   *
+   * 为什么要有这个模式而不是让点提示一直待命：点提示要独占鼠标右键
+   * ——右键在图上是「标背景点」，而右键在图外是「移除到回收站」这个既有功能。
+   * 两者都是右键，用户没法同时预期两个行为。做成显式模式后：
+   * 开启期间图上右键让位给背景点，图外右键菜单照旧；关掉即恢复。
+   */
+  maskPromptMode: boolean;
   task: AiTask | null;
   result: AiDonePayload | null;
   maskEditing: boolean;
@@ -95,6 +106,8 @@ interface AiState {
   setBgColor: (bgcolor: AiBgColorId, absPath?: string, capabilityId?: string) => Promise<void>;
   setCompareMode: (mode: AiCompareMode) => void;
   setHoldingOriginal: (holding: boolean) => void;
+  /** 进入/退出点提示模式。模式开着时切图或结果消失都要复位，否则新图会莫名进模式 */
+  setMaskPromptMode: (on: boolean) => void;
   requestRun: (absPath: string, capabilityId?: string) => Promise<void>;
   startRun: (absPath: string, capabilityId?: string, downloadApproved?: boolean) => Promise<void>;
   approveDownload: () => Promise<void>;
@@ -116,6 +129,7 @@ export const useAiStore = create<AiState>((set, get) => ({
   bgcolor: 'transparent',
   compareMode: 'hold',
   holdingOriginal: false,
+  maskPromptMode: false,
   task: null,
   result: null,
   maskEditing: false,
@@ -202,6 +216,8 @@ export const useAiStore = create<AiState>((set, get) => ({
   setCompareMode: (compareMode) => set({ compareMode }),
 
   setHoldingOriginal: (holdingOriginal) => set({ holdingOriginal }),
+
+  setMaskPromptMode: (maskPromptMode) => set({ maskPromptMode }),
 
   requestRun: async (absPath, capabilityId) => {
     if (get().maskEditing) return;

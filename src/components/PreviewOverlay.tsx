@@ -199,7 +199,12 @@ export function PreviewOverlay(): JSX.Element | null {
       );
     };
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') closePreview();
+      // 点提示模式下 Esc 先退出模式：它在预览里接管了右键，此时直接 Esc 关窗口
+      // 会让人以为右键菜单的「移除到回收站」被顺手执行了。两级退出，先退模式再关预览。
+      if (e.key === 'Escape') {
+        if (useAiStore.getState().maskPromptMode) useAiStore.getState().setMaskPromptMode(false);
+        else closePreview();
+      }
       else if (e.key === 'ArrowLeft') previewStep(-1);
       else if (e.key === 'ArrowRight') previewStep(1);
       else if (e.ctrlKey && (e.key === 'c' || e.key === 'C')) {
@@ -373,6 +378,10 @@ export function PreviewOverlay(): JSX.Element | null {
         sx={{ touchAction: 'none' }}
         onContextMenu={(e) => {
           e.preventDefault();
+          // 点提示模式下右键归背景点所有：overlay 区由它自己处理并吃掉事件，
+          // 落在图外空白处则整段不弹菜单——否则同一手势一会儿标背景一会儿进回收站，
+          // 用户无法预期。菜单里还有「移除到回收站」，误触代价高，宁可先禁用。
+          if (useAiStore.getState().maskPromptMode) return;
           if ((e.target as HTMLElement).closest('[data-mask-brush="true"]')) return;
           setImageMenu({ x: e.clientX, y: e.clientY });
         }}
@@ -386,14 +395,11 @@ export function PreviewOverlay(): JSX.Element | null {
               oy: offsetRef.current.y
             };
             e.preventDefault();
-            return;
           }
-          // 未缩放时大图区兼任"按住看原图"（批次3 G9，原先只能按底栏那颗按钮）；
-          // 分屏模式原图同屏已在，不抢鼠标
-          if (compare && compareMode === 'hold') setHoldingOriginal(true);
+          // 按住看原图已删，只剩空格：左键要让给点提示（左=前景/ 右=背景），
+          // 两个功能抢同一个手势时，用户按下左键看到的是原图闪一下再跳回结果，
+          // 像是点提示没生效。未缩放时大图区在这里不再做任何事。
         }}
-        onMouseUp={() => setHoldingOriginal(false)}
-        onMouseLeave={() => setHoldingOriginal(false)}
         onDoubleClick={resetView}
         onWheel={handleWheel}
       >

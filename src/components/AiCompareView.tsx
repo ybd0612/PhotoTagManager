@@ -1,17 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
+import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
-import Slider from '@mui/material/Slider';
+import Dialog from '@mui/material/Dialog';
+import DialogActions from '@mui/material/DialogActions';
+import DialogContent from '@mui/material/DialogContent';
+import DialogTitle from '@mui/material/DialogTitle';
 import Stack from '@mui/material/Stack';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Typography from '@mui/material/Typography';
-import { toFileUrl } from '../api';
+import { call, getApi, toFileUrl } from '../api';
 import { HOLD_TO_COMPARE } from '../utils/strings';
 import { overlay, px, tokens } from '../theme/tokens';
 import { useAiStore, type AiCompareMode } from '../store/useAiStore';
-import type { AiDonePayload, AiMaskStroke, AiSaveResult } from '../../shared/types';
+import type { AiDonePayload, AiMaskPointPrompt, AiSaveResult } from '../../shared/types';
 
 /**
  * 对比视图（§4.5 / D15）。**舞台在大图区、动作在底栏**，两者共享 store 里的
@@ -63,24 +66,20 @@ export function AiCompareStage({ absPath, alt, onError, viewStyle }: StageProps)
   const holding = useAiStore((s) => s.holdingOriginal);
   const editMask = useAiStore((s) => s.editMask);
   const maskEditing = useAiStore((s) => s.maskEditing);
+  const maskPromptMode = useAiStore((s) => s.maskPromptMode);
   const task = useAiStore((s) => s.task);
-  const [brushEnabled, setBrushEnabled] = useState(false);
-  const [brushMode, setBrushMode] = useState<AiMaskStroke['mode']>('restore');
-  const [brushSize, setBrushSize] = useState(5);
-  const [draft, setDraft] = useState<{ maskPoints: AiMaskStroke['points']; viewPoints: Array<{ x: number; y: number }>; radius: number; radiusY: number } | null>(null);
-  const [cursor, setCursor] = useState<{ x: number; y: number; radius: number; radiusY: number } | null>(null);
+  const [prompts, setPrompts] = useState<AiMaskPointPrompt[]>([]);
+  const [promptCursor, setPromptCursor] = useState(0);
+  const [samConsent, setSamConsent] = useState(false);
+  const [samInstalling, setSamInstalling] = useState(false);
+  const [samChecking, setSamChecking] = useState(false);
   const [stageSize, setStageSize] = useState({ width: 1, height: 1 });
   const [imageAspect, setImageAspect] = useState(result?.maskWidth && result.maskHeight ? result.maskWidth / result.maskHeight : 1);
   const resultImage = useRef<HTMLImageElement>(null);
   const brushOverlay = useRef<SVGSVGElement>(null);
   const stageView = useRef<HTMLDivElement>(null);
-  const draftRef = useRef<typeof draft>(null);
-  useEffect(() => {
-    setBrushEnabled(false);
-    setDraft(null);
-    draftRef.current = null;
-    setCursor(null);
-  }, [result?.taskId, mode, task?.taskId, holding]);
+  const promptCheckInFlight = useRef(false);
+  useEffect(() => { setPrompts([]); setPromptCursor(0); }, [result?.taskId]);
   useEffect(() => {
     setImageAspect(result?.maskWidth && result.maskHeight ? result.maskWidth / result.maskHeight : 1);
   }, [result?.taskId, result?.maskWidth, result?.maskHeight]);
@@ -97,60 +96,69 @@ export function AiCompareStage({ absPath, alt, onError, viewStyle }: StageProps)
 
   const originalSrc = toFileUrl(result.sourceAbsPath);
   const resultSrc = toFileUrl(result.tempPath);
-  const canBrush = result.maskEditable === true && mode === 'hold' && !holding && !task;
-  const maskPointAt = (clientX: number, clientY: number, clamp = false) => {
-    const image = resultImage.current;
+  // 点提示要显式进入模式才生效：它得独占右键（图上右键 = 标背景点，
+// 而图外右键 = 移除到回收站，既有功能不能被静默夺走）。
+  const canPrompt = result.maskEditable === true && maskPromptMode && !task && !maskEditing;
+  const submitPrompt = (prompt: AiMaskPointPrompt): void => { setPrompts((current) => [...current.slice(0, promptCursor), prompt]); setPromptCursor((cursor) => cursor + 1); void editMask({ action: 'prompt', prompt }); };
+
+  /**
+   * 提交一个点。label=1 前景（左键），label=0 背景（右键）。
+   * 坐标从overlay 的 rect 算归一化值，所以 overlay 铺在哪，坐标就相对谁——
+   * 双栏模式下铺在右侧结果图容器内，点到的就是那张图的相对位置。
+   */
+  const commitPoint = (event: ReactMouseEvent<SVGSVGElement>, label: 0 | 1): void => {
     const svg = brushOverlay.current;
-    if (!image || !svg) return null;
+    if (!svg || !canPrompt || maskEditing || promptCheckInFlight.current) return;
     const rect = svg.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return null;
-    if (!clamp && (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom)) return null;
-    const x = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-    const y = Math.max(0, Math.min(1, (clientY - rect.top) / rect.height));
-    const maskPoint = { x: Math.min(result.maskWidth - 1, x * result.maskWidth), y: Math.min(result.maskHeight - 1, y * result.maskHeight) };
-    const radius = (brushSize / 100) * Math.min(rect.width, rect.height) * (result.maskWidth / rect.width);
-    const radiusY = (brushSize / 100) * Math.min(rect.width, rect.height) * (result.maskHeight / rect.height);
-    return { maskPoint, viewPoint: { x: x * result.maskWidth, y: y * result.maskHeight }, radius, radiusY };
+    if (rect.width <= 0 || rect.height <= 0 || event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) return;
+    if (prompts.length >= 128) return;
+    promptCheckInFlight.current = true;
+    const x = (event.clientX - rect.left) / rect.width;
+    const y = (event.clientY - rect.top) / rect.height;
+    void call(getApi().aiMobileSamStatus()).then(({ statuses }) => {
+      if (statuses.some((item) => item.status !== 'present')) { setSamConsent(true); return; }
+      submitPrompt({ x, y, label });
+    }).catch((error) => useAiStore.setState({ error: { taskId: result.taskId, code: 'SAM_STATUS_FAILED', message: String(error) } })).finally(() => { promptCheckInFlight.current = false; });
   };
-  const stopBrushEvent = (event: ReactPointerEvent<SVGSVGElement>): void => {
-    event.preventDefault();
-    event.stopPropagation();
+
+  /**
+   * 只认左键。守卫必须是 `!== 0` 而不是 `> 2`——右键按下同样会先发mousedown
+   * （button===2），`> 2` 放它过去，于是右键先提交了 label=1，
+   * 紧接着 contextmenu 那次被 inFlight 挡住，结果右键永远=「要保留」。
+   */
+  const addForeground = (event: ReactMouseEvent<SVGSVGElement>): void => {
+    if (event.button !== 0) return;
+    event.preventDefault(); event.stopPropagation();
+    commitPoint(event, 1);
   };
-  const beginBrush = (event: ReactPointerEvent<SVGSVGElement>): void => {
-    stopBrushEvent(event);
-    const point = maskPointAt(event.clientX, event.clientY);
-    if (!point || !canBrush || maskEditing) return;
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-    const next = { maskPoints: [point.maskPoint], viewPoints: [point.viewPoint], radius: point.radius, radiusY: point.radiusY };
-    draftRef.current = next;
-    setDraft(next);
-    setCursor({ ...point.viewPoint, radius: point.radius, radiusY: point.radiusY });
+
+  /**
+   * 右键（背景点）走 contextmenu收事件，不靠 mousedown 的 button 判断。
+   *
+   * 为什么不能靠 mousedown：Windows 上右键按下的mousedown 早于 contextmenu，
+   * mousedown 那一步就已经把「前景」提交掉了，contextmenu 只能收尾。
+   * 干脆在 mousedown 里只放行左键，右键整个交给 contextmenu，时序就干净了。
+   */
+  const addBackground = (event: ReactMouseEvent<SVGSVGElement>): void => {
+    event.preventDefault(); event.stopPropagation();
+    commitPoint(event, 0);
   };
-  const moveBrush = (event: ReactPointerEvent<SVGSVGElement>): void => {
-    stopBrushEvent(event);
-    const point = maskPointAt(event.clientX, event.clientY, draftRef.current !== null);
-    if (!point) return;
-    setCursor({ ...point.viewPoint, radius: point.radius, radiusY: point.radiusY });
-    const current = draftRef.current;
-    if (!current || current.maskPoints.length >= 20000) return;
-    const previous = current.maskPoints[current.maskPoints.length - 1];
-    if (Math.hypot(point.maskPoint.x - previous.x, point.maskPoint.y - previous.y) < 0.5) return;
-    current.maskPoints.push(point.maskPoint);
-    current.viewPoints.push(point.viewPoint);
-    setDraft({ ...current });
-  };
-  const finishBrush = (event: ReactPointerEvent<SVGSVGElement>): void => {
-    stopBrushEvent(event);
-    const completed = draftRef.current;
-    draftRef.current = null;
-    setDraft(null);
-    if (!completed?.maskPoints.length) return;
-    const points = completed.maskPoints.slice();
-    const end = maskPointAt(event.clientX, event.clientY, true);
-    const last = points[points.length - 1];
-    if (end && points.length < 20000 && Math.hypot(end.maskPoint.x - last.x, end.maskPoint.y - last.y) >= 0.5) points.push(end.maskPoint);
-    void editMask({ action: 'stroke', stroke: { mode: brushMode, radius: completed.radius, radiusY: completed.radiusY, points } });
-  };
+
+  /** 点提示的提示圈与命中层。两种模式共用同一份，只是挂载的宿主不同。 */
+  const promptOverlay = (
+    <svg
+      ref={brushOverlay}
+      data-testid="mask-brush-overlay"
+      data-mask-brush="true"
+      className="absolute inset-0 h-full w-full"
+      viewBox="0 0 1 1" preserveAspectRatio="none"
+      style={{ touchAction: 'none', pointerEvents: 'auto', cursor: 'crosshair' }}
+      onMouseDown={addForeground}
+      onContextMenu={addBackground}
+    >
+      {prompts.map((point, index) => <g key={`${index}-${point.x}-${point.y}`} style={{ display: index < promptCursor ? undefined : 'none' }}><circle cx={point.x} cy={point.y} r="0.012" fill={point.label === 1 ? '#32d583' : '#f97066'} stroke="white" strokeWidth="0.003" /><text x={point.x} y={point.y + 0.004} textAnchor="middle" fontSize="0.012" fill="#111">{point.label === 1 ? '+' : '−'}</text></g>)}
+    </svg>
+  );
 
   if (mode === 'split') {
     return (
@@ -170,15 +178,21 @@ export function AiCompareStage({ absPath, alt, onError, viewStyle }: StageProps)
             className="min-w-0 max-h-full w-1/2 object-contain"
             style={viewStyle}
           />
-          <img
-            data-testid="ai-result"
-            src={resultSrc}
-            alt="抠图结果"
-            draggable={false}
-            onError={onError}
-            className="min-w-0 max-h-full w-1/2 object-contain"
-            style={{ ...viewStyle, ...checkerBg }}
-          />
+          {/* 结果图要包一层 relative：overlay 用 absolute inset-0 铺满的是这一层，
+              直接挂在Stack 的 grid/flex 兄弟位上会拿不到参照框，命中坐标整体偏掉。
+              w-1/2 挪到这层，Stack 里的占位由它承担。 */}
+          <div className="relative min-w-0 max-h-full w-1/2" style={viewStyle}>
+            <img
+              data-testid="ai-result"
+              src={resultSrc}
+              alt="抠图结果"
+              draggable={false}
+              onError={onError}
+              className="block max-h-full w-full object-contain"
+              style={checkerBg}
+            />
+            {canPrompt && promptOverlay}
+          </div>
         </Stack>
         <Typography
           data-testid="ai-mask-note"
@@ -188,11 +202,27 @@ export function AiCompareStage({ absPath, alt, onError, viewStyle }: StageProps)
         >
           掩码在 {result.maskWidth}×{result.maskHeight} 下计算，右侧结果放大后偏软，属正常
         </Typography>
+        {result.maskEditable && maskPromptMode && (
+          <Stack
+            data-mask-brush="true"
+            direction="row"
+            alignItems="center"
+            spacing={0.5}
+            sx={{ position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', px: 1, py: 0.5, bgcolor: 'rgba(20, 22, 26, 0.88)', borderRadius: px(tokens.radius.sm), zIndex: 3 }}
+            onPointerDown={(event) => event.stopPropagation()}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <Typography variant="caption" sx={{ color: 'white', whiteSpace: 'nowrap' }}>在右图上：左键=要保留 · 右键=要去掉</Typography>
+            <Button size="small" disabled={maskEditing || Boolean(task) || !result.maskCanUndo} onClick={() => { setPromptCursor((cursor) => Math.max(0, cursor - 1)); void editMask({ action: 'undo' }); }}>撤销</Button>
+            <Button size="small" disabled={maskEditing || Boolean(task) || !result.maskCanRedo} onClick={() => { setPromptCursor((cursor) => Math.min(prompts.length, cursor + 1)); void editMask({ action: 'redo' }); }}>重做</Button>
+            {maskEditing && <Typography variant="caption" sx={{ color: 'white', whiteSpace: 'nowrap' }}>更新中…</Typography>}
+          </Stack>
+        )}
       </>
     );
   }
 
-  // 默认：看到的就是抠好的图；按住大图或按住空格才切回原图
+  // 默认：看到的就是抠好的图；按住空格才切回原图（左键整个让给点提示）
   return (
     <>
       <Box
@@ -219,32 +249,10 @@ export function AiCompareStage({ absPath, alt, onError, viewStyle }: StageProps)
           className="block h-full w-full object-fill"
           style={holding ? {} : checkerBg}
         />
-        {canBrush && (
-          <svg
-            ref={brushOverlay}
-            data-testid="mask-brush-overlay"
-            data-mask-brush="true"
-            className="absolute inset-0 h-full w-full"
-            viewBox={`0 0 ${result.maskWidth} ${result.maskHeight}`} preserveAspectRatio="none"
-            style={{ touchAction: 'none', cursor: brushEnabled ? 'none' : undefined, pointerEvents: brushEnabled ? 'auto' : 'none' }}
-            onPointerDown={brushEnabled ? beginBrush : undefined}
-            onPointerMove={brushEnabled ? moveBrush : undefined}
-            onPointerUp={brushEnabled ? finishBrush : undefined}
-            onPointerCancel={brushEnabled ? (event) => {
-              stopBrushEvent(event);
-              draftRef.current = null;
-              setDraft(null);
-            } : undefined}
-          >
-            {draft && draft.viewPoints.length > 0 && (
-              <polyline points={draft.viewPoints.map((point) => `${point.x},${point.y / (draft.radiusY / draft.radius)}`).join(' ')} fill="none" stroke={brushMode === 'restore' ? '#32d583' : '#f97066'} strokeWidth={draft.radius * 2} strokeLinecap="round" strokeLinejoin="round" opacity="0.45" transform={`scale(1 ${draft.radiusY / draft.radius})`} />
-            )}
-            {brushEnabled && cursor && <ellipse cx={cursor.x} cy={cursor.y} rx={cursor.radius} ry={cursor.radiusY} fill="none" stroke={brushMode === 'restore' ? '#32d583' : '#f97066'} strokeWidth="1.5" />}
-          </svg>
-        )}
+        {canPrompt && promptOverlay}
         </Box>
       </Box>
-      {result.maskEditable && (
+      {result.maskEditable && maskPromptMode && (
         <Stack
           data-mask-brush="true"
           direction="row"
@@ -254,15 +262,13 @@ export function AiCompareStage({ absPath, alt, onError, viewStyle }: StageProps)
           onPointerDown={(event) => event.stopPropagation()}
           onMouseDown={(event) => event.stopPropagation()}
         >
-          <Button size="small" disabled={maskEditing || Boolean(task)} color={brushMode === 'restore' ? 'success' : 'inherit'} variant={brushMode === 'restore' ? 'contained' : 'outlined'} onClick={() => { setBrushMode('restore'); setBrushEnabled(true); }}>恢复前景</Button>
-          <Button size="small" disabled={maskEditing || Boolean(task)} color={brushMode === 'erase' ? 'error' : 'inherit'} variant={brushMode === 'erase' ? 'contained' : 'outlined'} onClick={() => { setBrushMode('erase'); setBrushEnabled(true); }}>擦除背景</Button>
-          <Button size="small" variant={brushEnabled ? 'contained' : 'outlined'} disabled={maskEditing || Boolean(task)} onClick={() => setBrushEnabled((value) => !value)}>{brushEnabled ? '完成' : '笔刷'}</Button>
-          <Button size="small" disabled={maskEditing || Boolean(task) || !result.maskCanUndo} onClick={() => void editMask({ action: 'undo' })}>撤销</Button>
-          <Button size="small" disabled={maskEditing || Boolean(task) || !result.maskCanRedo} onClick={() => void editMask({ action: 'redo' })}>重做</Button>
-          <Slider aria-label="笔刷大小" size="small" min={1} max={20} value={brushSize} disabled={maskEditing || Boolean(task)} onChange={(_, value) => setBrushSize(value as number)} sx={{ width: 92, color: 'white', mx: 1 }} />
+          <Typography variant="caption" sx={{ color: 'white', whiteSpace: 'nowrap' }}>左键=要保留 · 右键=要去掉</Typography>
+          <Button size="small" disabled={maskEditing || Boolean(task) || !result.maskCanUndo} onClick={() => { setPromptCursor((cursor) => Math.max(0, cursor - 1)); void editMask({ action: 'undo' }); }}>撤销</Button>
+          <Button size="small" disabled={maskEditing || Boolean(task) || !result.maskCanRedo} onClick={() => { setPromptCursor((cursor) => Math.min(prompts.length, cursor + 1)); void editMask({ action: 'redo' }); }}>重做</Button>
           {maskEditing && <Typography variant="caption" sx={{ color: 'white', whiteSpace: 'nowrap' }}>更新中…</Typography>}
         </Stack>
       )}
+      <Dialog open={samConsent} onClose={() => setSamConsent(false)}><DialogTitle>安装实验性 MobileSAM 点提示模型？</DialogTitle><DialogContent><Typography>需要下载两个模型文件（约 44.7 MB）。文件会先校验 SHA-256；模型来源及再分发许可尚未独立核实，推理仅走 CPU，效果尚未验证。确认后才会开始下载。</Typography></DialogContent><DialogActions><Button disabled={samInstalling} onClick={() => setSamConsent(false)}>取消</Button><Button disabled={samInstalling} onClick={async () => { setSamInstalling(true); try { await call(getApi().aiMobileSamInstall()); setSamConsent(false); } catch (error) { useAiStore.setState({ error: { taskId: result.taskId, code: 'SAM_INSTALL_FAILED', message: String(error) } }); } finally { setSamInstalling(false); } }}>{samInstalling ? '下载中…' : '同意并下载'}</Button></DialogActions></Dialog>
       {/* 触发方式从按钮挪到图上，所以说明也得跟着挪；分屏不用它（原图本来就同屏） */}
       <Typography
         data-testid="ai-hold-hint"
@@ -286,12 +292,14 @@ export function AiCompareActions({
   const result = useCompareResult(absPath);
   const mode = useAiStore((s) => s.compareMode);
   const setCompareMode = useAiStore((s) => s.setCompareMode);
+  const maskPromptMode = useAiStore((s) => s.maskPromptMode);
+  const setMaskPromptMode = useAiStore((s) => s.setMaskPromptMode);
   const clearResult = useAiStore((s) => s.clearResult);
   const saveResult = useAiStore((s) => s.saveResult);
   const maskEditing = useAiStore((s) => s.maskEditing);
+  const task = useAiStore((s) => s.task);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-
   if (!result) return null;
 
   const save = async () => {
@@ -300,7 +308,7 @@ export function AiCompareActions({
     try {
       const saved = await saveResult();
       if (saved) onSaved?.(saved);
-      else if (useAiStore.getState().maskEditing) setSaveError('笔刷更新中，请稍后再保存');
+      else if (useAiStore.getState().maskEditing) setSaveError('点提示编辑中，请稍后再保存');
     } catch (err) {
       // 保存失败不能把结果弄丢：预览留着，用户可以直接重试（§6 / A5）
       setSaveError(err instanceof Error ? err.message : String(err));
@@ -321,6 +329,17 @@ export function AiCompareActions({
           默认的 flexWrap: wrap 会把两个模式按钮叠成竖排（高 107px），所以这里不收缩、
           并在按钮组上显式 nowrap */}
       <Stack direction="row" alignItems="center" data-testid="ai-mode-group" className="shrink-0">
+        {result.maskEditable && (
+          <Button
+            size="small"
+            variant={maskPromptMode ? 'contained' : 'outlined'}
+            disabled={maskEditing || Boolean(task)}
+            onClick={() => setMaskPromptMode(!maskPromptMode)}
+            sx={{ textTransform: 'none', mr: 1, borderColor: overlay.fieldBorder }}
+          >
+            {maskPromptMode ? '点提示中 · 点击退出' : '修正抠图'}
+          </Button>
+        )}
         <ToggleButtonGroup
           size="small"
           exclusive
