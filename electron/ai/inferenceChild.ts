@@ -14,8 +14,32 @@ import type { ModelSpec } from './capabilityCatalog';
 /** D12：CPU 路径必须显式限线程。实测不限线程时 ORT 吃满 32 核、单进程 6.3GB，把开发机压到无响应。 */
 export const DEFAULT_INTRA_OP_THREADS = 2;
 export const DEFAULT_INTER_OP_THREADS = 1;
-/** 会话创建超时的硬上限（探针里 ort-web 的 WebGPU 就是 180s 不返回，必须有上限）。 */
+/**
+ * 会话创建超时的**下限**（探针里 ort-web 的 WebGPU 就是 180s 不返回，必须有上限）。
+ *
+ * 为什么不写死一个数：实测 200MB 级模型加载就要 9s，而**光读元数据 CPU 侧就17.1s**
+ * —— 固定 30s 会把「模型大一点」误报成「加载超时」，用户看到的是超时而不是真实原因。
+ * 所以真正的超时按体积算（见 `loadTimeoutMsFor`），这里只保留小模型的兜底。
+ */
 export const DEFAULT_LOAD_TIMEOUT_MS = 30_000;
+
+/**
+ * 按模型体积算加载超时。
+ *
+ * 实测锚点：4.4 MB 级模型秒级加载；200MB 级模型在 CPU 侧读元数据就17.1s。
+ * 斜率取 **1 s/MB + 30s 固定开销**：200MB → 约 230s，覆盖 17.1s 还有大量余量；
+ * 而 4.4MB → 34s，仍是「感觉不到等待」的量级。
+ *
+ * ⚠️ 别把斜率调大。曾按 60 s/MB估过，结果 20MB 就顶到上限、整条曲线全被压平——
+ * **分级要有区分度，否则不如写死**。上限 8 分钟是真兜底：超过这个数就不是
+ * 「模型大」，而是卡死了，等下去没有意义。
+ */
+export function loadTimeoutMsFor(sizeBytes: number | undefined): number {
+  if (!sizeBytes || !Number.isFinite(sizeBytes) || sizeBytes <= 0) return DEFAULT_LOAD_TIMEOUT_MS;
+  const MB = 1024 * 1024;
+  const dynamic = Math.ceil(sizeBytes / MB) * 1_000;
+  return Math.min(480_000, Math.max(DEFAULT_LOAD_TIMEOUT_MS, dynamic + DEFAULT_LOAD_TIMEOUT_MS));
+}
 
 export type BackendPreference = 'dml' | 'cpu';
 

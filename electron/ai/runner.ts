@@ -1,4 +1,4 @@
-import type { BackendPreference, ChildReply, ChildRequest, InferFeedsReply, InferFeedsRequest, InferReply } from './inferenceChild';
+import { loadTimeoutMsFor, type BackendPreference, type ChildReply, type ChildRequest, type InferFeedsReply, type InferFeedsRequest, type InferReply } from './inferenceChild';
 import type { ModelSpec } from './capabilityCatalog';
 
 /**
@@ -83,9 +83,17 @@ export function makeUtilityProcessSpawner(utilityProcess: UtilityProcessLike): S
 export interface ChildRunnerOptions {
   spawn: SpawnChild;
   entry: string;
-  /** 会话创建硬上限。探针里 ort-web 的 WebGPU 180s 不返回，必须有上限。 */
-  loadTimeoutMs?: number;
-  /** 单次推理/卸载的超时上限。 */
+  /**
+ * 会话创建超时。**不给默认值**——各调用点按模型体积算（`loadTimeoutMsFor`）。
+ * 固定 30s 装不下 214MB 级模型，会把「模型大一点」误报成「加载超时」。
+ */
+loadTimeoutMs?: number;
+  /**
+   * 单次推理/卸载的超时上限。
+   * 默认 180s：K7那条「单次操作超 1 分钟即算慢到不可用」是**产品侧的体验线**，
+   * 不是崩溃保护线。这里要拦的是「子进程卡死」，不是「模型慢」——
+   * 让慢模型走到被判超时、报一句「已中止」，比让它跑完更能说明问题。
+   */
   requestTimeoutMs?: number;
   onRestart?: (info: { code: number | null; restartCount: number }) => void;
 }
@@ -113,15 +121,15 @@ export class ChildRunner implements InferenceRunner {
 
   private readonly spawn: SpawnChild;
   private readonly entry: string;
-  private readonly loadTimeoutMs: number;
+  private readonly configuredLoadTimeoutMs?: number;
   private readonly requestTimeoutMs: number;
   private readonly onRestart?: ChildRunnerOptions['onRestart'];
 
   constructor(opts: ChildRunnerOptions) {
     this.spawn = opts.spawn;
     this.entry = opts.entry;
-    this.loadTimeoutMs = opts.loadTimeoutMs ?? 30_000;
-    this.requestTimeoutMs = opts.requestTimeoutMs ?? 60_000;
+    this.configuredLoadTimeoutMs = opts.loadTimeoutMs;
+    this.requestTimeoutMs = opts.requestTimeoutMs ?? 180_000;
     this.onRestart = opts.onRestart;
   }
 
@@ -133,13 +141,21 @@ export class ChildRunner implements InferenceRunner {
     return this.restarts;
   }
 
+  /**
+   * 加载超时按模型体积算。调用方显式给了 `loadTimeoutMs`（探针在用）就以它为准。
+   * 固定 30s 装不下大模型——实测 214MB 的 BiRefNet 光读元数据 CPU 侧就要 17.1s。
+   */
+  private loadTimeoutFor(model: ModelSpec | undefined): number {
+    return this.configuredLoadTimeoutMs ?? loadTimeoutMsFor(model?.sizeBytes);
+  }
+
   async load(req: {
     modelPath: string;
     model: ModelSpec;
     backend?: BackendPreference;
   }): Promise<number> {
     const startedAt = Date.now();
-    const reply = await this.send('load', req, this.loadTimeoutMs, `加载模型 ${req.model.id}`);
+    const reply = await this.send('load', req, this.loadTimeoutFor(req.model), `加载模型 ${req.model.id}`);
     this.loadedId = req.model.id;
     return (reply as { loadMs?: number } | null)?.loadMs ?? Date.now() - startedAt;
   }
@@ -149,7 +165,7 @@ export class ChildRunner implements InferenceRunner {
   }
 
   async loadNamed(sessionKey: string, req: { modelPath: string; model: ModelSpec; backend?: BackendPreference }): Promise<number> {
-    const reply = await this.send('load-named', { sessionKey, request: req }, this.loadTimeoutMs, `加载模型会话 ${sessionKey}`);
+    const reply = await this.send('load-named', { sessionKey, request: req }, this.loadTimeoutFor(req.model), `加载模型会话 ${sessionKey}`);
     return (reply as { loadMs?: number } | null)?.loadMs ?? 0;
   }
 

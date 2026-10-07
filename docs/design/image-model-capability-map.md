@@ -115,19 +115,41 @@ L3  真跑一次 DirectML 推理当能力探测
 
 **一条不能破的已定裁定**：D12「**绝不自动退回 CPU**」。所以 L2/L3 探测出显存不足时，只能**标注 + 让用户自己勾 CPU**，不允许自动切、也不允许把条目置灰挡死。（另注：`inferenceChild.ts:38` 的 `['dml','cpu']` 存在引擎内部的**自动回落**，与 D12 精神冲突且当前无日志可证，已登记但未处理。）
 
-#### 本轮发现、**未修**的漏判
+#### 本轮发现、**已于 2026-10-07 修复**的漏判
 
-`classifyAdapters`（`gpuCapability.ts:25`）只过滤掉 "Microsoft Basic" 这类占位适配器。本机实测枚举到 **3 个远程控制虚拟适配器**——`OrayIddDriver Device`（向日葵）、`Todesk Virtual Display Adapter`、`GameViewer Virtual Display Adapter`，它们 `AdapterRAM` 全为空，但**名字都不含 Basic，所以全部通过过滤被算成真实适配器**。
+`classifyAdapters`（`gpuCapability.ts`）原先只过滤掉 "Microsoft Basic" 这类占位适配器。本机实测枚举到 **3 个远程控制虚拟适配器**——`OrayIddDriver Device`（向日葵）、`Todesk Virtual Display Adapter`、`GameViewer Virtual Display Adapter`，它们 `AdapterRAM` 全为空，但**名字里都没有 basic，所以原先全部通过过滤被算成真实适配器**。
 
 后果：一台只有核显 + 装了 ToDesk/向日葵的用户机器会被判 `ok`，清单全亮，点下去才报显存不足。
 
-**本文件只登记这一条，代码未动**（用户裁定本轮只做文档）。要修的话，正确做法不是把厂商名再加长，而是**改用 L3 的运行时探测**——静态名单永远追不上国产远控驱动。
+**修法（2026-10-07落地）**：**不再加厂商名，改判总线类型**——静态名单永远追不上国产远控驱动（改一个漏一个）。本机实测对照：
 
-### 一条容易被忽略的派生约束：加载预算
+```
+Name=[OrayIddDriver Device]              PNPDeviceID=[ROOT\DISPLAY\0000]      ← 软件设备，无实体硬件
+Name=[Todesk Virtual Display Adapter]    PNPDeviceID=[ROOT\DISPLAY\0001]
+Name=[GameViewer Virtual Display Adapter] PNPDeviceID=[ROOT\DISPLAY\0002]
+Name=[AMD Radeon(TM) 610M]               PNPDeviceID=[PCI\VEN_1002&DEV_164E...]  ← 真硬件走 PCI 总线
+Name=[NVIDIA GeForce RTX 5060 Laptop GPU] PNPDeviceID=[PCI\VEN_10DE&DEV_2D19...]
+```
 
-实测过：`DEFAULT_LOAD_TIMEOUT_MS = 30_000` **装不下 224 MB 级的模型**（BiRefNet 加载 9053 ms，CPU 侧光读元数据就要 17.1 s）。
+判定顺序（**不可调换**）：先剔软件设备（虚拟显示器 / Basic）→ 再看是否有实体总线 `PCI\` → 最后才退到厂商关键字（兼容拿不到 `PNPDeviceID` 的环境）。因此 CIM 查询也从 `Name|AdapterRAM` 改为 `Name|PNPDeviceID|AdapterRAM`。
 
-所以本地图凡是标 **>100 MB** 的行，都附带一个前置动作：**把加载超时应改成按体积计算**，否则用户会看到一条"加载超时"而不是真实失败原因。这件事在 M3 加第一个大模型之前必须做完，与选哪个模型无关。
+**附带收益**：这三类虚拟显示器会互相冲突（同时装两个远控就抢显示），它们的存在本就不代表任何 3D 能力。
+
+#### 加载预算：已按体积计算（2026-10-07 落地）
+
+原先 `DEFAULT_LOAD_TIMEOUT_MS = 30_000` 是写死的，**装不下 200MB 级模型**（实测加载就要 9s，而**光读元数据 CPU 侧就 17.1s**）——用户会看到一条"加载超时"而不是真实失败原因。
+
+现改为 `loadTimeoutMsFor(sizeBytes)`：**1 s/MB + 30s 固定开销**，上限 8 分钟、下限 30s。锚点：4.4MB → 35s（感觉不到等待）、200MB → 约 230s（覆盖 17.1s 仍有大量余量）。
+
+> ⚠️ **斜率不能调大**：曾按 60 s/MB 估过，结果 20MB 就顶到上限、整条曲线全被压平——**分级要有区分度，否则不如写死**。这条已写成断言（`40MB` 与 `100MB` 必须给出不同值）。
+
+### 一条已经被解决的派生约束：加载预算
+
+**这一段原先记的是「未修」（2026-09-29），已按 §1.5 末尾的方案于 2026-10-07 落地。**
+
+实测过：写死的 `DEFAULT_LOAD_TIMEOUT_MS = 30_000` **装不下 200MB 级模型**（加载就要 9s，而**光读元数据 CPU 侧就 17.1s**）。所以本地图凡是标 **>100 MB** 的行，都曾附带一个前置动作「把加载超时应改成按体积计算」——**这个动作现在做完了**，见 §1.5 末尾「加载预算」小节。
+
+留在这一行是为了让老读者知道：**这条约束的成因**（元数据读取比权重体积本身慢得多），以及它为什么与选哪个模型无关。
 
 ---
 

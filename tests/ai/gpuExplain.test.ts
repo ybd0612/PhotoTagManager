@@ -52,7 +52,7 @@ describe('classifyGpuError —— 显卡类错误的人话化', () => {
 });
 
 describe('classifyAdapters —— 有没有能用的 GPU', () => {
-  it('枚举到真实显卡就是 ok（带显存字节数）', () => {
+  it('枚举到真实显卡就是 ok（带显存字节数，无PNPDeviceID 的老格式也要认）', () => {
     expect(classifyAdapters(['NVIDIA GeForce RTX 5060 Laptop GPU|8151000000'])).toBe('ok');
   });
 
@@ -69,6 +69,52 @@ describe('classifyAdapters —— 有没有能用的 GPU', () => {
     expect(classifyAdapters(['   ', ''])).toBe('unknown');
     // 名字既不是 Basic 也认不出厂商、显存字段又读不到：没有证据说这台机器跑不动
     expect(classifyAdapters(['Some Virtual Device|'])).toBe('unknown');
+  });
+
+  /**
+   * 下面三条是本机实测数据（`Get-CimInstance Win32_VideoController` 逐行导出，2026-10-07）。
+   * 这台机器同时装着三个远程控制虚拟显示器，它们 AdapterRAM 为空、
+   * **名字里没有 basic**，所以旧的过滤条件全部放行——「核显 + 远控」会被误判成 ok，
+   * 清单全亮、点下去才报显存不足。
+   */
+  it('只有远程控制虚拟显示器时判不可用（本机实测三条：向日葵 / ToDesk / GameViewer）', () => {
+    expect(
+      classifyAdapters([
+        'OrayIddDriver Device|ROOT\\DISPLAY\\0000|',
+        'Todesk Virtual Display Adapter|ROOT\\DISPLAY\\0001|',
+        'GameViewer Virtual Display Adapter|ROOT\\DISPLAY\\0002|'
+      ])
+    ).toBe('unavailable');
+  });
+
+  it('虚拟显示器 + 核显：判 ok（认实体总线 PCI，不被虚拟设备拖累）', () => {
+    expect(
+      classifyAdapters([
+        'OrayIddDriver Device|ROOT\\DISPLAY\\0000|',
+        'Todesk Virtual Display Adapter|ROOT\\DISPLAY\\0001|',
+        'GameViewer Virtual Display Adapter|ROOT\\DISPLAY\\0002|',
+        'AMD Radeon(TM) 610M|PCI\\VEN_1002&DEV_164E\\4&1AB60904&0&0041|536870912'
+      ])
+    ).toBe('ok');
+  });
+
+  it('虚拟显示器与真卡混存仍是 ok（虚拟设备先剔除，不参与判定）', () => {
+    expect(
+      classifyAdapters([
+        'GameViewer Virtual Display Adapter|ROOT\\DISPLAY\\0002|',
+        'NVIDIA GeForce RTX 5060 Laptop GPU|PCI\\VEN_10DE&DEV_2D19\\5CDF859B242DB04800|4293918720'
+      ])
+    ).toBe('ok');
+  });
+
+  it('虚拟显示器混在 Microsoft Basic 之间也剔干净（只剩它们就是不可用）', () => {
+    expect(
+      classifyAdapters([
+        'Microsoft Basic Render Driver|ROOT\\DISPLAY\\0003|',
+        'OrayIddDriver Device|ROOT\\DISPLAY\\0000|',
+        'Todesk Virtual Display Adapter|ROOT\\DISPLAY\\0001|'
+      ])
+    ).toBe('unavailable');
   });
 });
 

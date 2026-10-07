@@ -13,34 +13,82 @@ import { readWholeGpuMemory } from './gpuStats';
  */
 export type GpuCapability = 'ok' | 'unavailable' | 'unknown';
 
-/** 无 3D 能力的占位适配器名（大小写不敏感） */
+/**
+ * 无 3D 能力的占位适配器名（大小写不敏感）。
+ * ⚠️ 这条**只作兜底**：真实机器上的 Microsoft Basic Render Driver 一行足够，
+ * 但它拦不住国产远控的虚拟显示器（见 SOFTWARE_ADAPTER），所以别把它当主判据。
+ */
 const BASIC_ADAPTER = /basic render|basic display|microsoft basic/i;
 /** 明确带 GPU 能力的厂商关键字 */
 const REAL_ADAPTER = /nvidia|geforce|quadro|rtx|gtx|radeon|amd radar|intel.*(hd|uhd|arc|iris|graphics)|aspeed|matrox/i;
 
 /**
- * 纯函数：把 `Get-CimInstance Win32_VideoController` 的每行（"Name|AdapterRAM"）判成三态。
+ * **没有实体硬件**的适配器（远程控制 / 虚拟显示器）。本机实测枚举到的三条全属此类：
+ *
+ * ```
+ * [OrayIddDriver Device]              ← 向日葵
+ * [Todesk Virtual Display Adapter]
+ * [GameViewer Virtual Display Adapter]
+ * ```
+ *
+ * 它们 `AdapterRAM` 为空，但**名字里没有 basic**，所以原先的过滤放它们过了，
+ * 于是「只有核显 + 装了远控」的机器被判成 `ok`，清单全亮、点下去才报显存不足。
+ *
+ * **为什么不继续加厂商名**：静态名单永远追不上国产远控驱动，改一个漏一个。
+ * 判据改成**总线类型**——`ROOT\DISPLAY\...` 是软件创建设备，没有真实硬件总线；
+ * 真实适配器一律是 `PCI\VEN_xxxx&DEV_xxxx` 形态。这条跟着 Windows 的枚举语义走，
+ * 不依赖任何一家的名字。
+ *
+ * 附带收益：这三类虚拟适配器会互相冲突（同时装两个远控就抢显示），
+ * 它们的存在不代表有任何 3D 能力。
+ */
+const SOFTWARE_ADAPTER = /virtual display|virtual monitor|idddriver|indirect display|idd/i;
+/** `Win32_VideoController.PNPDeviceID`：实体硬件走 PCI 总线，软件设备走 ROOT\DISPLAY */
+const BUS_PREFIX = /^PCI\\/i;
+
+/**
+ * 纯函数：把 `Get-CimInstance Win32_VideoController` 的每行判成三态。
+ *
+ * 入参格式 `Name|PNPDeviceID|AdapterRAM`（第三段可缺，缺按读不到处理）。
  * 拆出来是为了能单测——真机上要么有卡要么没有，判错的代价是整条功能对用户消失。
+ *
+ * 判定顺序刻意如此，**不能调换**：
+ * 1. 先剔软件设备（虚拟显示器 / Basic），它们一定没有 3D 能力；
+ * 2. 再看剩下的是否有**实体总线**（`PCI\...`）；
+ * 3. 最后才退到厂商关键字 —— 只在这一步认，是为了兼容拿不到 PNPDeviceID 的环境。
+ *
+ * 第2 步是主力判据。若只看第 3 步，「核显 + 远控」会被判ok（远控名字里没有厂商关键字，
+ * 但也不会否决整体），这正是 §1.5 记的那个漏判。
  */
 export function classifyAdapters(lines: string[]): GpuCapability {
   const rows = lines
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line) => {
-      const [name, ram] = line.split('|');
-      return { name: (name ?? '').trim(), ramBytes: Number((ram ?? '').trim()) };
+      const [name, pnp, ram] = line.split('|');
+      return {
+        name: (name ?? '').trim(),
+        pnpId: (pnp ?? '').trim(),
+        ramBytes: Number((ram ?? '').trim())
+      };
     });
   if (rows.length === 0) return 'unknown';
-  const real = rows.filter((r) => r.name && !BASIC_ADAPTER.test(r.name));
-  if (real.length === 0) return 'unavailable';
-  // 有非 Basic 的适配器就认 ok；显存字段读不到（0/NaN）也不否决——虚拟机的取值经常不可信
-  return real.some((r) => Number.isFinite(r.ramBytes) && r.ramBytes > 0) || real.some((r) => REAL_ADAPTER.test(r.name))
+
+  const candidates = rows.filter((r) => r.name && !BASIC_ADAPTER.test(r.name) && !SOFTWARE_ADAPTER.test(r.name));
+  if (candidates.length === 0) return 'unavailable';
+
+  // 有实体总线就是真硬件 —— 这一条不依赖厂商名单，也不依赖 AdapterRAM 是否读得到
+  if (candidates.some((r) => BUS_PREFIX.test(r.pnpId))) return 'ok';
+
+  // 拿不到 PNPDeviceID 的环境（老系统、非英文）退到厂商关键字 + 显存读数
+  return candidates.some((r) => REAL_ADAPTER.test(r.name)) ||
+    candidates.some((r) => Number.isFinite(r.ramBytes) && r.ramBytes > 0)
     ? 'ok'
     : 'unknown';
 }
 
 const QUERY =
-  'Get-CimInstance Win32_VideoController | ForEach-Object { "$($_.Name)|$($_.AdapterRAM)" }';
+  'Get-CimInstance Win32_VideoController | ForEach-Object { "$($_.Name)|$($_.PNPDeviceID)|$($_.AdapterRAM)" }';
 
 /** 枚举显示适配器。任何一步不顺利都回 unknown，绝不因为"探测失败"就把功能标成不可用。 */
 export function probeAdaptersViaCim(): Promise<GpuCapability> {

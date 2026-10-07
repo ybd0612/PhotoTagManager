@@ -11,6 +11,8 @@ import {
   createMessageHandler,
   ChildInference,
   DEFAULT_INTRA_OP_THREADS,
+  DEFAULT_LOAD_TIMEOUT_MS,
+  loadTimeoutMsFor,
   type ChildReply,
   type ChildRequest
 } from '../../electron/ai/inferenceChild';
@@ -64,6 +66,57 @@ describe('ai/inferenceChild —— 会话参数必须显式限线程（D12）', 
         expect(src, `${file} 不应写死 ${forbidden}`).not.toContain(forbidden);
       }
     }
+  });
+
+  /**
+   * 加载超时必须跟着体积走。实测 200MB 级模型光读元数据 CPU 侧就要 17.1s，
+   * 固定 30s 会把「模型大一点」误报成「加载超时」——用户看到的是超时而不是真实原因。
+   */
+  describe('loadTimeoutMsFor —— 超时按体积算', () => {
+    const MB = 1024 * 1024;
+
+    it('体积读不到时退回兜底值，不返回 NaN 或 0', () => {
+      expect(loadTimeoutMsFor(undefined)).toBe(DEFAULT_LOAD_TIMEOUT_MS);
+      expect(loadTimeoutMsFor(0)).toBe(DEFAULT_LOAD_TIMEOUT_MS);
+      expect(loadTimeoutMsFor(Number.NaN)).toBe(DEFAULT_LOAD_TIMEOUT_MS);
+      expect(loadTimeoutMsFor(-1)).toBe(DEFAULT_LOAD_TIMEOUT_MS);
+    });
+
+    it('小模型不被无谓地等（几 MB 就给到下限附近）', () => {
+      // 4.4MB 向上取整成 5s 斜率 + 30s 固定开销 = 35s，仍在「感觉不到等待」的量级
+      expect(loadTimeoutMsFor(4.4 * MB)).toBe(35_000);
+      expect(loadTimeoutMsFor(4.4 * MB)).toBeLessThan(60_000);
+    });
+
+    it('模型越大超时越长，且严格递增（这是改动的核心）', () => {
+      const small = loadTimeoutMsFor(20 * MB);
+      const mid = loadTimeoutMsFor(100 * MB);
+      const large = loadTimeoutMsFor(300 * MB);
+      expect(small).toBeGreaterThan(DEFAULT_LOAD_TIMEOUT_MS);
+      expect(mid).toBeGreaterThan(small);
+      expect(large).toBeGreaterThan(mid);
+    });
+
+    it('214MB 级模型给到数分钟量级，够装下实测的 17.1s 元数据读取还有余量', () => {
+      expect(loadTimeoutMsFor(214 * MB)).toBe(244_000);
+    });
+
+    it('曲线在上限前仍有区分度（斜率不能太陡，否则分级等于没做）', () => {
+      // 40MB 与 100MB 必须给出不同的值，否则「按体积分级」这个目的没达成
+      expect(loadTimeoutMsFor(40 * MB)).not.toBe(loadTimeoutMsFor(100 * MB));
+      expect(loadTimeoutMsFor(100 * MB)).toBeLessThan(480_000);
+    });
+
+    it('再大的模型也不无限等：封顶 8 分钟（超过就不是「模型大」而是卡死）', () => {
+      expect(loadTimeoutMsFor(10_000 * MB)).toBe(480_000);
+      expect(loadTimeoutMsFor(100_000 * MB)).toBe(480_000);
+    });
+
+    it('全是整数毫秒（setTimeout 传小数会被截断成偏小的值）', () => {
+      for (const bytes of [1, 4.4 * MB, 33.3 * MB, 214 * MB, 999 * MB]) {
+        expect(Number.isInteger(loadTimeoutMsFor(bytes))).toBe(true);
+      }
+    });
   });
 });
 
