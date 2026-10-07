@@ -45,6 +45,7 @@ function createMockApi(): PhotoTagApi {
       ok: true as const,
       data: { id: 'r1', path: 'C:/Photos', alias: '新名', addedAt: 1 }
     })),
+    reorderRoots: vi.fn(async () => ({ ok: true as const, data: undefined })),
     // 扫描（带 rootId）
     scanStart: vi.fn(async (_rootId: string, _rootPath: string, scanId: string) => ({ ok: true as const, data: { rootId: 'r1', rootPath: 'C:/Photos', scanId } })),
     scanCancel: vi.fn(async () => ({ ok: true as const, data: undefined })),
@@ -96,6 +97,8 @@ function createMockApi(): PhotoTagApi {
     aiRun: vi.fn(async () => ({ ok: true as const, data: { taskId: 'ai-1' } })),
     aiCancel: vi.fn(async () => ({ ok: true as const, data: true })),
     aiMaskEdit: vi.fn(async () => ({ ok: true as const, data: { tempPath: '', maskCanUndo: false, maskCanRedo: false } })),
+    aiMobileSamStatus: vi.fn(async () => ({ ok: true as const, data: { statuses: [{ id: 'mobilesam-image-encoder', sizeBytes: 28_157_093, status: 'absent' as const }, { id: 'mobilesam-mask-decoder', sizeBytes: 16_496_559, status: 'absent' as const }] } })),
+    aiMobileSamInstall: vi.fn(async () => ({ ok: true as const, data: undefined })),
     aiSave: vi.fn(async () => ({ ok: true as const, data: { savedPath: '', targetName: '', renamed: false, overwrote: false, tagsWritten: [] } })),
     aiModelDownload: vi.fn(async () => ({ ok: true as const, data: { modelId: 'u2netp', status: 'present' as const } })),
     aiModelDelete: vi.fn(async () => ({ ok: true as const, data: { modelId: 'u2netp', status: 'absent' as const } })),
@@ -553,5 +556,137 @@ describe('左栏右键菜单的「取消隐藏」区', () => {
     expect(screen.getByRole('menuitem', { name: '01' })).toBeTruthy();
     expect(screen.getByRole('menuitem', { name: '01/上午' })).toBeTruthy();
     expect(screen.queryByRole('menuitem', { name: '2024/01' })).toBeNull();
+  });
+});
+
+/**
+ * 根目录拖拽排序。
+ * jsdom 没有 DataTransfer 也没有真实布局，所以自造一个最小载荷对象、
+ * 并把目标行的 getBoundingClientRect 桩成上下两半——落点判定靠的就是这两个值。
+ */
+describe('左栏根目录拖拽排序', () => {
+  function seedTwoRoots(): void {
+    const store = useAppStore.getState();
+    store.addRootLocal({ id: 'r1', path: 'C:/Photos', alias: '照片', addedAt: 1, sortOrder: 0 });
+    store.addRootLocal({ id: 'r2', path: 'D:/资料', alias: '资料', addedAt: 2, sortOrder: 1 });
+    store.selectRoot('r1');
+    // 根「照片」下挂一个子目录：用来验证子目录行不参与排序
+    useAppStore.setState({
+      treesByRoot: new Map([['r1', [folder('截图', 2)]]]),
+      tree: [folder('截图', 2)],
+      imagesByDir: new Map([[rootKey('r1', '截图'), [image('截图', 'a.jpg'), image('截图', 'b.jpg')]]]),
+      scannedRoots: new Set(['r1'])
+    });
+  }
+
+  const dataTransfer = (): { setData: ReturnType<typeof vi.fn>; effectAllowed: string; dropEffect: string } => ({
+    setData: vi.fn(),
+    effectAllowed: '',
+    dropEffect: ''
+  });
+
+  /** 目标行伪造成高 20px：clientY<10 落在上半区（插前），否则下半区（插后） */
+  function stubRowRect(row: HTMLElement): void {
+    row.getBoundingClientRect = () =>
+      ({ top: 0, height: 20, bottom: 20, left: 0, right: 100, width: 100, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+  }
+
+  const rowOf = (alias: string): HTMLElement =>
+    screen.getByRole('treeitem', { name: new RegExp(`目录 ${alias}`) });
+
+  it('拖到另一根行下半区：新根排到其后，并落盘新顺序', async () => {
+    seedTwoRoots();
+    render(<AppLayout />);
+    const target = rowOf('资料');
+    stubRowRect(target);
+
+    const dt = dataTransfer();
+    fireEvent.dragStart(rowOf('照片'), { dataTransfer: dt });
+    fireEvent.dragOver(target, { dataTransfer: dt, clientY: 15 });
+    // 悬停即出现落点提示线（在目标行下缘）
+    expect(screen.getByTestId('drop-hint-r2')).toBeTruthy();
+    fireEvent.drop(target, { dataTransfer: dt, clientY: 15 });
+
+    await waitFor(() => expect(useAppStore.getState().roots.map((r) => r.id)).toEqual(['r2', 'r1']));
+    const reorder = vi.mocked((window as unknown as { api: PhotoTagApi }).api.reorderRoots);
+    await waitFor(() => expect(reorder).toHaveBeenCalledWith(['r2', 'r1']));
+    // 序号同步重写，重启后顺序不会反弹
+    expect(useAppStore.getState().roots.map((r) => r.sortOrder)).toEqual([0, 1]);
+  });
+
+  it('拖到上半区：插到目标之前', async () => {
+    seedTwoRoots();
+    render(<AppLayout />);
+    const target = rowOf('资料');
+    stubRowRect(target);
+
+    const dt = dataTransfer();
+    fireEvent.dragStart(rowOf('照片'), { dataTransfer: dt });
+    fireEvent.dragOver(target, { dataTransfer: dt, clientY: 2 });
+    fireEvent.drop(target, { dataTransfer: dt, clientY: 2 });
+    await waitFor(() => expect(useAppStore.getState().roots.map((r) => r.id)).toEqual(['r2', 'r1']));
+  });
+
+  it('拖到算下来顺序没变的位置：不写盘（拖回原位不该产生一次落盘）', async () => {
+    seedTwoRoots();
+    render(<AppLayout />);
+    // 「资料」已经在第二位，把它拖到「照片」下半区算下来还是 [资料, 照片]
+    const target = rowOf('照片');
+    stubRowRect(target);
+
+    const dt = dataTransfer();
+    fireEvent.dragStart(rowOf('资料'), { dataTransfer: dt });
+    fireEvent.dragOver(target, { dataTransfer: dt, clientY: 15 });
+    fireEvent.drop(target, { dataTransfer: dt, clientY: 15 });
+
+    expect(useAppStore.getState().roots.map((r) => r.id)).toEqual(['r1', 'r2']);
+    const reorder = vi.mocked((window as unknown as { api: PhotoTagApi }).api.reorderRoots);
+    await Promise.resolve();
+    expect(reorder).not.toHaveBeenCalled();
+  });
+
+  it('只有根行可拖：子目录行 draggable=false，也不接受落点', () => {
+    seedTwoRoots();
+    render(<AppLayout />);
+    expect(rowOf('照片').getAttribute('draggable')).toBe('true');
+    // 子目录行显式 false 而不是「不写这个属性」：HTML 默认就是不可拖，但写出来能让
+    // 「这里刻意不给拖」在 DOM 上一眼可查，不会被后来人当成漏传
+    expect(screen.getByRole('treeitem', { name: /截图，/ }).getAttribute('draggable')).toBe('false');
+
+    // 拖根悬停到子目录行：不画提示线，也不吞掉事件（排序只作用于顶层根）
+    const dt = dataTransfer();
+    const child = screen.getByRole('treeitem', { name: /截图，/ });
+    stubRowRect(child);
+    fireEvent.dragStart(rowOf('照片'), { dataTransfer: dt });
+    fireEvent.dragOver(child, { dataTransfer: dt, clientY: 15 });
+    expect(screen.queryByTestId('drop-hint-r1')).toBeNull();
+    expect(screen.queryByTestId('drop-hint-r2')).toBeNull();
+  });
+
+  it('拖到树外被取消：dragend 之后不留残影提示线', () => {
+    seedTwoRoots();
+    render(<AppLayout />);
+    const target = rowOf('资料');
+    stubRowRect(target);
+    const dt = dataTransfer();
+    fireEvent.dragStart(rowOf('照片'), { dataTransfer: dt });
+    fireEvent.dragOver(target, { dataTransfer: dt, clientY: 15 });
+    expect(screen.getByTestId('drop-hint-r2')).toBeTruthy();
+    fireEvent.dragEnd(rowOf('照片'));
+    expect(screen.queryByTestId('drop-hint-r2')).toBeNull();
+  });
+
+  it('右键菜单的「上移/下移」是拖拽的键盘等价物，边界项置灰', async () => {
+    seedTwoRoots();
+    render(<AppLayout />);
+    fireEvent.contextMenu(rowOf('照片'));
+    // 「照片」当前在第一位：上移不可用，下移可用
+    expect(screen.getByRole('menuitem', { name: '上移' }).getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(screen.getByRole('menuitem', { name: '下移' }));
+
+    await waitFor(() => expect(useAppStore.getState().roots.map((r) => r.id)).toEqual(['r2', 'r1']));
+    await waitFor(() =>
+      expect(vi.mocked((window as unknown as { api: PhotoTagApi }).api.reorderRoots)).toHaveBeenCalledWith(['r2', 'r1'])
+    );
   });
 });

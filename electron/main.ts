@@ -2,7 +2,7 @@ import { app, BrowserWindow, Menu, nativeImage, net, protocol, session, Tray, ut
 import { pathToFileURL } from 'url';
 import { join } from 'path';
 import { existsSync } from 'fs';
-import electronLog from 'electron-log';
+import electronLog from 'electron-log/main';
 import { USER_DATA_DIR_NAME, legacyUserDataDirFor, userDataDirFor } from './userDataDir';
 import { ScanService } from './services/scanService';
 import { XmpService } from './services/xmpService';

@@ -1,6 +1,6 @@
 import { app } from 'electron';
 import { autoUpdater } from 'electron-updater';
-import electronLog from 'electron-log';
+import electronLog from 'electron-log/main';
 import type { WebContents } from 'electron';
 import type { UpdateStatus } from '../../shared/types';
 import { classifyUpdateError } from '../../shared/updateError';

@@ -1,6 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Box, Chip, Divider, IconButton, ListSubheader, Menu, MenuItem, Stack, Tooltip, Typography } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
+import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
+import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import DriveFileRenameOutlineIcon from '@mui/icons-material/DriveFileRenameOutline';
@@ -12,6 +14,7 @@ import { call, getApi } from '../api';
 import { rootKey, useAppStore } from '../store/useAppStore';
 import { startScan } from '../hooks/useScan';
 import { buildTreeRows, listHiddenUnder, type TreeRow } from '../utils/treeRows';
+import { moveRootByOffset, reorderRootsByDrop, sameOrder, type DropPosition } from '../utils/rootOrder';
 import type { RootActions } from '../hooks/useRootActions';
 
 /**
@@ -23,6 +26,9 @@ import type { RootActions } from '../hooks/useRootActions';
  * - 右键菜单按行类型渲染，不给点不到的灰项：根行没有「隐藏文件夹」，目录行没有「改别名」「删除根目录」
  * - 「取消隐藏」按子树实际隐藏项渲染：0 项整块不出现（旧版是永久灰掉的哑项——能右键到的行必然不在
  *   隐藏集里）、1 项单行、≥2 项平铺成「全部恢复（N）」+ 逐项
+ * - 根目录可拖拽排序（只排顶层根，子目录随根整体搬家）：HTML5 draggable，落点按指针在目标行的
+ *   上/下半区决定插前还是插后，行缘画插入指示线；子目录行不可拖、也不接受落点（排序只作用于根）
+ * - 拖拽对键盘用户不可用，根行右键补「上移/下移」等价入口，与菜单里其它可达项保持一致
  */
 export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.Element {
   const roots = useAppStore((s) => s.roots);
@@ -37,10 +43,15 @@ export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.E
   const hideFolderLocal = useAppStore((s) => s.hideFolderLocal);
   const unhideFolderLocal = useAppStore((s) => s.unhideFolderLocal);
   const setHiddenSet = useAppStore((s) => s.setHiddenSet);
+  const reorderRootsLocal = useAppStore((s) => s.reorderRootsLocal);
   const setSnackbar = useAppStore((s) => s.setSnackbar);
 
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [menu, setMenu] = useState<{ rootId: string; relPath: string; isRoot: boolean; mouseX: number; mouseY: number } | null>(null);
+  /** 正在拖的根id；null = 没在拖。子目录行永不进入这里 */
+  const [dragRootId, setDragRootId] = useState<string | null>(null);
+  /** 当前落点提示：插到哪个根的前/后；null = 无落点 */
+  const [dropHint, setDropHint] = useState<{ rootId: string; position: DropPosition } | null>(null);
 
   const rootById = useMemo(() => new Map(roots.map((root) => [root.id, root])), [roots]);
 
@@ -69,6 +80,12 @@ export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.E
   const unhideTargets = useMemo(
     () => (menu === null ? [] : listHiddenUnder(hiddenSet, menu.rootId, menu.relPath)),
     [menu, hiddenSet]
+  );
+
+  /** 右键行在根列表里的位置：上移/下移据此判断是否已到边界（边界项给 disabled，不给点不到的动作） */
+  const menuRootIndex = useMemo(
+    () => (menu === null ? -1 : roots.findIndex((root) => root.id === menu.rootId)),
+    [menu, roots]
   );
 
   const toggleExpand = (key: string): void => {
@@ -159,6 +176,81 @@ export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.E
     else void startScan(root);
   };
 
+  /**
+   * 应用新的根顺序：先本地重排（树立刻跟着动，不等IPC），再落盘。
+   * 顺序没变就整段跳过——拖回原位不该产生一次写盘。
+   * 落盘失败只提示，不回滚界面：内存顺序已经是用户看到的样子，回滚反而更让人困惑。
+   */
+  const applyRootOrder = useCallback(
+    async (orderedIds: string[]): Promise<void> => {
+      const current = useAppStore.getState().roots.map((root) => root.id);
+      if (sameOrder(current, orderedIds)) return;
+      reorderRootsLocal(orderedIds);
+      try {
+        await call(getApi().reorderRoots(orderedIds));
+      } catch {
+        setSnackbar('目录顺序保存失败，重启后会恢复');
+      }
+    },
+    [reorderRootsLocal, setSnackbar]
+  );
+
+  /** 开始拖：只有根行可拖，draggable 与 onDragStart 都按isRoot 收口 */
+  const handleDragStart = (rootId: string) => (event: React.DragEvent) => {
+    setDragRootId(rootId);
+    event.dataTransfer.effectAllowed = 'move';
+    // Firefox/Electron 不给 draggable 元素设数据就不会启动拖拽，必须写一个载荷
+    event.dataTransfer.setData('text/plain', rootId);
+  };
+
+  /**
+   * 悬停算落点：按指针在目标行内的相对位置取上/下半区。
+   * 非根行不接受落点（排序只作用于顶层根），自己那一行也直接放行——拖过自己时不闪提示线。
+   */
+  const handleDragOver = (row: TreeRow) => (event: React.DragEvent<HTMLElement>) => {
+    if (dragRootId === null || !row.isRoot || row.rootId === dragRootId) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    const rect = event.currentTarget.getBoundingClientRect();
+    const position: DropPosition = event.clientY - rect.top < rect.height / 2 ? 'before' : 'after';
+    setDropHint((prev) =>
+      prev && prev.rootId === row.rootId && prev.position === position ? prev : { rootId: row.rootId, position }
+    );
+  };
+
+  const handleDragLeave = (row: TreeRow) => (): void => {
+    setDropHint((prev) => (prev && prev.rootId === row.rootId ? null : prev));
+  };
+
+  const handleDrop = (row: TreeRow) => (event: React.DragEvent<HTMLElement>): void => {
+    if (dragRootId === null || !row.isRoot) return;
+    event.preventDefault();
+    const fromId = dragRootId;
+    // 落点优先用提示线算出的结果；提示线没画出来（指针压边）时退回按位置推算
+    const position =
+      dropHint && dropHint.rootId === row.rootId
+        ? dropHint.position
+        : (() => {
+            const rect = event.currentTarget.getBoundingClientRect();
+            return event.clientY - rect.top < rect.height / 2 ? 'before' : 'after';
+          })();
+    setDragRootId(null);
+    setDropHint(null);
+    void applyRootOrder(reorderRootsByDrop(roots, fromId, row.rootId, position));
+  };
+
+  /** 拖拽收尾：dragend 在任何路径都会来（含落在树外被取消），统一清干净，别留残影 */
+  const handleDragEnd = (): void => {
+    setDragRootId(null);
+    setDropHint(null);
+  };
+
+  /** 菜单里的上移/下移：拖拽的键盘等价物，边界位返回原顺序，这里自然无操作 */
+  const handleMoveRoot = async (rootId: string, delta: -1 | 1): Promise<void> => {
+    setMenu(null);
+    await applyRootOrder(moveRootByOffset(roots, rootId, delta));
+  };
+
   /** 菜单里的隐藏项标签：相对右键目录显示，免得列出一串重复的祖先路径 */
   const hiddenItemLabel = (path: string): string =>
     menu === null || menu.relPath === '' ? path : path.slice(menu.relPath.length + 1);
@@ -174,6 +266,14 @@ export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.E
           图库 · {roots.length} 个目录
         </Typography>
         <Stack direction="row" alignItems="center" spacing={0.25}>
+          {/* 拖拽排序没有明显把手，靠一次说明让用户知道目录行能拖；只有一个目录时排了也看不出差别，不提示 */}
+          {roots.length > 1 && (
+            <Tooltip title="拖动目录行可调整顺序">
+              <Typography variant="caption" color="text.secondary" className="cursor-help">
+                可拖动排序
+              </Typography>
+            </Tooltip>
+          )}
           <Tooltip title="添加目录">
             <IconButton size="small" aria-label="添加目录" onClick={() => void rootActions.addRoot()}>
               <AddIcon fontSize="small" />
@@ -209,6 +309,8 @@ export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.E
             row={row}
             scanned={scannedRoots.has(row.rootId)}
             scanning={scanStateByRoot.get(row.rootId) === 'scanning'}
+            dragging={dragRootId === row.rootId}
+            dropHint={dropHint && dropHint.rootId === row.rootId ? dropHint.position : null}
             onExpand={() => toggleExpand(row.key)}
             onSelect={() => void handleSelectRow(row)}
             onContextMenu={(e) => {
@@ -223,6 +325,11 @@ export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.E
               const root = rootById.get(row.rootId);
               if (root) rootActions.openRemove(root);
             }}
+            onDragStart={handleDragStart(row.rootId)}
+            onDragOver={handleDragOver(row)}
+            onDragLeave={handleDragLeave(row)}
+            onDrop={handleDrop(row)}
+            onDragEnd={handleDragEnd}
           />
         ))}
       </Box>
@@ -267,10 +374,19 @@ export function FolderTree({ rootActions }: { rootActions: RootActions }): JSX.E
           <RefreshIcon fontSize="small" sx={{ mr: 1 }} />
           重新扫描
         </MenuItem>
-        {/* 根行专属：改名与删除不只挂在 hover 上，键盘用户从菜单同样能触发；目录行整条不出现，不给点不到的灰项 */}
+        {/* 根行专属：改名、删除、排序都不只挂在 hover 上，键盘用户从菜单同样能触发；目录行整条不出现，不给点不到的灰项 */}
         {menu !== null && menu.isRoot && (
           <>
             <MenuItem onClick={() => handleMenuAction('rename')}>改别名</MenuItem>
+            {/* 拖拽排序的键盘等价入口：已在顶/底时 moveRootByOffset 原样返回，点了不报错也不写盘 */}
+            <MenuItem disabled={menuRootIndex === 0} onClick={() => void handleMoveRoot(menu.rootId, -1)}>
+              <ArrowUpwardIcon fontSize="small" sx={{ mr: 1 }} />
+              上移
+            </MenuItem>
+            <MenuItem disabled={menuRootIndex === roots.length - 1} onClick={() => void handleMoveRoot(menu.rootId, 1)}>
+              <ArrowDownwardIcon fontSize="small" sx={{ mr: 1 }} />
+              下移
+            </MenuItem>
             <MenuItem color="error" onClick={() => handleMenuAction('remove')}>
               删除目录
             </MenuItem>
@@ -285,15 +401,40 @@ interface TreeRowItemProps {
   row: TreeRow;
   scanned: boolean;
   scanning: boolean;
+  /** 正被拖起（半透明 + 禁止原位点击） */
+  dragging: boolean;
+  /** 落点提示线画在这一行的上缘还是下缘；null = 不画 */
+  dropHint: DropPosition | null;
   onExpand: () => void;
   onSelect: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
   onRename: () => void;
   onRemove: () => void;
+  onDragStart: (e: React.DragEvent) => void;
+  onDragOver: (e: React.DragEvent<HTMLElement>) => void;
+  onDragLeave: () => void;
+  onDrop: (e: React.DragEvent<HTMLElement>) => void;
+  onDragEnd: () => void;
 }
 
 /** 树里的一行：根行显示别名 + 扫描状态 + 改名/删除，目录行只有名字与计数 */
-function TreeRowItem({ row, scanned, scanning, onExpand, onSelect, onContextMenu, onRename, onRemove }: TreeRowItemProps): JSX.Element {
+function TreeRowItem({
+  row,
+  scanned,
+  scanning,
+  dragging,
+  dropHint,
+  onExpand,
+  onSelect,
+  onContextMenu,
+  onRename,
+  onRemove,
+  onDragStart,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onDragEnd
+}: TreeRowItemProps): JSX.Element {
   const ariaLabel = row.isRoot
     ? scanned
       ? `目录 ${row.name}，共 ${row.totalCount} 张图片`
@@ -301,13 +442,20 @@ function TreeRowItem({ row, scanned, scanning, onExpand, onSelect, onContextMenu
     : `${row.name}，${row.totalCount} 张图片`;
   return (
     <Box
-      className="ptm-tree-row group flex cursor-pointer items-center gap-1 rounded-md py-1 pr-1.5"
-      style={{ paddingLeft: 6 + row.depth * 14 }}
+      className="ptm-tree-row group relative flex cursor-pointer items-center gap-1 rounded-md py-1 pr-1.5"
+      style={{ paddingLeft: 6 + row.depth * 14, opacity: dragging ? 0.4 : 1 }}
       role="treeitem"
       tabIndex={0}
       aria-label={ariaLabel}
       aria-selected={row.selected}
       aria-expanded={row.hasChildren ? row.expanded : undefined}
+      // 只有根行可拖：draggable 给到子目录行会让整棵树都能被拖起来，排序却只对根生效
+      draggable={row.isRoot}
+      onDragStart={row.isRoot ? onDragStart : undefined}
+      onDragOver={row.isRoot ? onDragOver : undefined}
+      onDragLeave={row.isRoot ? onDragLeave : undefined}
+      onDrop={row.isRoot ? onDrop : undefined}
+      onDragEnd={row.isRoot ? onDragEnd : undefined}
       onClick={onSelect}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {
@@ -396,6 +544,21 @@ function TreeRowItem({ row, scanned, scanning, onExpand, onSelect, onContextMenu
           variant="outlined"
           sx={{ height: 18, fontSize: 11, '& .MuiChip-label': { px: 0.6 } }}
         />
+      )}
+      {/*
+       * 落点提示线：画在目标行的上缘或下缘，2px 主色横线加两个端点小圆点，
+       * 宽度跟着行走（absolute 定位在 relative 的行盒里，不额外占布局高度）。
+       */}
+      {dropHint !== null && (
+        <Box
+          data-testid={`drop-hint-${row.rootId}`}
+          className="pointer-events-none absolute left-1 right-1 z-10 flex items-center"
+          sx={{ [dropHint === 'before' ? 'top' : 'bottom']: -1, height: 2 }}
+        >
+          <Box sx={{ width: 5, height: 5, borderRadius: '50%', bgcolor: 'primary.main', ml: -0.5 }} />
+          <Box className="flex-1" sx={{ height: 2, bgcolor: 'primary.main' }} />
+          <Box sx={{ width: 5, height: 5, borderRadius: '50%', bgcolor: 'primary.main', mr: -0.5 }} />
+        </Box>
       )}
     </Box>
   );

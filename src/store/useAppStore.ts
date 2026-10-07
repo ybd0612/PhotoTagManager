@@ -97,6 +97,7 @@ interface AppState {
   addRootLocal(entry: RootEntry): void;
   removeRootLocal(rootId: string): void;
   renameRootLocal(rootId: string, alias: string): void;
+  reorderRootsLocal(orderedIds: string[]): void;
   selectRoot(rootId: string): void;
   // 扫描
   setScanState(state: ScanState): void;
@@ -354,6 +355,29 @@ export const useAppStore = create<AppState>((set, get) => ({
   renameRootLocal: (rootId, alias) => {
     const roots = get().roots.map((r) => (r.id === rootId ? { ...r, alias } : r));
     set({ roots });
+  },
+
+  /**
+   * 按给定 id 顺序重排根目录（树里拖拽 / 菜单上移下移）。
+   * 保持 id 与序号写回 roots 本身，树与网格都从 roots 派生，不用另开一份排序状态。
+   * 未列出的根按原相对次序接在后面——不会因为一次局部重排把别的根弄丢。
+   */
+  reorderRootsLocal: (orderedIds) => {
+    const roots = get().roots;
+    if (roots.length === 0) return;
+    const rank = new Map(orderedIds.map((id, index) => [id, index]));
+    if (rank.size === 0) return;
+    const sorted = [...roots].sort((a, b) => {
+      const ra = rank.get(a.id);
+      const rb = rank.get(b.id);
+      // 两边都没被点名 = 保持原相对次序（稳定排序）
+      if (ra === undefined && rb === undefined) return roots.indexOf(a) - roots.indexOf(b);
+      if (ra === undefined) return 1;
+      if (rb === undefined) return -1;
+      return ra - rb;
+    });
+    if (sorted.every((root, i) => root.id === roots[i].id)) return;
+    set({ roots: sorted.map((root, index) => ({ ...root, sortOrder: index })) });
   },
 
   selectRoot: (rootId) => {
