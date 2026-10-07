@@ -27,5 +27,8 @@ userData/
 # WorkBuddy 项目记忆（会话日志，不入库）
 .workbuddy/
 
+# 临时工作目录（抠图调试产物等，本地生成，不入库）
+.scratch/
+
 # neural memory 工具状态目录（本地生成，不入库）
 .neuralmemory/
