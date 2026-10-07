@@ -18,7 +18,7 @@
 |------|------|----|------|------|
 | **u2netp** | 人像抠图 | A8 | ☑ **已确认在用**（M1 唯一模型，仍是 `portrait-cutout` 的默认模型） | [`u2netp.md`](u2netp.md) |
 | **MODNet** | 人像抠图 | A8 | ☑ **已进清单**（2026-09-29 真图实测通过；**默认模型暂未改判**，用户可在下拉里选它） | [`modnet.md`](modnet.md) |
-| **SigLIP base-patch16-224** | 零样本打标 / 图像嵌入 | A2 / A17 | ⚠ **已过模型级准入，未进清单**（2026-10-07：DirectML + CPU 双后端实测通过；**缺 Q11 词表决策、文本塔、真实准确率**三项，故功能层面还不能做） | [`siglip.md`](siglip.md) |
+| **SigLIP base-patch16-224** | 零样本打标 / 图像嵌入 | A2 / A17 | ⚠ **已过模型级准入，未进清单**（2026-10-07：**双塔** DirectML + CPU 实测通过，双塔投影空间一致；**缺候选词表、真图准确率**两项，故功能层面还不能做） | [`siglip.md`](siglip.md) |
 | BiRefNet-lite | 通用抠图 | A8 | ☐ 待调研（Q14：DirectML 执行即崩，需换实现） | 未建 |
 | Depth Anything V2 small | 深度图 / 背景虚化 | A9 | ☐ 待调研（许可已查：apache-2.0 但无 LICENSE 文件本体 → 需评估） | 未建 |
 | CLIP ViT-B/32 | 智能打标 | A2 | ⚠ **已排除（许可）**（2026-10-07 实测：一手仓 `openai/clip-vit-base-patch32` 的 `cardData.license` 与 README 均**无任何许可声明**，按§3.0 白名单「标识缺失 → 不列」直接出局。§3.1 的「可用（附披露）」改判救不了这一格——它只覆盖「标识在白名单内但文件缺失」） | 见 [`siglip.md`](siglip.md) §0 |
