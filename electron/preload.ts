@@ -36,6 +36,7 @@ const api: PhotoTagApi = {
   addRoot: (path: string, alias?: string) => ipcRenderer.invoke('roots:add', path, alias),
   removeRoot: (rootId: string) => ipcRenderer.invoke('roots:remove', rootId),
   renameRoot: (rootId: string, alias: string) => ipcRenderer.invoke('roots:rename', rootId, alias),
+  reorderRoots: (orderedIds: string[]) => ipcRenderer.invoke('roots:reorder', orderedIds),
   // 扫描（带 rootId）
   scanStart: (rootId: string, rootPath: string, scanId: string) => ipcRenderer.invoke('scan:start', rootId, rootPath, scanId),
   scanCancel: () => ipcRenderer.invoke('scan:cancel'),
@@ -92,6 +93,8 @@ const api: PhotoTagApi = {
   aiRun: (req: AiRunRequest) => ipcRenderer.invoke('ai:run', req),
   aiCancel: (taskId: string) => ipcRenderer.invoke('ai:cancel', taskId),
   aiMaskEdit: (taskId: string, request: AiMaskEditRequest) => ipcRenderer.invoke('ai:mask-edit', taskId, request),
+  aiMobileSamStatus: () => ipcRenderer.invoke('ai:mobilesam-status'),
+  aiMobileSamInstall: () => ipcRenderer.invoke('ai:mobilesam-install'),
   aiSave: (taskId: string) => ipcRenderer.invoke('ai:save', taskId),
   aiModelDownload: (modelId: string) => ipcRenderer.invoke('ai:model-download', modelId),
   aiModelDelete: (modelId: string) => ipcRenderer.invoke('ai:model-delete', modelId),

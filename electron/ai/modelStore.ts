@@ -122,11 +122,18 @@ export class ModelStore {
   async status(modelId: string): Promise<ModelStatus> {
     if (this.inFlight.has(modelId)) return 'downloading';
     try {
-      const files = await readdir(modelDir(modelId));
-      return files.some((f) => !f.endsWith('.part')) ? 'present' : 'absent';
+      const entry = (await this.readIndex()).models[modelId];
+      if (!entry) return 'absent';
+      const actual = await sha256OfFile(entry.path);
+      const info = await stat(entry.path);
+      return actual === entry.sha256 && info.size === entry.sizeBytes ? 'present' : 'absent';
     } catch {
       return 'absent';
     }
+  }
+
+  async verify(spec: ModelDownloadSpec): Promise<boolean> {
+    return Boolean(await this.readExisting(join(modelDir(spec.id), spec.fileName), spec));
   }
 
   async download(spec: ModelDownloadSpec, signal?: AbortSignal): Promise<DownloadResult> {
@@ -271,7 +278,15 @@ export class ModelStore {
   private async readExisting(target: string, spec: ModelDownloadSpec) {
     const size = await sizeOf(target);
     if (size !== spec.sizeBytes) return null;
-    return { path: target, sha256: spec.sha256, sizeBytes: size };
+    const actualSha = await sha256OfFile(target);
+    if (actualSha !== spec.sha256) {
+      await rm(target, { force: true });
+      const index = await this.readIndex();
+      delete index.models[spec.id];
+      await this.writeIndex(index);
+      return null;
+    }
+    return { path: target, sha256: actualSha, sizeBytes: size };
   }
 
   private async readIndex(): Promise<ModelIndex> {

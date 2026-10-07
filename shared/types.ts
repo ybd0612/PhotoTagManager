@@ -34,6 +34,11 @@ export interface RootEntry {
   path: string; // 绝对路径
   alias: string; // 别名（默认目录名，可改），如"照片""资料"
   addedAt: number; // 添加时间戳
+  /**
+   * 手动排序序号（树里拖拽根目录写入），越小越靠前。
+   * 老数据没有这个字段：读取时按 addedAt 升序补齐，所以正常不会缺失；list() 里仍留兜底排序。
+   */
+  sortOrder?: number;
 }
 
 /** 扫描增量批（Worker → 主 → 渲染，每 ~200 文件一批；rootId 由主进程补全） */
@@ -199,11 +204,10 @@ export interface AiProgressPayload {
   percent?: number;
 }
 
-export interface AiMaskStroke {
-  mode: 'restore' | 'erase';
-  radius: number;
-  radiusY?: number;
-  points: Array<{ x: number; y: number }>;
+export interface AiMaskPointPrompt {
+  x: number;
+  y: number;
+  label: 0 | 1;
 }
 
 export interface AiMaskEditResult {
@@ -213,8 +217,8 @@ export interface AiMaskEditResult {
 }
 
 export interface AiMaskEditRequest {
-  action: 'stroke' | 'undo' | 'redo' | 'render';
-  stroke?: AiMaskStroke;
+  action: 'prompt' | 'undo' | 'redo' | 'render';
+  prompt?: AiMaskPointPrompt;
   bgcolor?: AiBgColorId;
 }
 
@@ -351,6 +355,8 @@ export interface PhotoTagApi {
   addRoot(path: string, alias?: string): Promise<IpcResult<RootEntry>>;
   removeRoot(rootId: string): Promise<IpcResult<void>>;
   renameRoot(rootId: string, alias: string): Promise<IpcResult<RootEntry | null>>;
+  /** 重排根目录：按给定 id 顺序重写排序序号（树里拖拽根目录落盘用） */
+  reorderRoots(orderedIds: string[]): Promise<IpcResult<void>>;
   // 扫描（懒扫描：选中未扫过的根才触发；rootId + scanId 标识扫描代际）
   scanStart(rootId: string, rootPath: string, scanId: string): Promise<IpcResult<{ rootId: string; rootPath: string; scanId: string }>>;
   scanCancel(): Promise<IpcResult<void>>;
@@ -393,6 +399,8 @@ export interface PhotoTagApi {
   aiRun(req: AiRunRequest): Promise<IpcResult<AiRunAck>>;
   aiCancel(taskId: string): Promise<IpcResult<boolean>>;
   aiMaskEdit(taskId: string, request: AiMaskEditRequest): Promise<IpcResult<AiMaskEditResult>>;
+  aiMobileSamStatus(): Promise<IpcResult<{ statuses: Array<{ id: string; sizeBytes: number; status: 'absent' | 'downloading' | 'present' }> }>>;
+  aiMobileSamInstall(): Promise<IpcResult<void>>;
   aiSave(taskId: string): Promise<IpcResult<AiSaveResult>>;
   aiModelDownload(modelId: string): Promise<IpcResult<AiModelOpResult>>;
   aiModelDelete(modelId: string): Promise<IpcResult<AiModelOpResult>>;

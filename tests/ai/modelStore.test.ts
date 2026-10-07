@@ -210,6 +210,15 @@ describe('ai/modelStore —— 下载与本地索引', () => {
     expect(await storeWith().status(bad.id)).toBe('absent');
   });
 
+  it('模型使用前再次按固定规格校验，哈希不符则删除坏文件', async () => {
+    const store = storeWith();
+    const result = await store.download(spec);
+    await writeFile(result.path, Buffer.alloc(PAYLOAD.length, 9));
+    expect(await store.verify(spec)).toBe(false);
+    expect(existsSync(result.path)).toBe(false);
+    expect((await readIndex()).models?.[spec.id]).toBeUndefined();
+  });
+
   it('③ 换源后校验通过：清掉首源坏文件，只留下正确模型', async () => {
     const tried: string[] = [];
     const store = new ModelStore({

@@ -58,6 +58,7 @@ const api = {
   addRoot: vi.fn(async () => ok({ id: 'r1', path: 'C:/P', alias: 'P', addedAt: 1 })),
   removeRoot: vi.fn(async () => ok(undefined)),
   renameRoot: vi.fn(async () => ok(null)),
+  reorderRoots: vi.fn(async () => ok(undefined)),
   onScanProgress: vi.fn(() => () => undefined),
   onScanDone: vi.fn(() => () => undefined),
   onScanError: vi.fn(() => () => undefined),

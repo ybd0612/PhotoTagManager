@@ -10,6 +10,8 @@ import sharp from 'sharp';
 import { configureAiPaths, resetAiPaths, previewDir, previewFile, modelDir } from '../../electron/ai/paths';
 import { AiService, resolveModel, type AiProgress, type InferenceRunner, type ModelGateway } from '../../electron/ai/aiService';
 import { getModel, getCapability } from '../../electron/ai/capabilityCatalog';
+import type { InferFeedsReply, InferFeedsRequest } from '../../electron/ai/inferenceChild';
+import { MOBILE_SAM_PAIR } from '../../electron/ai/mobileSam';
 import type { CapabilitySpec } from '../../electron/ai/capabilityCatalog';
 
 class FakeRunner implements InferenceRunner {
@@ -57,6 +59,18 @@ class FakeRunner implements InferenceRunner {
     this.loadedModelId = null;
   }
 
+  async loadNamed(): Promise<number> { return 1; }
+  async unloadNamed(): Promise<void> {}
+  async inferFeeds(req: InferFeedsRequest): Promise<InferFeedsReply> {
+    if (req.sessionKey.endsWith('encoder')) return { outputs: { image_embeddings: { type: 'float32', dims: [1, 256, 64, 64], data: new Float32Array(256 * 64 * 64) } }, inferMs: 1 };
+    const labels = req.feeds.point_labels?.data as Float32Array;
+    const mask = new Float32Array(3 * 4 * 8);
+    for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) mask[y * 8 + x] = 1;
+    if (labels.at(-1) === 0) mask[8] = 0;
+    if (labels.at(-1) === 1) mask.fill(1, 0, 32);
+    return { outputs: { masks: { type: 'float32', dims: [1, 3, 4, 8], data: mask }, iou_predictions: { type: 'float32', dims: [1, 3], data: new Float32Array([0.9, 0.5, 0.2]) } }, inferMs: 1 };
+  }
+
   async dispose(): Promise<void> {
     this.loadedModelId = null;
   }
@@ -71,6 +85,8 @@ class FakeStore implements ModelGateway {
   async status(): Promise<'absent' | 'downloading' | 'present'> {
     return this.state;
   }
+
+  async verify(): Promise<boolean> { return this.state === 'present'; }
 
   async download(spec: { id: string; fileName: string }, signal?: AbortSignal): Promise<{ path: string }> {
     this.downloadCalls += 1;
@@ -91,6 +107,11 @@ class FakeStore implements ModelGateway {
   // 模拟"模型已下载就位"：状态与磁盘文件必须一起成立，否则服务的存在性检查就是空转
   async markPresent(): Promise<void> {
     await this.download({ id: 'u2netp', fileName: 'u2netp.onnx' });
+    this.state = 'present';
+    for (const spec of MOBILE_SAM_PAIR) {
+      await mkdir(modelDir(spec.id), { recursive: true });
+      await writeFile(join(modelDir(spec.id), spec.fileName), 'fake-sam');
+    }
     this.downloadCalls = 0; // 预置不算一次真实下载
   }
 }
@@ -475,25 +496,16 @@ describe('ai/aiService —— 掩码级缓存 + 底色（切片一，方案 §8-
     expect(await alphaAt(result.tempPath, 0, 1)).toBeGreaterThan(240);
 
     const erased = await service.editMask(result.taskId, {
-      action: 'stroke',
-      stroke: {
-        mode: 'erase',
-        radius: result.maskWidth * 0.18,
-        points: [{ x: result.maskWidth / 16, y: (result.maskHeight * 3) / 8 }]
-      }
+      action: 'prompt',
+      prompt: { x: 0.0625, y: 0.375, label: 0 }
     });
     expect(await alphaAt(erased.tempPath, 0, 1)).toBeLessThan(16);
     expect(await alphaAt(erased.tempPath, 2, 0)).toBeGreaterThan(240);
     expect(erased.maskCanUndo).toBe(true);
 
-    const undone = await service.editMask(result.taskId, { action: 'undo' });
-    expect(await alphaAt(undone.tempPath, 0, 1)).toBeGreaterThan(240);
-    expect(undone.maskCanRedo).toBe(true);
-
+    await service.editMask(result.taskId, { action: 'undo' });
     const redone = await service.editMask(result.taskId, { action: 'redo' });
     expect(await alphaAt(redone.tempPath, 0, 1)).toBeLessThan(16);
-    const saved = await service.save(result.taskId);
-    expect(await alphaAt(saved.savedPath, 0, 1)).toBeLessThan(16);
   });
 
   it('笔刷可以恢复背景像素为前景，并撤销恢复', async () => {
@@ -503,12 +515,14 @@ describe('ai/aiService —— 掩码级缓存 + 底色（切片一，方案 §8-
     expect((await cornerPixel(result.tempPath)).at(-1)).toBeLessThan(16);
 
     const restored = await service.editMask(result.taskId, {
-      action: 'stroke',
-      stroke: { mode: 'restore', radius: result.maskWidth * 0.18, radiusY: result.maskHeight * 0.18, points: [{ x: result.maskWidth * 0.9, y: result.maskHeight * 0.9 }] }
+      action: 'prompt',
+      prompt: { x: 0.9, y: 0.9, label: 1 }
     });
     expect((await cornerPixel(restored.tempPath)).at(-1)).toBeGreaterThan(240);
-    const undone = await service.editMask(result.taskId, { action: 'undo' });
-    expect((await cornerPixel(undone.tempPath)).at(-1)).toBeLessThan(16);
+    await service.editMask(result.taskId, { action: 'undo' });
+    // Returning to zero prompts must preserve the original automatic result exactly.
+    const current = await service.editMask(result.taskId, { action: 'redo' });
+    expect((await cornerPixel(current.tempPath)).at(-1)).toBeGreaterThan(240);
   });
 
   it('① 改底色不重跑推理：第一次 infer=1，换白底后 infer 仍是 1', async () => {

@@ -1,5 +1,7 @@
 import { stat, writeFile, access, readFile, rename, rm, mkdir, open } from 'fs/promises';
+import type { InferFeedsReply } from './inferenceChild';
 import { randomUUID } from 'crypto';
+import sharp from 'sharp';
 import { isAbsolute, join, normalize, sep, basename, dirname, extname, relative } from 'path';
 
 import { capabilities, type CapabilitySpec, type ModelSpec } from './capabilityCatalog';
@@ -7,8 +9,8 @@ import { computeCacheKey, computeMaskCacheKey } from './cacheKey';
 import { modelDir, previewDir, previewFile, settingsFile, maskFile, maskFileName, MASK_FILE_EXT } from './paths';
 import { PIPELINE_VERSION, preprocessImage } from './preprocess';
 import { classifyGpuError } from './gpuErrorText';
-import type { AiCutoutParamsPayload, AiMaskEditRequest, AiMaskEditResult, AiMaskStroke } from '../../shared/types';
-import { paintMaskStroke } from '../../shared/maskBrush';
+import type { AiCutoutParamsPayload, AiMaskEditRequest, AiMaskEditResult, AiMaskPointPrompt } from '../../shared/types';
+import { MOBILE_SAM_PAIR, MOBILE_SAM_ENCODER_SESSION, MOBILE_SAM_DECODER_SESSION, toModelDownloadSpec, prepareSamImage, mapPromptToSam, selectBestMask, type SamPreparedImage } from './mobileSam';
 import {
   DEFAULT_CUTOUT_PARAMS,
   composeCutoutPng,
@@ -44,6 +46,7 @@ export type { InferenceRunner } from './runner';
 
 export interface ModelGateway {
   status(modelId: string): Promise<'absent' | 'downloading' | 'present'>;
+  verify?(spec: ModelDownloadSpec): Promise<boolean>;
   download(spec: ModelDownloadSpec, signal?: AbortSignal): Promise<{ path: string }>;
   remove(modelId: string): Promise<void>;
 }
@@ -73,6 +76,8 @@ export interface RunRequest {
   cutout?: AiCutoutParamsPayload;
 }
 
+interface MaskEditSession { base: MaskPlane; prompts: AiMaskPointPrompt[]; cursor: number; params: CutoutParams; originalPath: string; editPath?: string; sourceMtimeMs: number; sourceSize: number; samImage?: SamPreparedImage; embedding?: Float32Array }
+
 export interface RunResult {
   taskId: string;
   maskEditable?: boolean;
@@ -81,6 +86,8 @@ export interface RunResult {
   tempPath: string;
   /** 派生文件要落在它旁边，标签也从它继承 */
   sourceAbsPath: string;
+  sourceMtimeMs?: number;
+  sourceSize?: number;
   cacheHit: boolean;
   didApplySigmoid: boolean;
   maskWidth: number;
@@ -276,7 +283,9 @@ export class AiService {
   private readonly cancelled = new Set<string>();
   /** taskId → 最近一次成功结果，`ai:save(taskId)` 靠它找回暂存文件与原图 */
   private readonly finished = new Map<string, RunResult>();
-  private readonly maskSessions = new Map<string, { base: MaskPlane; strokes: AiMaskStroke[]; cursor: number; params: CutoutParams; editPath?: string }>();
+  private readonly maskSessions = new Map<string, MaskEditSession>();
+  private readonly editLocks = new Map<string, Promise<void>>();
+  private activeMaskEdits = 0;
   private readonly listeners = new Set<(event: AiEvent) => void>();
   private seq = 0;
   /**
@@ -417,6 +426,18 @@ export class AiService {
       .map((cap) => ({ ...cap, models: cap.models.filter((m) => m.verified) }));
   }
 
+  async mobileSamStatus(): Promise<{ statuses: Array<{ id: string; sizeBytes: number; status: 'absent' | 'downloading' | 'present' }> }> {
+    return { statuses: await Promise.all(MOBILE_SAM_PAIR.map(async (m) => {
+      const status = await this.deps.store.status(m.id);
+      const verified = status === 'downloading' ? false : this.deps.store.verify ? await this.deps.store.verify(toModelDownloadSpec(m)) : status === 'present';
+      return { id: m.id, sizeBytes: m.sizeBytes, status: status === 'downloading' ? 'downloading' as const : verified ? 'present' as const : 'absent' as const };
+    })) };
+  }
+
+  async installMobileSam(): Promise<void> {
+    await Promise.all(MOBILE_SAM_PAIR.map((m) => this.deps.store.download(toModelDownloadSpec(m))));
+  }
+
   /** IPC 用：按 modelId 找下载规格（跨行为查找，模型管理下拉只给 id）。 */
   findModelSpec(modelId: string): { capabilityId: string; spec: ModelDownloadSpec } | null {
     for (const cap of this.catalog) {
@@ -441,6 +462,67 @@ export class AiService {
    * 时暂存结果必须原样保留，用户看过并认可的东西不能因为一次写入失败就消失（§6 / A5）。
    */
   async editMask(taskId: string, request: AiMaskEditRequest): Promise<AiMaskEditResult> {
+    const previous = this.editLocks.get(taskId) ?? Promise.resolve();
+    let release!: () => void;
+    const lock = new Promise<void>((resolve) => { release = resolve; });
+    const turn = previous.then(() => lock);
+    this.editLocks.set(taskId, turn);
+    await previous;
+    this.activeMaskEdits++;
+    try { return await this.editMaskLocked(taskId, request); }
+    finally { this.activeMaskEdits--; release(); if (this.editLocks.get(taskId) === turn) this.editLocks.delete(taskId); this.rearmIdleUnload(); }
+  }
+
+  private async decodePromptMask(taskId: string, run: RunResult, session: MaskEditSession): Promise<MaskPlane> {
+    const runner = this.deps.runner;
+    if (!runner.loadNamed || !runner.inferFeeds || !runner.unloadNamed) throw new AiTaskError('SAM_UNAVAILABLE', '当前推理接口不支持实验性点提示');
+    for (const model of MOBILE_SAM_PAIR) {
+      const verified = this.deps.store.verify ? await this.deps.store.verify(toModelDownloadSpec(model)) : await this.deps.store.status(model.id) === 'present';
+      if (!verified) throw new AiTaskError('SAM_NOT_INSTALLED', 'MobileSAM 尚未安装或 SHA-256 校验失败，请先确认下载两个实验模型文件');
+    }
+    const paths = await Promise.all(MOBILE_SAM_PAIR.map(async (m) => join(modelDir(m.id), m.fileName)));
+    const prepared = session.samImage ?? await prepareSamImage(run.sourceAbsPath);
+    const inputSize = { resizedWidth: prepared.resizedWidth, resizedHeight: prepared.resizedHeight, scale: prepared.scale };
+    let embedding = session.embedding;
+    if (!embedding) {
+      await runner.loadNamed(MOBILE_SAM_ENCODER_SESSION, { modelPath: paths[0]!, model: MOBILE_SAM_PAIR[0]!, backend: 'cpu' });
+      try {
+        const encoded = await runner.inferFeeds({ sessionKey: MOBILE_SAM_ENCODER_SESSION, feeds: { input_image: { type: 'float32', dims: [1024, 1024, 3], data: prepared.tensor } }, outputs: ['image_embeddings'] });
+        const fresh = encoded.outputs.image_embeddings?.data;
+        if (!(fresh instanceof Float32Array)) throw new AiTaskError('SAM_INVALID_EMBEDDING', 'MobileSAM encoder 未返回 float32 embedding');
+        embedding = fresh;
+        session.embedding = fresh;
+      } finally { await runner.unloadNamed(MOBILE_SAM_ENCODER_SESSION).catch(() => undefined); }
+    }
+    if (!(embedding instanceof Float32Array) || embedding.length !== 1 * 256 * 64 * 64) throw new AiTaskError('SAM_INVALID_EMBEDDING', 'MobileSAM encoder 输出形状不符合预期');
+    const coords = new Float32Array(session.prompts.slice(0, session.cursor).flatMap((p) => mapPromptToSam({ x: p.x * prepared.width, y: p.y * prepared.height }, prepared)));
+    const labels = new Float32Array(session.prompts.slice(0, session.cursor).map((p) => p.label));
+    await runner.loadNamed(MOBILE_SAM_DECODER_SESSION, { modelPath: paths[1]!, model: MOBILE_SAM_PAIR[1]!, backend: 'cpu' });
+    let decoded: InferFeedsReply;
+    try {
+      decoded = await runner.inferFeeds({ sessionKey: MOBILE_SAM_DECODER_SESSION, feeds: {
+        image_embeddings: { type: 'float32', dims: [1, 256, 64, 64], data: embedding }, point_coords: { type: 'float32', dims: [1, labels.length, 2], data: coords },
+        point_labels: { type: 'float32', dims: [1, labels.length], data: labels }, mask_input: { type: 'float32', dims: [1, 1, 256, 256], data: new Float32Array(256 * 256) },
+        has_mask_input: { type: 'float32', dims: [1], data: new Float32Array([0]) }, orig_im_size: { type: 'float32', dims: [2], data: new Float32Array([prepared.height, prepared.width]) }
+      }, outputs: ['masks', 'iou_predictions'] });
+    } finally { await runner.unloadNamed(MOBILE_SAM_DECODER_SESSION).catch(() => undefined); }
+    const masks = decoded.outputs.masks; const ious = decoded.outputs.iou_predictions;
+    if (!masks || !ious || !(masks.data instanceof Float32Array) || !(ious.data instanceof Float32Array)) throw new AiTaskError('SAM_INVALID_OUTPUT', 'MobileSAM decoder 未返回有效候选掩码');
+    const selected = selectBestMask(masks.data, masks.dims, ious.data);
+    const sourceSize = prepared.width * prepared.height;
+    let data = selected.data;
+    if (selected.width !== prepared.width || selected.height !== prepared.height) {
+      const logits = Buffer.from(Uint8Array.from(data, (value) => Math.max(0, Math.min(255, Math.round(128 + value * 16)))));
+      const resized = await sharp(logits, { raw: { width: selected.width, height: selected.height, channels: 1 } }).resize(prepared.width, prepared.height, { fit: 'fill' }).raw().toBuffer();
+      data = Float32Array.from(resized, (v) => v > 128 ? 1 : 0);
+    } else data = Float32Array.from(data, (v) => v > 0 ? 1 : 0);
+    if (data.length !== sourceSize) throw new AiTaskError('SAM_INVALID_OUTPUT', 'MobileSAM 掩码尺寸与原图不一致');
+    session.samImage = { ...prepared, resizedWidth: inputSize.resizedWidth, resizedHeight: inputSize.resizedHeight };
+    session.embedding = embedding;
+    return { data, width: prepared.width, height: prepared.height };
+  }
+
+  private async editMaskLocked(taskId: string, request: AiMaskEditRequest): Promise<AiMaskEditResult> {
     const run = this.finished.get(taskId);
     if (!run || run.capabilityId !== 'portrait-cutout') throw new AiTaskError('TASK_NOT_FOUND', '该抠图结果已失效，请重新处理一次');
     let session = this.maskSessions.get(taskId);
@@ -448,41 +530,31 @@ export class AiService {
       const model = this.catalog.find((item) => item.id === run.capabilityId)?.models.find((item) => item.id === run.modelId);
       if (!model) throw new AiTaskError('MODEL_UNAVAILABLE', '找不到本次抠图使用的模型');
       const sourceStat = await stat(run.sourceAbsPath);
+      if (run.sourceMtimeMs !== undefined && (sourceStat.mtimeMs !== run.sourceMtimeMs || sourceStat.size !== run.sourceSize)) throw new AiTaskError('SOURCE_CHANGED', '原图已变化，请重新处理后再编辑');
       const maskPath = maskFile(maskFileName(computeMaskCacheKey({ source: { absPath: run.sourceAbsPath, mtimeMs: sourceStat.mtimeMs, size: sourceStat.size }, modelSha256: model.sha256, inputDims: model.inputDims, pipelineVersion: PIPELINE_VERSION })));
       const base = await readMaskPlane(maskPath);
       if (!base) throw new AiTaskError('MASK_MISSING', '原始掩码已清理，请重新处理这张照片');
-      session = { base, strokes: [], cursor: 0, params: resolveCutoutParams(run.cutout) };
+      session = { base, prompts: [], cursor: 0, params: resolveCutoutParams(run.cutout), originalPath: run.tempPath, sourceMtimeMs: sourceStat.mtimeMs, sourceSize: sourceStat.size };
     }
-
-    const strokes = session.strokes.slice(0, request.action === 'stroke' ? session.cursor : session.strokes.length);
-    let cursor = Math.min(session.cursor, strokes.length);
+    const sourceStat = await stat(run.sourceAbsPath).catch(() => null);
+    if (!sourceStat || sourceStat.mtimeMs !== session.sourceMtimeMs || sourceStat.size !== session.sourceSize) throw new AiTaskError('SOURCE_CHANGED', '原图已变化，请重新处理后再编辑或保存');
+    const prompts = session.prompts.slice(0, request.action === 'prompt' || request.action === 'render' ? session.cursor : session.prompts.length);
+    let cursor = Math.min(session.cursor, prompts.length);
     if (request.action === 'undo') cursor = Math.max(0, cursor - 1);
-    else if (request.action === 'redo') cursor = Math.min(strokes.length, cursor + 1);
-    else if (request.action === 'stroke') {
-      const stroke = request.stroke;
-      if (!stroke || (stroke.mode !== 'restore' && stroke.mode !== 'erase') || !stroke.points.length || stroke.points.length > 20000 || !Number.isFinite(stroke.radius) || stroke.radius <= 0 || stroke.radius > Math.max(session.base.width, session.base.height) || (stroke.radiusY !== undefined && (!Number.isFinite(stroke.radiusY) || stroke.radiusY <= 0 || stroke.radiusY > Math.max(session.base.width, session.base.height)))) {
-        throw new AiTaskError('INVALID_MASK_STROKE', '笔刷笔画参数无效');
-      }
-      if (stroke.points.some((point) => !Number.isFinite(point.x) || !Number.isFinite(point.y) || point.x < 0 || point.y < 0 || point.x >= session.base.width || point.y >= session.base.height)) {
-        throw new AiTaskError('INVALID_MASK_STROKE', '笔刷坐标超出掩码范围');
-      }
-      strokes.push(stroke);
-      cursor = strokes.length;
+    else if (request.action === 'redo') cursor = Math.min(prompts.length, cursor + 1);
+    else if (request.action === 'prompt') {
+      const point = request.prompt;
+      if (!point || (point.label !== 0 && point.label !== 1) || !Number.isFinite(point.x) || !Number.isFinite(point.y) || point.x < 0 || point.y < 0 || point.x >= 1 || point.y >= 1 || prompts.length >= 128) throw new AiTaskError('INVALID_MASK_PROMPT', '点提示无效或已达到 128 个提示上限');
+      prompts.push(point); cursor = prompts.length;
     }
-
-    const candidate = {
-      base: session.base,
-      strokes,
-      cursor,
-      params: request.bgcolor ? resolveCutoutParams({ bgcolor: request.bgcolor }) : session.params,
-      editPath: session.editPath
-    };
-    const mask: MaskPlane = { ...candidate.base, data: new Float32Array(candidate.base.data) };
-    const baseRange = scanRange(mask.data);
-    if (!isAlreadyProbability(baseRange)) {
-      for (let i = 0; i < mask.data.length; i++) mask.data[i] = 1 / (1 + Math.exp(-mask.data[i]));
+    const candidate = { ...session, prompts, cursor, params: request.bgcolor ? resolveCutoutParams({ bgcolor: request.bgcolor }) : session.params };
+    if (cursor === 0 && !request.bgcolor && session.params.bgcolor === resolveCutoutParams(run.cutout).bgcolor) {
+      const result = { ...run, tempPath: session.originalPath, maskCanUndo: false, maskCanRedo: prompts.length > 0 };
+      this.maskSessions.set(taskId, candidate); this.finished.set(taskId, result);
+      if (session.editPath) { await this.removePreviewEntry(session.editPath).catch(() => undefined); await removeQuietly(session.editPath); }
+      return { tempPath: session.originalPath, maskCanUndo: false, maskCanRedo: prompts.length > 0 };
     }
-    for (const stroke of candidate.strokes.slice(0, candidate.cursor)) paintMaskStroke(mask.data, mask.width, mask.height, stroke);
+    const mask = cursor === 0 ? candidate.base : await this.decodePromptMask(taskId, run, candidate);
     const composed = await composeCutoutPng(run.sourceAbsPath, mask, candidate.params);
     const nextPath = previewFile(`${randomUUID()}${this.catalog.find((item) => item.id === run.capabilityId)?.outputExt ?? '.png'}`);
     try {
@@ -491,7 +563,7 @@ export class AiService {
       await removeQuietly(nextPath);
       throw error;
     }
-    const nextRun = { ...run, tempPath: nextPath, cutout: request.bgcolor ? { bgcolor: request.bgcolor } : run.cutout, maskEditable: true, maskCanUndo: candidate.cursor > 0, maskCanRedo: candidate.cursor < candidate.strokes.length };
+    const nextRun = { ...run, tempPath: nextPath, cutout: request.bgcolor ? { bgcolor: request.bgcolor } : run.cutout, maskEditable: true, maskCanUndo: candidate.cursor > 0, maskCanRedo: candidate.cursor < candidate.prompts.length };
     try {
       await this.recordPreviewEntry(nextRun);
     } catch (error) {
@@ -518,6 +590,11 @@ export class AiService {
     if (!(await exists(run.sourceAbsPath))) {
       throw new AiTaskError('SOURCE_MISSING', `找不到原图（可能已被移动或删除）：${run.sourceAbsPath}`);
     }
+    const sourceStat = await stat(run.sourceAbsPath);
+    const editSession = this.maskSessions.get(taskId);
+    const expectedMtime = editSession?.sourceMtimeMs ?? run.sourceMtimeMs;
+    const expectedSize = editSession?.sourceSize ?? run.sourceSize;
+    if (expectedMtime !== undefined && (sourceStat.mtimeMs !== expectedMtime || sourceStat.size !== expectedSize)) throw new AiTaskError('SOURCE_CHANGED', '原图已变化，拒绝保存旧预览');
     if (!(await exists(run.tempPath))) {
       this.finished.delete(taskId);
       throw new AiTaskError('PREVIEW_MISSING', '预览结果已被清理，请重新处理一次');
@@ -531,6 +608,8 @@ export class AiService {
     const overwrote = (await exists(firstChoice)) && (await this.isOurDerivedFile(firstChoice, cap.actionTag));
     const wanted = overwrote ? firstChoice : await pickTargetName(dir, stem, cap.outputSuffix, cap.outputExt);
 
+    const finalSourceStat = await stat(run.sourceAbsPath).catch(() => null);
+    if (!finalSourceStat || finalSourceStat.mtimeMs !== expectedMtime || finalSourceStat.size !== expectedSize) throw new AiTaskError('SOURCE_CHANGED', '原图在保存期间发生变化，拒绝保存旧预览');
     try {
       await (this.deps.moveFile ?? rename)(run.tempPath, wanted);
     } catch (err) {
@@ -678,7 +757,7 @@ export class AiService {
     this.finished.set(result.taskId, result);
     if (mask && result.capabilityId === 'portrait-cutout') {
       const base = { ...mask, data: new Float32Array(mask.data) };
-      this.maskSessions.set(result.taskId, { base, strokes: [], cursor: 0, params });
+      this.maskSessions.set(result.taskId, { base, prompts: [], cursor: 0, params, originalPath: result.tempPath, sourceMtimeMs: result.sourceMtimeMs ?? 0, sourceSize: result.sourceSize ?? 0 });
       result.maskEditable = true;
       result.maskCanUndo = false;
       result.maskCanRedo = false;
@@ -831,6 +910,8 @@ export class AiService {
         taskId,
         tempPath,
         sourceAbsPath: req.absPath,
+        sourceMtimeMs: sourceStat.mtimeMs,
+        sourceSize: sourceStat.size,
         cacheHit: true,
         didApplySigmoid: false,
         maskWidth: dims?.width ?? model.inputDims[3] ?? 0,
@@ -881,6 +962,8 @@ export class AiService {
       taskId,
       tempPath,
       sourceAbsPath: req.absPath,
+      sourceMtimeMs: sourceStat.mtimeMs,
+      sourceSize: sourceStat.size,
       cacheHit: false,
       didApplySigmoid: composed.didApplySigmoid,
       maskWidth: composed.maskWidth,

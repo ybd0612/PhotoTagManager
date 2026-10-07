@@ -1,4 +1,4 @@
-import type { BackendPreference, ChildReply, ChildRequest, InferReply } from './inferenceChild';
+import type { BackendPreference, ChildReply, ChildRequest, InferFeedsReply, InferFeedsRequest, InferReply } from './inferenceChild';
 import type { ModelSpec } from './capabilityCatalog';
 
 /**
@@ -33,6 +33,9 @@ export interface InferenceRunner {
   load(req: { modelPath: string; model: ModelSpec; backend?: BackendPreference }): Promise<number>;
   infer(req: { modelId: string; dims: number[]; data: Float32Array }): Promise<InferReply>;
   unload(): Promise<void>;
+  loadNamed?(sessionKey: string, req: { modelPath: string; model: ModelSpec; backend?: BackendPreference }): Promise<number>;
+  inferFeeds?(req: InferFeedsRequest): Promise<InferFeedsReply>;
+  unloadNamed?(sessionKey: string): Promise<void>;
   dispose(): Promise<void>;
 }
 
@@ -143,6 +146,19 @@ export class ChildRunner implements InferenceRunner {
 
   async infer(req: { modelId: string; dims: number[]; data: Float32Array }): Promise<InferReply> {
     return (await this.send('infer', req, this.requestTimeoutMs, `推理 ${req.modelId}`)) as InferReply;
+  }
+
+  async loadNamed(sessionKey: string, req: { modelPath: string; model: ModelSpec; backend?: BackendPreference }): Promise<number> {
+    const reply = await this.send('load-named', { sessionKey, request: req }, this.loadTimeoutMs, `加载模型会话 ${sessionKey}`);
+    return (reply as { loadMs?: number } | null)?.loadMs ?? 0;
+  }
+
+  async inferFeeds(req: InferFeedsRequest): Promise<InferFeedsReply> {
+    return (await this.send('infer-feeds', req, this.requestTimeoutMs, `多输入推理 ${req.sessionKey}`)) as InferFeedsReply;
+  }
+
+  async unloadNamed(sessionKey: string): Promise<void> {
+    await this.send('unload', { sessionKey }, this.requestTimeoutMs, `卸载模型会话 ${sessionKey}`);
   }
 
   async unload(): Promise<void> {

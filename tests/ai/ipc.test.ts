@@ -96,6 +96,8 @@ class FakeAiService implements AiServiceView {
   async editMask() {
     return { tempPath: 'C:/userData/ai-preview/edited.png', maskCanUndo: true, maskCanRedo: false };
   }
+  async mobileSamStatus() { return { statuses: [] as Array<{ id: string; sizeBytes: number; status: 'absent' | 'downloading' | 'present' }> }; }
+  async installMobileSam() {}
 
   async previewStats() {
     return { entries: 2, totalBytes: 3000 };

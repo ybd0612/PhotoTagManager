@@ -53,6 +53,8 @@ export interface AiServiceView {
   cancel(taskId: string): boolean;
   save(taskId: string): Promise<SaveResult>;
   editMask(taskId: string, request: AiMaskEditRequest): Promise<import('../shared/types').AiMaskEditResult>;
+  mobileSamStatus(): Promise<{ statuses: Array<{ id: string; sizeBytes: number; status: 'absent' | 'downloading' | 'present' }> }>;
+  installMobileSam(): Promise<void>;
   previewStats(): Promise<{ entries: number; totalBytes: number }>;
   subscribe(listener: (event: AiEvent) => void): () => void;
   usableCatalog(): CapabilitySpec[];
@@ -136,6 +138,10 @@ export function registerIpc(deps: IpcDeps): void {
     return result;
   });
   handle('roots:rename', (rootId: string, alias: string): Promise<unknown> => deps.roots.rename(rootId, alias));
+  handle('roots:reorder', async (orderedIds: string[]): Promise<void> => {
+    if (!Array.isArray(orderedIds)) throw new Error('orderedIds 必须是数组');
+    await deps.roots.reorder(orderedIds.filter((id): id is string => typeof id === 'string'));
+  });
 
   // 扫描（R01/R02，带 rootId）
   handle('scan:start', (rootId: string, rootPath: string, scanId: string): { rootId: string; rootPath: string; scanId: string } => {
@@ -406,6 +412,8 @@ export function registerIpc(deps: IpcDeps): void {
   handle('ai:cancel', (taskId: string): boolean => deps.ai.service.cancel(taskId));
 
   handle('ai:mask-edit', (taskId: string, request: AiMaskEditRequest): Promise<unknown> => deps.ai.service.editMask(taskId, request));
+  handle('ai:mobilesam-status', (): Promise<unknown> => deps.ai.service.mobileSamStatus());
+  handle('ai:mobilesam-install', (): Promise<unknown> => deps.ai.service.installMobileSam());
 
   handle('ai:save', (taskId: string): Promise<unknown> => deps.ai.service.save(taskId));
 

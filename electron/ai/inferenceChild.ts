@@ -62,6 +62,14 @@ export interface InferReply {
   inferMs: number;
 }
 
+export interface InferFeedsRequest {
+  sessionKey: string;
+  feeds: Record<string, { type: 'float32' | 'int64'; dims: number[]; data: Float32Array | BigInt64Array }>;
+  outputs?: string[];
+}
+export interface InferFeedsReply { outputs: Record<string, { type: string; dims: number[]; data: Float32Array | BigInt64Array }>; inferMs: number }
+interface NamedSession { session: import('onnxruntime-node').InferenceSession; modelId: string; outputNames: string[] }
+
 export interface ChildDeps {
   /** 注入 ort 模块，单测用假实现验协议，集成测试用真的 */
   ort: typeof import('onnxruntime-node');
@@ -73,6 +81,7 @@ export class ChildInference {
   private loadedModelId: string | null = null;
   private loadedSpec: ModelSpec | null = null;
   private outputNames: string[] = [];
+  private readonly namedSessions = new Map<string, NamedSession>();
 
   constructor(private readonly deps: ChildDeps) {}
 
@@ -86,6 +95,36 @@ export class ChildInference {
     this.loadedSpec = req.model;
     this.outputNames = Array.from(session.outputNames ?? []);
     return { modelId: req.model.id, loadMs: Date.now() - startedAt, outputNames: this.outputNames };
+  }
+
+  async loadNamed(sessionKey: string, req: LoadRequest): Promise<number> {
+    const startedAt = Date.now();
+    await this.unloadNamed(sessionKey);
+    const session = await this.deps.ort.InferenceSession.create(req.modelPath, buildSessionOptions(req.backend ?? 'dml'));
+    this.namedSessions.set(sessionKey, { session, modelId: req.model.id, outputNames: Array.from(session.outputNames ?? []) });
+    return Date.now() - startedAt;
+  }
+
+  async inferFeeds(req: InferFeedsRequest): Promise<InferFeedsReply> {
+    const loaded = this.namedSessions.get(req.sessionKey);
+    if (!loaded) throw new Error(`模型会话尚未加载：${req.sessionKey}`);
+    const feeds: Record<string, import('onnxruntime-node').Tensor> = {};
+    for (const [name, feed] of Object.entries(req.feeds)) feeds[name] = new this.deps.ort.Tensor(feed.type, feed.data as never, feed.dims);
+    const startedAt = Date.now();
+    const values = req.outputs ? await loaded.session.run(feeds, req.outputs) : await loaded.session.run(feeds);
+    const outputs: InferFeedsReply['outputs'] = {};
+    for (const name of req.outputs ?? loaded.outputNames) {
+      const out = values[name];
+      if (!out) throw new Error(`会话没有给出名为 ${name} 的输出`);
+      outputs[name] = { type: out.type, dims: Array.from(out.dims), data: (out.data as Float32Array | BigInt64Array).slice() };
+    }
+    return { outputs, inferMs: Date.now() - startedAt };
+  }
+
+  async unloadNamed(sessionKey: string): Promise<void> {
+    const loaded = this.namedSessions.get(sessionKey);
+    this.namedSessions.delete(sessionKey);
+    await loaded?.session.release().catch(() => undefined);
   }
 
   async infer(req: InferRequest): Promise<InferReply> {
@@ -127,6 +166,7 @@ export class ChildInference {
 
   async dispose(): Promise<void> {
     await this.disposeSession();
+    await Promise.all(Array.from(this.namedSessions.keys(), (key) => this.unloadNamed(key)));
   }
 
   private async disposeSession(): Promise<void> {
@@ -146,7 +186,9 @@ export class ChildInference {
 export type ChildRequest =
   | { id: number; type: 'load'; payload: LoadRequest }
   | { id: number; type: 'infer'; payload: InferRequest }
-  | { id: number; type: 'unload' };
+  | { id: number; type: 'load-named'; payload: { sessionKey: string; request: LoadRequest } }
+  | { id: number; type: 'infer-feeds'; payload: InferFeedsRequest }
+  | { id: number; type: 'unload'; payload?: { sessionKey?: string } };
 
 export type ChildReply =
   | { id: number; ok: true; data: unknown }
@@ -162,8 +204,15 @@ export function createMessageHandler(child: ChildInference) {
       if (request.type === 'infer') {
         return { id: request.id, ok: true, data: await child.infer(request.payload) };
       }
+      if (request.type === 'load-named') {
+        return { id: request.id, ok: true, data: { loadMs: await child.loadNamed(request.payload.sessionKey, request.payload.request) } };
+      }
+      if (request.type === 'infer-feeds') {
+        return { id: request.id, ok: true, data: await child.inferFeeds(request.payload) };
+      }
       if (request.type === 'unload') {
-        await child.unload();
+        if (request.payload?.sessionKey) await child.unloadNamed(request.payload.sessionKey);
+        else await child.unload();
         return { id: request.id, ok: true, data: null };
       }
       throw new Error(`未知的子进程请求类型：${String((request as { type?: string }).type)}`);
