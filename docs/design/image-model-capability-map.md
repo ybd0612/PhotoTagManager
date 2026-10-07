@@ -196,7 +196,7 @@ Name=[NVIDIA GeForce RTX 5060 Laptop GPU] PNPDeviceID=[PCI\VEN_10DE&DEV_2D19...]
 | # | 能力 | 代表模型 | 典型体积 | 适配 | 说明 |
 |---|------|---------|---------|------|------|
 | A1 | 图像分类（封闭标签集） | MobileNetV3 / ConvNeXt-Tiny | 6–110 MB | ★ | 单前向、DirectML 友好。是 A17/E6 的地基 |
-| A2 | **零样本打标** | ~~CLIP ViT-B/32~~ → **SigLIP base-patch16-224** | 181 MB (q4) → **60 MB（仅视觉塔）** ※ | ★ | **2026-10-07 改判**：CLIP 一手仓 `openai/clip-vit-base-patch32` **无任何 SPDX 标识**（`cardData.license` 与 README 皆空），按 §3.0 白名单「标识缺失 → 不列」**直接出局**，§3.1 的「可用（附披露）」改判覆盖不到这一格。改用一手仓 **Apache-2.0** 的 SigLIP，**双后端实测通过**（DirectML 27ms / CPU 310ms）。卷宗见 `../models/siglip.md`。⚠️ **仍未进清单**——缺 Q11 词表决策、文本塔、真实准确率三项 |
+| A2 | **零样本打标** | ~~CLIP ViT-B/32~~ → **SigLIP base-patch16-224** | 视觉塔 60 MB + 文本塔 147 MB ※ | ★ | **2026-10-07 改判**：CLIP 一手仓 `openai/clip-vit-base-patch32` **无任何 SPDX 标识**（`cardData.license` 与 README 皆空），按 §3.0 白名单「标识缺失 → 不列」**直接出局**，§3.1 的「可用（附披露）」改判覆盖不到这一格。改用一手仓 **Apache-2.0** 的 SigLIP，**双塔实测通过**（视觉塔 DML 27ms / CPU 310ms，文本塔 8ms / 29ms）。⚠️ **实测三条限制**：① **候选词表必须用英文**——官方 tokenizer 32000 词表里中文单字 0 个，13 张真实样本中文得分 0 胜出；② **相似度在 0 附近且大量为负**（sigmoid loss，实测 -0.082~0.069），**照搬 CLIP 的绝对值阈值必败**，须用相对判据；③ 13 张真实样本 top1 命中 8/13、进前三 10/13，但**词表只 16 个词，不可外推**。卷宗见 `../models/siglip.md` |
 | A3 | 目标检测 | YOLO 系列 / RT-DETR | 6–70 MB | ★ | 未进 PRD。能给"图里有狗/车/建筑"级别标签，与 A2 互补（A2 判整体语义，A3 判具体物件） |
 | A4 | 语义分割 | SegFormer / DeepLabV3+ | 5–140 MB | ★ | 未进 PRD。天空/水面/绿植分区，可作 E5 智能裁剪的输入 |
 | A5 | 实例分割 | Mask R-CNN / Mask2Former | 50–270 MB | ○ | 比 A4 慢且大；单张图价值不明显，除非配合 A7 做逐主体交互 |
