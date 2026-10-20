@@ -3,7 +3,6 @@ import {
   Box,
   Button,
   Chip,
-  CircularProgress,
   IconButton,
   InputAdornment,
   Stack,
@@ -17,16 +16,12 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import AddIcon from '@mui/icons-material/Add';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import { call, formatBytes, getApi, toFileUrl } from '../api';
-import { rescan } from '../hooks/useScan';
+import { call, getApi, toFileUrl } from '../api';
 import { useTrashImages } from '../hooks/useTrashImages';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import { useAppStore } from '../store/useAppStore';
-import { useAiStore } from '../store/useAiStore';
-import { AiActionSplitButton } from './AiActionSplitButton';
-import { AiCompareActions, AiCompareStage, useCompareResult } from './AiCompareView';
-import { CutoutParamsPanel } from './CutoutParamsPanel';
+import { ExifInfoPanel } from './ExifInfoPanel';
 import { overlay, px, tokens } from '../theme/tokens';
 import type { ImageInfo } from '../../shared/types';
 
@@ -35,18 +30,9 @@ import type { ImageInfo } from '../../shared/types';
  */
 export function PreviewOverlay(): JSX.Element | null {
   const preview = useAppStore((s) => s.preview);
-  // 结果只在它那张照片上是有效的；hook 要早于下面的提前 return，所以从 preview 上取路径
-  const compare = useCompareResult(preview?.image?.absPath);
-  const setHoldingOriginal = useAiStore((s) => s.setHoldingOriginal);
-  const compareMode = useAiStore((s) => s.compareMode);
-  // AI 失败此前只写进 store，全仓没有任何一处渲染它——错误等于没发生
-  const aiError = useAiStore((s) => s.error);
-  const dismissAiError = useAiStore((s) => s.dismissError);
-  const modelAction = useAiStore((s) => s.modelAction);
-  const catalog = useAiStore((s) => s.catalog);
-  const loadedModelId =
-    catalog?.capabilities.flatMap((c) => c.models).find((m) => m.loaded)?.id ?? null;
   const tagCache = useAppStore((s) => s.tagCache);
+  const exifPanelExpanded = useAppStore((s) => s.exifPanelExpanded);
+  const toggleExifPanel = useAppStore((s) => s.toggleExifPanel);
   const closePreview = useAppStore((s) => s.closePreview);
   const previewStep = useAppStore((s) => s.previewStep);
   const setTagsForPath = useAppStore((s) => s.setTagsForPath);
@@ -105,11 +91,9 @@ export function PreviewOverlay(): JSX.Element | null {
     };
   }, [absPath]);
 
-  // 切换图片时重置缩放/平移，并放开"按住看原图"
-  // （holding 是全局状态，不跟着换图复位的话，翻到下一张就没人能把它松开——和之前 aiResult 挂到下一张是同一类残留）
+  // 切换图片时重置缩放/平移
   useEffect(() => {
     resetView();
-    useAiStore.getState().setHoldingOriginal(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [absPath]);
 
@@ -137,8 +121,6 @@ export function PreviewOverlay(): JSX.Element | null {
     };
     const onUp = (): void => {
       dragRef.current = null;
-      // 在大图上按下后于别处松手：只清 dragRef 会让 holding 卡在 true，原图下不来
-      useAiStore.getState().setHoldingOriginal(false);
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
@@ -158,23 +140,6 @@ export function PreviewOverlay(): JSX.Element | null {
     }
   };
 
-  /**
-   * 保存成功后的可见性处理（§4.4 C2 选方案①：主动刷新，不甩给用户重扫）。
-   * 不允许静默——点了保存却找不到文件，用户第一反应是保存失败。
-   * 走 rescan() 而不是把新文件本地塞进列表：目录节点的 directCount / totalCount
-   * 是扫描算出来的，只改 imagesByDir 会让文件夹徽标与磁盘悄悄对不上。
-   */
-  const handleAiSaved = (saved: { targetName: string; renamed: boolean; overwrote: boolean }): void => {
-    setSnackbar(
-      saved.overwrote
-        ? '已覆盖 ' + saved.targetName + '（同一张图的最新结果），正在刷新列表'
-        : saved.renamed
-          ? '已保存为 ' + saved.targetName + '（同名已存在，序号顺延），正在刷新列表'
-          : '已保存为 ' + saved.targetName + '，正在刷新列表'
-    );
-    void rescan();
-  };
-
   const revealInExplorer = async (absPath: string): Promise<void> => {
     try {
       await call(getApi().revealFileInExplorer(absPath));
@@ -188,45 +153,21 @@ export function PreviewOverlay(): JSX.Element | null {
     if (preview) dialogRef.current?.focus();
   }, [preview?.image.absPath]);
 
-  // 键盘：←/→ 翻页、Esc 关闭、Ctrl+C 复制当前文件、空格按住看原图（批次3 G9）
+  // 键盘：←/→ 翻页、Esc 关闭、Ctrl+C 复制当前文件
   useEffect(() => {
     if (!preview) return;
-    const isTyping = (e: KeyboardEvent): boolean => {
-      const el = e.target as HTMLElement | null;
-      return (
-        !!el &&
-        (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable === true)
-      );
-    };
     const onKey = (e: KeyboardEvent): void => {
-      // 点提示模式下 Esc 先退出模式：它在预览里接管了右键，此时直接 Esc 关窗口
-      // 会让人以为右键菜单的「移除到回收站」被顺手执行了。两级退出，先退模式再关预览。
-      if (e.key === 'Escape') {
-        if (useAiStore.getState().maskPromptMode) useAiStore.getState().setMaskPromptMode(false);
-        else closePreview();
-      }
+      if (e.key === 'Escape') closePreview();
       else if (e.key === 'ArrowLeft') previewStep(-1);
       else if (e.key === 'ArrowRight') previewStep(1);
       else if (e.ctrlKey && (e.key === 'c' || e.key === 'C')) {
         e.preventDefault();
         void copyFileToClipboard(preview.image.absPath);
-      } else if (e.key === ' ' && compare && !isTyping(e) && !(e.target as HTMLElement | null)?.closest?.('[data-mask-brush="true"]')) {
-        // 标签输入框里打空格必须照常输字，所以 isTyping 挡在前面；笔刷工具内空格留给按钮使用。
-        // 没有这张图的对比结果时空格什么都不做（compare 为空），不进入"按住了个寂寞"的状态
-        e.preventDefault();
-        if (!e.repeat) setHoldingOriginal(true);
       }
     };
-    const onKeyUp = (e: KeyboardEvent): void => {
-      if (e.key === ' ') setHoldingOriginal(false);
-    };
     window.addEventListener('keydown', onKey);
-    window.addEventListener('keyup', onKeyUp);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      window.removeEventListener('keyup', onKeyUp);
-    };
-  }, [preview, closePreview, previewStep, compare, setHoldingOriginal]);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [preview, closePreview, previewStep]);
 
   if (!preview) return null;
 
@@ -267,40 +208,6 @@ export function PreviewOverlay(): JSX.Element | null {
     );
   };
 
-  /** 元数据：原来自己占一行 + 一条 Divider，现在并进动作行右端 */
-  const metaBlock = (
-    <Stack
-      direction="row"
-      spacing={1.5}
-      alignItems="center"
-      data-testid="preview-meta"
-      sx={{ ml: 'auto', whiteSpace: 'nowrap', pl: 1 }}
-    >
-      {infoLoading ? (
-        <CircularProgress size={14} sx={{ color: overlay.dim }} aria-label="正在读取图片信息" />
-      ) : infoError ? (
-        <Typography variant="caption" sx={{ color: 'error.light' }}>图片信息读取失败</Typography>
-      ) : (
-        <>
-          {info?.width && info?.height ? (
-            <Typography variant="caption" sx={{ color: overlay.dim }}>{info.width} × {info.height}</Typography>
-          ) : null}
-          {info?.sizeBytes != null ? (
-            <Typography variant="caption" sx={{ color: overlay.dim }}>{formatBytes(info.sizeBytes)}</Typography>
-          ) : null}
-          {info?.dateTimeOriginal ? (
-            <Typography variant="caption" sx={{ color: overlay.dim }}>{info.dateTimeOriginal}</Typography>
-          ) : null}
-          {[info?.make, info?.model].filter(Boolean).join(' ') ? (
-            <Typography variant="caption" sx={{ color: overlay.dim }}>
-              {[info?.make, info?.model].filter(Boolean).join(' ')}
-            </Typography>
-          ) : null}
-        </>
-      )}
-    </Stack>
-  );
-
   return (
     <Box
       ref={dialogRef}
@@ -309,8 +216,8 @@ export function PreviewOverlay(): JSX.Element | null {
       aria-labelledby="preview-overlay-title"
       tabIndex={-1}
       className="fixed inset-0 flex flex-col"
-      // 留在 MUI 模态带上：预览里弹出的模型下拉、右键菜单、下载确认框都是 portal 挂 body、
-      // 按这个带（1300）画的，覆盖层一旦抬到它之上就把自家浮层一起压住（2026-09-30 点三角没反应）。
+      // 留在 MUI 模态带上：预览里弹出的右键菜单、回收站确认框都是 portal 挂 body、
+      // 按这个带（1300）画的，覆盖层一旦抬到它之上就把自家浮层一起压住。
       // 右上角窗口控件由 WindowControls 在预览开着时显式隐藏，不靠这里的层级压它。
       // no-drag 是必须的：主顶栏 .ptm-titlebar 把窗口顶部 0..44px 登记成了拖拽带，而**层级高不等于能命中**——
       // 覆盖层不把自己减出去，落在带里的那排按钮（上一张 / 定位 / 复制 / 关闭）真实鼠标点击就会被当成
@@ -378,15 +285,9 @@ export function PreviewOverlay(): JSX.Element | null {
         sx={{ touchAction: 'none' }}
         onContextMenu={(e) => {
           e.preventDefault();
-          // 点提示模式下右键归背景点所有：overlay 区由它自己处理并吃掉事件，
-          // 落在图外空白处则整段不弹菜单——否则同一手势一会儿标背景一会儿进回收站，
-          // 用户无法预期。菜单里还有「移除到回收站」，误触代价高，宁可先禁用。
-          if (useAiStore.getState().maskPromptMode) return;
-          if ((e.target as HTMLElement).closest('[data-mask-brush="true"]')) return;
           setImageMenu({ x: e.clientX, y: e.clientY });
         }}
         onMouseDown={(e) => {
-          if ((e.target as HTMLElement).closest('[data-mask-brush="true"]')) return;
           if (zoomRef.current !== 1) {
             dragRef.current = {
               startX: e.clientX,
@@ -396,9 +297,6 @@ export function PreviewOverlay(): JSX.Element | null {
             };
             e.preventDefault();
           }
-          // 按住看原图已删，只剩空格：左键要让给点提示（左=前景/ 右=背景），
-          // 两个功能抢同一个手势时，用户按下左键看到的是原图闪一下再跳回结果，
-          // 像是点提示没生效。未缩放时大图区在这里不再做任何事。
         }}
         onDoubleClick={resetView}
         onWheel={handleWheel}
@@ -412,17 +310,6 @@ export function PreviewOverlay(): JSX.Element | null {
               <Button color="inherit" onClick={closePreview}>关闭</Button>
             </Stack>
           </Stack>
-        ) : compare ? (
-          <AiCompareStage
-            key={image.absPath}
-            absPath={image.absPath}
-            alt={image.name}
-            onError={() => setImageError(true)}
-            viewStyle={{
-              transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`,
-              transition: 'transform 0.06s linear'
-            }}
-          />
         ) : (
           <img
             key={image.absPath}
@@ -453,61 +340,13 @@ export function PreviewOverlay(): JSX.Element | null {
             {Math.round(zoom * 100)}% · 双击还原
           </Typography>
         )}
-        {/* 参数面板是**浮层**，挂在大图区里而不是底栏的 flex 子项：
-            展开前后大图区高度必须一样（方案 §8-5），底栏那 103 px 不能再被吃一行 */}
-        {compare && <CutoutParamsPanel absPath={image.absPath} />}
-      </Box>
-
-      {/* AI 失败要看得见：一条错误条，不弹窗、不打断浏览 */}
-      {aiError && (
-        <Stack
-          direction="row"
-          alignItems="center"
-          spacing={1}
-          className="shrink-0 px-4"
-          sx={{ bgcolor: tokens.status.dangerOnDark }}
-        >
-          <Typography variant="caption" data-testid="ai-error" sx={{ color: tokens.status.dangerTextOnDark, minWidth: 0, flex: 1, py: 0.5 }}>
-            {aiError.message}
-          </Typography>
-          {/* §8-17 的"一键卸载"：只在显存不足且确有模型驻留时出现，否则就是颗假控件 */}
-          {aiError.code === 'GPU_MEMORY_LOW' && loadedModelId && (
-            <Button
-              size="small"
-              color="inherit"
-              data-testid="ai-error-unload"
-              sx={{ textTransform: 'none', minWidth: 0 }}
-              onClick={() => void modelAction(loadedModelId, 'unload').then(() => dismissAiError())}
-            >
-              卸载已加载的模型
-            </Button>
-          )}
-          <Button
-            size="small"
-            color="inherit"
-            sx={{ textTransform: 'none', minWidth: 0 }}
-            onClick={dismissAiError}
-          >
-            知道了
-          </Button>
-        </Stack>
-      )}
-
-      {/* 底栏上半：AI 动作 + 对比动作 + 元数据（原来元数据自己一行还配一条 Divider） */}
-      <Box className="shrink-0 px-4 pt-2.5" sx={{ bgcolor: overlay.surfaceFaint }}>
-        <Stack
-          direction="row"
-          spacing={1.5}
-          alignItems="center"
-          data-testid="ai-bar"
-          sx={{ flexWrap: 'nowrap', minWidth: 0 }}
-        >
-          {absPath && <AiActionSplitButton absPath={absPath} />}
-          <AiCompareActions absPath={image.absPath} onSaved={handleAiSaved} />
-          {/* 显式撑开件把元数据顶到最右（单行下仍用它，免得 ml:auto 与左段收缩互相抢宽度） */}
-          <Box component="span" sx={{ flex: 1, minWidth: 8 }} />
-          {metaBlock}
-        </Stack>
+        <ExifInfoPanel
+          info={info}
+          loading={infoLoading}
+          error={infoError}
+          expanded={exifPanelExpanded}
+          onToggle={toggleExifPanel}
+        />
       </Box>
       <Menu
         open={imageMenu !== null}

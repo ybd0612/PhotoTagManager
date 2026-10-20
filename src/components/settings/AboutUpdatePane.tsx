@@ -41,7 +41,7 @@ export function AboutUpdatePane({ update }: { update: UpdateController }): JSX.E
           <Typography variant="h6">图片管家 PhotoTagManager</Typography>
         </Stack>
         <Typography variant="body2" color="text.secondary">
-          一款 Windows 本机图片管理工具：浏览、搜索、打标、清理，并在本机做 AI 处理。标签直接写进图片文件自身的 XMP 元数据——不搬文件、不建数据库，图片复制或移动后标签跟着走，照片内容不出本机。
+          一款 Windows 本机图片管理工具：浏览、搜索、打标、清理。标签直接写进图片文件自身的 XMP 元数据——不搬文件、不建数据库，图片复制或移动后标签跟着走。
         </Typography>
       </Box>
       <Divider />
@@ -95,7 +95,7 @@ export function AboutUpdatePane({ update }: { update: UpdateController }): JSX.E
           <Typography variant="subtitle2">更新</Typography>
           <Hint
             testId="update-hint"
-            text="应用启动时会自动静默检查一次，发现新版本在右下角提示；这里的按钮是手动再查一次。更新只从 GitHub Releases 拉取安装包，与模型下载共用「常规」里设置的代理出口；连不上时会说明原因，照片始终不出本机。"
+            text="应用启动时会自动静默检查一次，发现新版本在右下角提示；这里的按钮是手动再查一次。更新只从 GitHub Releases 拉取安装包，并使用「常规」里设置的代理；连不上时会说明原因，照片始终不出本机。"
           />
         </Stack>
         <Stack direction="row" spacing={1.5} alignItems="center">

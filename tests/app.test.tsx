@@ -60,8 +60,8 @@ function createMockApi(): PhotoTagApi {
     openExternal: vi.fn(async () => ({ ok: true as const, data: undefined })),
     revealFileInExplorer: vi.fn(async () => ({ ok: true as const, data: undefined })),
     trashFiles: vi.fn(async () => ({ ok: true as const, data: { trashed: [] as string[], failed: [] } })),
-    getPrefs: vi.fn(async () => ({ ok: true as const, data: { sortKey: "name" as const, sortDir: "asc" as const, thumbSize: "small" as const, scanDoneToast: false, proxyRules: "", treeCollapsed: false, filterBarVisible: true } })),
-    setPrefs: vi.fn(async () => ({ ok: true as const, data: { sortKey: "name" as const, sortDir: "asc" as const, thumbSize: "small" as const, scanDoneToast: false, proxyRules: "", treeCollapsed: false, filterBarVisible: true } })),
+    getPrefs: vi.fn(async () => ({ ok: true as const, data: { sortKey: "name" as const, sortDir: "asc" as const, thumbSize: "small" as const, scanDoneToast: false, proxyRules: "", treeCollapsed: false, filterBarVisible: true, exifPanelExpanded: true } })),
+    setPrefs: vi.fn(async () => ({ ok: true as const, data: { sortKey: "name" as const, sortDir: "asc" as const, thumbSize: "small" as const, scanDoneToast: false, proxyRules: "", treeCollapsed: false, filterBarVisible: true, exifPanelExpanded: true } })),
     windowMinimize: vi.fn(async () => ({ ok: true as const, data: undefined })),
     windowToggleMaximize: vi.fn(async () => ({ ok: true as const, data: undefined })),
     windowClose: vi.fn(async () => ({ ok: true as const, data: undefined })),
@@ -91,23 +91,7 @@ function createMockApi(): PhotoTagApi {
     checkUpdate: vi.fn(async () => ({ ok: true as const, data: { state: 'not-available' as const } })),
     downloadUpdate: vi.fn(async () => ({ ok: true as const, data: { state: 'downloading' as const, percent: 0 } })),
     installUpdate: vi.fn(async () => ({ ok: true as const, data: { state: 'downloaded' as const, percent: 100 } })),
-    onUpdateStatus: vi.fn(() => () => undefined),
-    // 照片 AI 处理（M1）
-    aiCatalog: vi.fn(async () => ({ ok: true as const, data: { capabilities: [] } })),
-    aiRun: vi.fn(async () => ({ ok: true as const, data: { taskId: 'ai-1' } })),
-    aiCancel: vi.fn(async () => ({ ok: true as const, data: true })),
-    aiMaskEdit: vi.fn(async () => ({ ok: true as const, data: { tempPath: '', maskCanUndo: false, maskCanRedo: false } })),
-    aiMobileSamStatus: vi.fn(async () => ({ ok: true as const, data: { statuses: [{ id: 'mobilesam-image-encoder', sizeBytes: 28_157_093, status: 'absent' as const }, { id: 'mobilesam-mask-decoder', sizeBytes: 16_496_559, status: 'absent' as const }] } })),
-    aiMobileSamInstall: vi.fn(async () => ({ ok: true as const, data: undefined })),
-    aiSave: vi.fn(async () => ({ ok: true as const, data: { savedPath: '', targetName: '', renamed: false, overwrote: false, tagsWritten: [] } })),
-    aiModelDownload: vi.fn(async () => ({ ok: true as const, data: { modelId: 'u2netp', status: 'present' as const } })),
-    aiModelDelete: vi.fn(async () => ({ ok: true as const, data: { modelId: 'u2netp', status: 'absent' as const } })),
-    aiModelUnload: vi.fn(async () => ({ ok: true as const, data: { modelId: 'u2netp', status: 'present' as const } })),
-    aiModelSetDefault: vi.fn(async () => ({ ok: true as const, data: { capabilities: [] } })),
-    aiStorageStats: vi.fn(async () => ({ ok: true as const, data: { preview: { entries: 0, totalBytes: 0 }, models: [], loadedModelId: null, freeDiskBytes: null, gpu: null, retention: { retentionDays: 30, maxBytes: 1 } } })),
-    onAiProgress: vi.fn(() => () => undefined),
-    onAiDone: vi.fn(() => () => undefined),
-    onAiError: vi.fn(() => () => undefined),
+    onUpdateStatus: vi.fn(() => () => undefined)
   };
 }
 

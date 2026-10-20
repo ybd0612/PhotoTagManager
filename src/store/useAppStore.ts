@@ -71,12 +71,15 @@ interface AppState {
   sortDir: SortDir;
   thumbSize: ThumbSize;
   scanDoneToast: boolean;
-  /** 模型下载与检查更新用的代理，形如 127.0.0.1:7890；空 = 不覆盖，跟随系统默认 */
+  /** 应用网络请求使用的代理，形如 127.0.0.1:7890；空 = 不覆盖，跟随系统默认 */
   proxyRules: string;
   /** 左栏目录树是否收起（落盘，重启保留用户上次的选择） */
   treeCollapsed: boolean;
   /** 找图工具行是否展开（落盘，与左栏折叠同一套做法） */
   filterBarVisible: boolean;
+  /** 大图预览左上角 EXIF 面板是否展开（落盘，用户 2026-10-20 明确要求记住） */
+  exifPanelExpanded: boolean;
+  toggleExifPanel(): void;
   setNameQuery(query: string): void;
   /** 同一个键再点一次 = 翻转方向；换键 = 该键的默认方向 asc */
   setSort(key: SortKey): void;
@@ -229,6 +232,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   proxyRules: DEFAULT_UI_PREFS.proxyRules,
   treeCollapsed: DEFAULT_UI_PREFS.treeCollapsed,
   filterBarVisible: DEFAULT_UI_PREFS.filterBarVisible,
+  exifPanelExpanded: DEFAULT_UI_PREFS.exifPanelExpanded,
 
   setNameQuery: (nameQuery) => set({ nameQuery }),
 
@@ -266,6 +270,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     persistPrefs({ filterBarVisible });
   },
 
+  toggleExifPanel: () => {
+    const exifPanelExpanded = !get().exifPanelExpanded;
+    set({ exifPanelExpanded });
+    persistPrefs({ exifPanelExpanded });
+  },
+
   loadUiPrefs: async () => {
     try {
       const prefs = await call(getApi().getPrefs());
@@ -277,7 +287,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         scanDoneToast: prefs.scanDoneToast,
         proxyRules: prefs.proxyRules,
         treeCollapsed: prefs.treeCollapsed,
-        filterBarVisible: prefs.filterBarVisible
+        filterBarVisible: prefs.filterBarVisible,
+        exifPanelExpanded: prefs.exifPanelExpanded
       });
     } catch {
       // 读不到偏好就用默认值，不能因此卡住启动

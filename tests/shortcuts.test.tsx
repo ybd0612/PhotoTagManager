@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // 批次3 · G11 —— 快捷键帮助。要守的两条：列表只准来自一个数据源，且只列真实现的键。
-// 键位行为本身另有绊线：空格见 previewActions，←/→/Esc/Ctrl+C 见 aiUi 与既有预览用例。
+// 键位行为本身另有预览与快捷键用例。
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 
@@ -13,11 +13,6 @@ function ok<T>(data: T): { ok: true; data: T } {
 }
 
 const api: Record<string, ReturnType<typeof vi.fn>> = {
-  aiCatalog: vi.fn(async () => ok({ capabilities: [] })),
-  aiStorageStats: vi.fn(async () => ok(null)),
-  onAiProgress: vi.fn(() => () => undefined),
-  onAiDone: vi.fn(() => () => undefined),
-  onAiError: vi.fn(() => () => undefined),
   listRoots: vi.fn(async () => ok([])),
   scanStart: vi.fn(async () => ok({ rootId: 'r1', rootPath: 'C:/P', scanId: 's1' })),
   scanCancel: vi.fn(async () => ok(undefined)),
@@ -77,9 +72,8 @@ describe('G11 快捷键数据源', () => {
     }
   });
 
-  it('只列真已实现的键位：空格与 ? 都在列，未实现的组合键一律不许出现', () => {
+  it('只列真已实现的键位：? 在列，未实现的组合键一律不许出现', () => {
     const allKeys = SHORTCUTS.map((s) => s.keys).join(' ');
-    expect(allKeys).toContain('空格');
     expect(allKeys).toContain('?');
     // M4 之前没有批量，Del/Delete 之类的键位压根没实现
     for (const notImplemented of ['Del', 'Delete', 'Ctrl+A', 'Ctrl+S']) {
@@ -95,9 +89,6 @@ describe('G11 设置里的快捷键分区', () => {
     fireEvent.click(within(dialog).getByRole('tab', { name: /快捷键/ }));
     const pane = screen.getByTestId('shortcut-list');
     expect(within(pane).getAllByRole('row')).toHaveLength(SHORTCUTS.length + 1); // +1 表头
-    expect(pane.textContent).toContain('按住空格看原图');
-    // 反面腿：左键已让给点提示，快捷键表里不得再出现「按住图片」的说法
-    expect(pane.textContent).not.toContain('按住图片');
   });
 
   it('initialTab 能把对话框直接开到快捷键分区（? 唤出走的是这条路）', () => {

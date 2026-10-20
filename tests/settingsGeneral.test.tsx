@@ -101,12 +101,14 @@ describe('设置对话框 · 常规分区', () => {
     render(<SettingsDialog open onClose={() => undefined} update={updateStub()} />);
     const dialog = screen.getByRole('dialog');
     // 正文一开始不在 DOM 里，才说明它真被收起来了而不是只是变小
-    expect(within(dialog).queryByText(/只影响「模型下载」/)).toBeNull();
+    expect(within(dialog).queryByText(/默认关闭：状态栏已常驻/)).toBeNull();
     const hints = within(dialog).getAllByRole('button', { name: '说明' });
+    // 2026-10-20：AI 功能整体移除后，「常规」分区剩两个说明
+    // （扫描完成提示、代理说明）——原先的「模型下载」那条已随 AI 分区一起删掉。
     expect(hints).toHaveLength(2);
     fireEvent.mouseOver(hints[1]);
     await waitFor(() => expect(screen.getByRole('tooltip')).toBeTruthy());
-    expect(screen.getByRole('tooltip').textContent).toContain('照片始终不出本机');
+    expect(screen.getByRole('tooltip').textContent).toContain('代理只用于应用的网络请求');
   });
 });
 

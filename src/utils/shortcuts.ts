@@ -3,11 +3,8 @@
  *
  * 一条口径：**只列已经实现的键位**。这份表不是设计稿，写进去一个没接上的组合键，
  * 用户按下去没反应，比不写更糟——它和设置页里"不许放调了没反应的假控件"是同一条防线。
- * 每条键位都有对应行为用例：←/→/Esc/Ctrl+C 见预览既有断言，空格见 previewActions，
- * `?` 见 shortcuts 用例。
+ * 每条键位都有对应行为用例：预览导航见预览断言，`?` 见 shortcuts 用例。
  */
-import { HOLD_TO_COMPARE } from './strings';
-
 export interface Shortcut {
   /** 键位原文，按用户看到的写法 */
   keys: string;
@@ -19,8 +16,7 @@ export interface Shortcut {
 
 export const SHORTCUTS: Shortcut[] = [
   { keys: '← / →', action: '预览中看上一张 / 下一张', scope: '预览' },
-  { keys: 'Esc', action: '关闭预览、对话框或菜单（点提示模式下先退出该模式）', scope: '全局' },
-  { keys: '空格（按住）', action: HOLD_TO_COMPARE, scope: '预览 · 有对比结果时' },
+  { keys: 'Esc', action: '关闭预览、对话框或菜单', scope: '全局' },
   { keys: 'Ctrl + C', action: '把当前文件复制到剪贴板，可在资源管理器粘贴', scope: '预览' },
   { keys: 'Enter', action: '在标签输入框里确认并写入标签', scope: '预览' },
   { keys: 'Ctrl + 单击', action: '网格中多选图片（批量加标签、批量移到回收站）', scope: '网格' },

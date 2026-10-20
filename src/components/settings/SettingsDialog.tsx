@@ -20,7 +20,6 @@ import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import { sanitizeProxyRules } from '../../../shared/proxyRule';
 import { AboutUpdatePane } from './AboutUpdatePane';
-import { AiSettingsPane } from './AiSettingsPane';
 import { Hint } from '../Hint';
 import { useAppStore } from '../../store/useAppStore';
 import { SHORTCUTS } from '../../utils/shortcuts';
@@ -85,7 +84,7 @@ function ProxyRow(): JSX.Element {
         <Typography variant="body2" sx={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
           网络代理
         </Typography>
-        <Hint text="只影响「模型下载」与「检查更新」两件事；照片始终不出本机，本应用没有任何上传照片的请求。不支持带账号密码的代理地址（那会明文存在配置文件里）。" />
+        <Hint text="代理只用于应用的网络请求；不支持带账号密码的代理地址（那会明文存在配置文件里）。" />
       </Stack>
       <Stack spacing={0.5} sx={{ flex: 1, minWidth: 0 }}>
         <Stack direction="row" spacing={1} alignItems="center">
@@ -150,11 +149,8 @@ function ShortcutPane(): JSX.Element {
 }
 
 /**
- * 应用级设置总入口（D16）。
- *
- * 为什么要有这个弹窗而不是 AI 专属弹窗：应用原先只有「关于」「标签管理」两个弹窗，
- * 任何全局偏好都没有落脚的地方。AI 需要一个能长期生长的位置，所以补总入口，
- * 而不是给 AI 单开一个以后还得再搬一次的弹窗。
+ * 应用级设置总入口。
+ * 常规、快捷键、关于与更新分区分别承载通用偏好、操作说明和更新管理。
  */
 export function SettingsDialog({
   open,
@@ -165,7 +161,7 @@ export function SettingsDialog({
   open: boolean;
   onClose: () => void;
   /** 打开时停在哪个分区；全局 `?` 用它直接把对话框开到「快捷键」上 */
-  initialTab?: 'general' | 'ai' | 'shortcuts' | 'about';
+  initialTab?: 'general' | 'shortcuts' | 'about';
   /** 「关于与更新」分区就地用的更新控制器，由 AppLayout 挂载的唯一一份传入 */
   update: UpdateController;
 }): JSX.Element {
@@ -181,7 +177,6 @@ export function SettingsDialog({
       <DialogTitle id="settings-title">设置</DialogTitle>
       <Tabs value={tab} onChange={(_e, v: string) => setTab(v)} aria-label="设置分区">
         <Tab value="general" label="常规" />
-        <Tab value="ai" label="AI 处理" />
         <Tab value="shortcuts" label="快捷键" />
         <Tab value="about" label="关于与更新" />
       </Tabs>
@@ -189,8 +184,6 @@ export function SettingsDialog({
       <DialogContent dividers sx={{ minHeight: 300 }}>
         {tab === 'general' ? (
           <GeneralPane />
-        ) : tab === 'ai' ? (
-          <AiSettingsPane />
         ) : tab === 'shortcuts' ? (
           <ShortcutPane />
         ) : (

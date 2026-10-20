@@ -88,7 +88,7 @@ export function AppLayout(): JSX.Element {
   const { actions: rootActions, dialogs: rootDialogs } = useRootActions();
   const [settingsOpen, setSettingsOpen] = useState(false);
   /** 打开设置时停在哪个分区：工具栏按钮进「常规」，`?` 直接进「快捷键」（批次3 G11） */
-  const [settingsTab, setSettingsTab] = useState<'general' | 'ai' | 'shortcuts'>('general');
+  const [settingsTab, setSettingsTab] = useState<'general' | 'shortcuts'>('general');
   /**
    * 折叠把手只在鼠标贴近左栏右缘时出现。判定用坐标而不是铺一层 `:hover` 热区：
    * 热区层会盖住树右缘的 8px 滚动条和网格左缘，把这两处的点击吞掉。

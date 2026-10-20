@@ -103,6 +103,37 @@ export interface ImageInfo {
   model?: string;
   ok: boolean;
   error?: string;
+  /* ── 摄影参数与文件信息（2026-10-20：预览左上角信息面板要的全套 EXIF）──
+   * 全部可选：exiftool 读不到的字段一律不给键，界面也不占位显示空值。
+   * 格式换算见 electron/services/exifFields.ts（换算是本项目做的，不是 exiftool 直接给的）。 */
+  /** 文件名（含扩展名，与扫描器一致） */
+  fileName?: string;
+  /** 拍摄时间，形如 `2023/09/23 09:50:48`。**不带时区偏移** —— EXIF 里那个是拍摄地墙上时间，与文件修改时间（本地时）混排会让人以为照片被改过 */
+  dateTimeOriginalWithOffset?: string;
+  /** 文件系统修改时间，形如 `2026/10/07 01:56:29` */
+  fileModified?: string;
+  /** 相机软件/固件版本，如 `ILCE-7M4 v1.10` */
+  software?: string;
+  /** 闪光灯状态原文，如 `Off, Did not fire` */
+  flash?: string;
+  /** 焦距，如 `46mm`；与实际焦距不同时会追加「（等效 35mm：24mm）」 */
+  focalLength?: string;
+  /** 快门速度，如 `0.006s (1/160)` */
+  shutterSpeed?: string;
+  /** 光圈，如 `f/4.0` */
+  aperture?: string;
+  /** ISO 感光度，如 `125` */
+  iso?: string;
+  /** 曝光程序，如 `Manual` */
+  exposureProgram?: string;
+  /** 测光模式，如 `Multi-segment` */
+  meteringMode?: string;
+  /** 曝光补偿，如 `+0.3 EV`。**为 0 时不给键** —— 有值与「补偿了 0」是两回事 */
+  exposureCompensation?: string;
+  /** 图像格式，如 `JPEG` */
+  fileType?: string;
+  /** 色彩空间，如 `Uncalibrated` */
+  colorSpace?: string;
 }
 
 /** 自动更新状态（electron-updater → 主进程 → 渲染进程，经 'update:status' 通道推送） */
@@ -118,178 +149,6 @@ export type IpcResult<T> =
   | { ok: true; data: T }
   | { ok: false; error: { code: string; message: string } };
 
-/** 模型在本机的状态（下拉里每行都要显示）。只描述磁盘/传输真相，不掺能力判断 */
-export type AiModelStatus = 'absent' | 'downloading' | 'present';
-
-/** 清单里的一个候选模型 + 它的本机状态（能力清单是唯一事实源，界面不写死任何字段） */
-export interface AiModelView {
-  id: string;
-  displayName: string;
-  sizeBytes: number;
-  /** 只有实测跑通的条目允许进 UI（规格 §4.3 硬规则） */
-  verified: boolean;
-  status: AiModelStatus;
-  /**
-   * 本机跑不动时给一句"为什么 + 怎么办"（规格 §6「无可用 GPU → 条目转不可用并说明原因」）。
-   * 刻意不并进 status：status 要如实反映磁盘状态，否则那颗 下载/删除 按钮会判错。
-   */
-  statusReason?: string;
-  /** 是否已加载进显存。加载对用户不可见（D14），但下拉里要如实显示 */
-  loaded: boolean;
-  isDefault: boolean;
-  /** 掩码在多少像素上算的：分屏模式要据此注明（§4.5） */
-  inputWidth: number;
-  inputHeight: number;
-}
-
-/** 一个行为（M1 只有「人像抠图」） */
-export interface AiCapabilityView {
-  id: string;
-  /** 主按钮文案，语义恒定不随内部状态变化（D13） */
-  label: string;
-  description: string;
-  /** 派生文件要追加的行为标签；UI / 写入 / 筛选都取这个字段（D10） */
-  actionTag: string;
-  outputSuffix: string;
-  outputExt: string;
-  defaultModelId: string;
-  models: AiModelView[];
-}
-
-export interface AiCatalogResult {
-  capabilities: AiCapabilityView[];
-}
-
-/** 用户显式选择的推理后端：默认走 GPU（DirectML），CPU 是慢速兜底、只能由人勾选 */
-export type AiBackend = 'dml' | 'cpu';
-
-/**
- * 抠图底色预设的标识（方案 §4：第一版面板只放这一个参数）。
- * 渲染层与主进程之间**只传这个 id、不传颜色数组**——RGBA 的唯一事实源在主进程
- * `BG_COLOR_PRESETS`，界面里再抄一份就成了第二处事实源（"证件照蓝底是哪个蓝"两处答案）。
- */
-export type AiBgColorId = 'transparent' | 'white' | 'blue' | 'red';
-
-/** 详情页参数面板带过去的抠图参数。 */
-export interface AiCutoutParamsPayload {
-  bgcolor?: AiBgColorId;
-}
-
-export interface AiRunRequest {
-  absPath: string;
-  capabilityId: string;
-  modelId?: string;
-  /** 首次下载的代价告知已由界面确认（AG2）。已下载时不需要 */
-  downloadApproved?: boolean;
-  /** 显式选 CPU 慢速模式（D12：必须用户显式勾选，不允许无声降级）。变化时主进程必须重建会话 */
-  backend?: AiBackend;
-  /**
-   * 抠图后处理参数。以前主进程把默认值写死在 `execute()` 里，改参数在请求上没有入口；
-   * 面板改了要在这里带上，否则"改了就能看出效果"无从谈起（方案附录 A「参数流转」）。
-   * 与 backend 同一条口径：会话内记住、重启回默认，不写进 settings.json（§6 裁定 2）。
-   */
-  cutout?: AiCutoutParamsPayload;
-}
-
-/** ai:run 立刻回 taskId；进度与结果一律走事件（一次点击内部走完下载与加载） */
-export interface AiRunAck {
-  taskId: string;
-}
-
-export type AiPhase = 'download' | 'load' | 'infer' | 'encode';
-
-export interface AiProgressPayload {
-  taskId: string;
-  phase: AiPhase;
-  percent?: number;
-}
-
-export interface AiMaskPointPrompt {
-  x: number;
-  y: number;
-  label: 0 | 1;
-}
-
-export interface AiMaskEditResult {
-  tempPath: string;
-  maskCanUndo: boolean;
-  maskCanRedo: boolean;
-}
-
-export interface AiMaskEditRequest {
-  action: 'prompt' | 'undo' | 'redo' | 'render';
-  prompt?: AiMaskPointPrompt;
-  bgcolor?: AiBgColorId;
-}
-
-export interface AiDonePayload {
-  taskId: string;
-  /** 暂存文件的绝对路径（userData 下，不在照片目录内） */
-  tempPath: string;
-  sourceAbsPath: string;
-  /** true 表示命中缓存、没有重跑推理 */
-  cacheHit: boolean;
-  didApplySigmoid: boolean;
-  /**
-   * 掩码实际计算尺寸（取自清单的 inputDims）。界面那句"掩码在 NxN 下计算"读的就是它。
-   * 这里刻意只留这一对名字：以前另有 inputWidth/inputHeight 别名，生产者只写 mask*、
-   * 界面只读 input*，过 IPC 时是 unknown 所以编译期看不见，真机上那句注明一直是空白的（U5）。
-   */
-  maskWidth: number;
-  maskHeight: number;
-  capabilityId: string;
-  modelId: string;
-  actionTag: string;
-  maskEditable?: boolean;
-  maskCanUndo?: boolean;
-  maskCanRedo?: boolean;
-  cutout?: AiCutoutParamsPayload;
-}
-
-export interface AiErrorPayload {
-  taskId: string;
-  code: string;
-  message: string;
-}
-
-export interface AiSaveResult {
-  savedPath: string;
-  targetName: string;
-  /** true 表示首选举了名，实际写成 .cutout.N.png（§4.4 同名冲突） */
-  renamed: boolean;
-  /**
-   * true 表示覆盖的是我们自己上一轮导出的那张（同名文件带着行为标签）。
-   * §6 裁定 1 要求"覆盖 + 一句提示"，所以界面必须把这一种单独说出来，不许静默替换。
-   */
-  overwrote: boolean;
-  tagsWritten: string[];
-}
-
-export interface AiGpuMemory {
-  usedMiB: number;
-  totalMiB: number;
-  /** 只能是整卡口径：分进程显存拿不到（nvidia-smi --query-compute-apps 返回 [N/A]） */
-  scope: 'whole-gpu';
-}
-
-export interface AiStorageStats {
-  preview: { entries: number; totalBytes: number };
-  models: Array<{ id: string; sizeBytes: number; status: AiModelStatus }>;
-  loadedModelId: string | null;
-  /** 读不到时为 null，界面要显示"未知"而不是 0 */
-  freeDiskBytes: number | null;
-  /** 整卡显存；null = 拿不到（非 NVIDIA / 命令不可用） */
-  gpu: AiGpuMemory | null;
-  retention: { retentionDays: number; maxBytes: number };
-}
-
-export interface AiModelOpResult {
-  modelId: string;
-  status: AiModelStatus;
-  /** 卸载/删除没生效时给一句原因，不静默 */
-  reason?: string;
-}
-
 /** 视图偏好：排序与缩略图档位，持久化在 userData/settings.json 的 ui 段 */
 export type SortKey = 'name' | 'time' | 'size';
 export type SortDir = 'asc' | 'desc';
@@ -302,8 +161,8 @@ export interface UiPrefs {
   /** 扫描完成后是否额外弹一条 snackbar。状态栏已常驻「已扫描 N 张图片」，默认不重复播报 */
   scanDoneToast: boolean;
   /**
-   * 模型下载与检查更新走的代理，形如 `127.0.0.1:7890`；空字符串 = 不覆盖，跟随系统默认。
-   * 只影响这两件事——照片始终不出本机，本应用没有任何上传照片的请求。
+   * 应用网络请求使用的代理，形如 `127.0.0.1:7890`；空字符串 = 不覆盖，跟随系统默认。
+   * 只影响应用自身的网络请求——照片始终不出本机，本应用没有任何上传照片的请求。
    */
   proxyRules: string;
   /**
@@ -316,6 +175,13 @@ export interface UiPrefs {
    * 收起后只剩「常用标签」那一行，图片区多出约 40px；默认展开。
    */
   filterBarVisible: boolean;
+  /**
+   * 大图预览左上角的 EXIF 信息面板是否展开（2026-10-20）。
+   *
+   * 完整面板 15 行会盖住画面左上角约三分之一，所以可折叠。
+   * **默认展开**：用户明确要求「默认显示，可以折叠，并记住设置」。
+   */
+  exifPanelExpanded: boolean;
 }
 
 /** 默认与既有行为一致：按相对路径升序、最小档缩略图、左栏展开 */
@@ -326,7 +192,8 @@ export const DEFAULT_UI_PREFS: UiPrefs = {
   scanDoneToast: false,
   proxyRules: '',
   treeCollapsed: false,
-  filterBarVisible: true
+  filterBarVisible: true,
+  exifPanelExpanded: true
 };
 
 /** 移到回收站的结果：逐条给失败原因，部分失败不允许静默 */
@@ -394,21 +261,4 @@ export interface PhotoTagApi {
   downloadUpdate(): Promise<IpcResult<UpdateStatus>>;
   installUpdate(): Promise<IpcResult<UpdateStatus>>;
   onUpdateStatus(cb: (status: UpdateStatus) => void): () => void;
-  // 照片 AI 处理（M1：人像抠图）。用户侧只有 aiRun 一个动作——下载与加载是它的内部步骤（D14）
-  aiCatalog(): Promise<IpcResult<AiCatalogResult>>;
-  aiRun(req: AiRunRequest): Promise<IpcResult<AiRunAck>>;
-  aiCancel(taskId: string): Promise<IpcResult<boolean>>;
-  aiMaskEdit(taskId: string, request: AiMaskEditRequest): Promise<IpcResult<AiMaskEditResult>>;
-  aiMobileSamStatus(): Promise<IpcResult<{ statuses: Array<{ id: string; sizeBytes: number; status: 'absent' | 'downloading' | 'present' }> }>>;
-  aiMobileSamInstall(): Promise<IpcResult<void>>;
-  aiSave(taskId: string): Promise<IpcResult<AiSaveResult>>;
-  aiModelDownload(modelId: string): Promise<IpcResult<AiModelOpResult>>;
-  aiModelDelete(modelId: string): Promise<IpcResult<AiModelOpResult>>;
-  aiModelUnload(modelId: string): Promise<IpcResult<AiModelOpResult>>;
-  aiModelSetDefault(capabilityId: string, modelId: string): Promise<IpcResult<AiCatalogResult>>;
-  aiStorageStats(): Promise<IpcResult<AiStorageStats>>;
-  onAiProgress(cb: (p: AiProgressPayload) => void): () => void;
-  onAiDone(cb: (payload: AiDonePayload) => void): () => void;
-  onAiError(cb: (err: AiErrorPayload) => void): () => void;
-  // 注意：**没有** aiDiscard——D18 之后"不保存就是丢弃"，不需要显式删除动作
 }

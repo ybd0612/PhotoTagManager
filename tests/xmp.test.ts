@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm } from 'fs/promises';
+import { mkdtemp, rm, writeFile, utimes, stat } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -135,6 +135,35 @@ describe('XmpService write', () => {
     expect(mockExif.writeCalls[0].args.Subject).toBe(''); // 清空标准字段
     expect(mockExif.writeCalls[0].args.Label).toBe('M');
     expect(mockExif.writeCalls[0].opts).toContain('-overwrite_original');
+    // 打标签不该改照片的修改时间：备份/同步工具靠 mtime 判断「文件被改过吗」，
+    // 打标签却让 mtime 变了，会产生一堆无意义的增量同步。
+    expect(mockExif.writeCalls[0].opts).toContain('-P');
+  });
+
+  /**
+   * `-P` 之外的兜底：写完校验 mtime，不一致就 `fs.utimes` 改回去。
+   * 这里用 mock 模拟「exiftool 没保住 mtime」的情况，断言服务自己修了回去。
+   */
+  it('★ exiftool 没保住 mtime 时，自己改回去（双保险的第二道）', async () => {
+    // 造一个真实文件，把它的 mtime 设成一个可辨识的过去时刻
+    const realFile = join(tempDir, 'mtime-case.jpg');
+    await writeFile(realFile, 'not-really-a-jpeg');
+    const fixed = new Date('2020-01-02T03:04:05Z');
+    await utimes(realFile, fixed, fixed);
+
+    mockExif.metadata = { Tags: tagsJson([]) };
+    // 模拟 exiftool 把 mtime 改成了现在
+    mockExif.write = async (path: string) => {
+      const now = new Date();
+      await utimes(path, now, now);
+    };
+
+    const info = await svc.write({ absPath: realFile, add: ['x'] });
+    expect(info.ok).toBe(true);
+
+    const after = await stat(realFile);
+    // 容忍 1 秒误差（有些文件系统时间戳精度只到秒）
+    expect(Math.abs(after.mtimeMs - fixed.getTime())).toBeLessThan(2000);
   });
 
   it('删除全部标签时写空 JSON 清空 Tags', async () => {

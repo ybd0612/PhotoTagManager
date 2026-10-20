@@ -1,6 +1,6 @@
 // @vitest-environment node
-// 守卫检查清单：U4（userData 目录名）、U5（界面读的字段必须在契约里）、U6（原生菜单不许回来）、
-// UiPrefs 落盘白名单、窗口控件自绘、品牌图唯一来源。
+// 守卫检查清单：U4（userData 目录名）、U6（原生菜单不许回来）、UiPrefs 落盘白名单、
+// 窗口控件自绘、品牌图唯一来源。
 // 共同点：这些事在真机上都"看不见"——目录换了只是数据凭空消失、字段读错只是界面少个数字、
 // 菜单回来了只是按 Alt 多一排按钮。不在测试里钉死，下次改动就会静默复发。
 import { describe, it, expect } from 'vitest';
@@ -25,35 +25,6 @@ describe('U4 userData 目录名钉死', () => {
     const src = read(join('electron', 'main.ts'));
     expect(src).toContain('app.setName(USER_DATA_DIR_NAME)');
     expect(src).toContain("app.setPath('userData'");
-  });
-});
-
-describe('U5 界面读的字段必须在契约里（假绿的根因）', () => {
-  const payloadFields = (): string[] => {
-    const types = read(join('shared', 'types.ts'));
-    const body = types.match(/export interface AiDonePayload \{([\s\S]*?)\n\}/)?.[1] ?? '';
-    return [...body.matchAll(/^\s{2}(\w+)\??:/gm)].map((m) => m[1]);
-  };
-
-  it('AiCompareView 里每个 result.X 都是 AiDonePayload 的字段', () => {
-    const view = read(join('src', 'components', 'AiCompareView.tsx'));
-    const fields = payloadFields();
-    expect(fields.length).toBeGreaterThan(0);
-    const read_fields = [...new Set([...view.matchAll(/result\.(\w+)/g)].map((m) => m[1]))];
-    expect(read_fields.length).toBeGreaterThan(0); // 一个都没匹配到就是这条断言在空转
-    for (const f of read_fields) {
-      expect(fields, `界面读了契约外的字段 result.${f}`).toContain(f);
-    }
-  });
-
-  it('那对别名 inputWidth/inputHeight 不许回到 AiDonePayload（生产者从来不写它）', () => {
-    expect(payloadFields()).not.toContain('inputWidth');
-    expect(payloadFields()).not.toContain('inputHeight');
-  });
-
-  it('掩码尺寸那句注明真的把数字打出来（防止又退回空白）', async () => {
-    const view = read(join('src', 'components', 'AiCompareView.tsx'));
-    expect(view).toMatch(/掩码在 \{result\.maskWidth\}×\{result\.maskHeight\} 下计算/);
   });
 });
 
@@ -101,7 +72,7 @@ describe('UiPrefs 落盘白名单不许漏字段', () => {
  * ① 原生覆盖层不许回来——它画在网页之上，预览遮不住、对话框压不住，Windows 又没有隐藏的 API；
  * ② 层叠顺序：控件要高于 MUI 模态（1300~1600），否则开着「设置」点不到关闭；
  *    预览盖住控件用显式隐藏（见 windowControls.test.tsx），不许靠把预览层抬到控件之上——
- *    抬上去会连预览自己弹出的下拉、右键菜单和对话框一起压在下面（2026-09-30 就这么弄坏过人像抠图的下拉）。
+ *    抬上去会连预览自己弹出的右键菜单和对话框一起压在下面。
  */
 describe('窗口控件自绘，原生覆盖层不许回来', () => {
   /** 判代码用法，不判注释：main.ts 为了说明"为什么不用它"，注释里原样写着这两个选项名 */
@@ -137,10 +108,9 @@ describe('窗口控件自绘，原生覆盖层不许回来', () => {
     expect(controls, '控件必须高于 MUI 对话框与菜单（1300~1600）').toBeGreaterThan(1600);
 
     /**
-     * 预览覆盖层必须留在 MUI 模态带里。预览里弹出的下拉（模型选择）、右键菜单、下载确认框、
-     * 回收站确认框全是 portal 挂到 body、按 theme.zIndex.modal = 1300 画的；覆盖层一旦高过这个数，
-     * 就把自家弹出的浮层一起压在下面——2026-09-30「人像抠图旁边的小三角点了没反应」就是这么来的
-     * （当时为了让预览盖住窗口控件，把覆盖层抬到 1800）。盖住控件改用显式隐藏，见 windowControls.test.tsx。
+     * 预览覆盖层必须留在 MUI 模态带里。预览里弹出的右键菜单、回收站确认框
+     * 都是 portal 挂到 body、按 theme.zIndex.modal = 1300 画的；覆盖层一旦高过这个数，
+     * 就把自家弹出的浮层一起压在下面。盖住控件改用显式隐藏，见 windowControls.test.tsx。
      */
     const preview = codeOf(join('src', 'components', 'PreviewOverlay.tsx'));
     const explicit = [...preview.matchAll(/zIndex:\s*(\d+)/g)].map((m) => Number(m[1]));

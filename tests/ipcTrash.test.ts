@@ -25,8 +25,6 @@ import { registerIpc } from '../electron/ipc';
 
 registerIpc({
   roots: { list: async () => [{ id: 'r1', path: 'C:/Photos', alias: 'Photos', addedAt: 0 }] },
-  // 注册阶段就会挂事件转发，最小 deps 必须带上它
-  ai: { service: { subscribe: () => () => undefined }, store: {}, runner: { loadedModelId: null } },
   getWindow: () => ({ webContents: { send: () => undefined }, isDestroyed: () => false })
 } as never);
 

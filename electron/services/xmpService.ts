@@ -2,6 +2,7 @@ import { ExifTool } from 'exiftool-vendored';
 import { promises as fs } from 'fs';
 import { join } from 'path';
 import type { ImageInfo, TagInfo, TagWriteRequest } from '../../shared/types';
+import { describeExtended } from './exifFields';
 
 /**
  * XMP 标签服务（D3）：exiftool-vendored 封装。
@@ -47,6 +48,30 @@ function parseFileSizeText(text: string | undefined): number | undefined {
   if (unit === 'mb') return Math.round(n * 1024 * 1024);
   if (unit === 'gb') return Math.round(n * 1024 * 1024 * 1024);
   return Math.round(n);
+}
+
+/**
+ * 写完之后把文件的修改时间改回写之前的值。
+ *
+ * **为什么需要它（`-P` 之外的那道保险）**：
+ * exiftool 走的是「写临时文件 → 替换原文件」，**替换动作本身会更新 mtime**。
+ * `-P`（preserve file modification date/time）理论上会在替换后自己改回去，
+ * 但那是**外部工具的行为** —— 不同版本、不同文件系统表现可能不同，
+ * 只依赖它就等于把正确性押在别人的实现细节上。所以写完再校验一次。
+ *
+ * **容差 1 秒**：有些文件系统（FAT32、部分网络盘）的时间戳精度只到秒，
+ * 比对时差 1 秒内视为「没变」，否则会去做一次多余的 utimes。
+ *
+ * ⚠️ **ctime 改不回来**（inode 变更时间，操作系统层面记录「文件被写过」这件事，
+ * 用户态工具无法伪造）。所以准确的承诺是「**mtime 保持原样**」，
+ * 不是「文件完全没被改动过」。
+ */
+async function restoreMtime(absPath: string, before: { atime: Date; mtime: Date } | null): Promise<void> {
+  if (!before) return;
+  const after = await fs.stat(absPath).catch(() => null);
+  if (!after) return;
+  if (Math.abs(after.mtimeMs - before.mtime.getTime()) <= 1000) return;
+  await fs.utimes(absPath, before.atime, before.mtime).catch(() => undefined);
 }
 
 export class XmpService {
@@ -143,8 +168,23 @@ export class XmpService {
     });
   }
 
-  /** 写回标签：读当前 → 差量应用 → 写 XMP-ptm:Tags + 清空 dc:subject（Windows 标记），保留 Label */
-  async write(req: TagWriteRequest): Promise<TagInfo> {
+  /**
+ * 写回标签：读当前 → 差量应用 → 写 XMP-ptm:Tags + 清空 dc:subject（Windows 标记），保留 Label
+ *
+ * **文件修改时间保持原样**（2026-10-20 用户要求）：
+ * 打标签是「整理」而不是「改内容」，照片的 mtime 往往被用户的备份/同步流程
+ * 当作「这张图被改过吗」的依据 —— 打标签却让它变了，会让用户的备份系统
+ * 以为文件动了、产生一堆无意义的增量同步。
+ *
+ * 两道保险：
+ * ① exiftool 的 `-P`（preserve file modification date/time）；
+ * ② 写完再校验一次 mtime，**对不上就用 `fs.utimes` 改回去**。
+ *    第②道不是多余的 —— exiftool 走的是「写临时文件 → 替换原文件」，
+ *    替换动作本身会更新 mtime，理论上 `-P` 是在替换后自己改回去的；
+ *    但这是**外部工具的行为**，不同版本/不同文件系统表现可能不同，
+ *    所以不能只依赖它。实测（2026-10-20）：`-P` 单独用已经能保住 mtime。
+ */
+async write(req: TagWriteRequest): Promise<TagInfo> {
     return this.enqueue(async () => {
       try {
         const exif = await this.getExif();
@@ -167,7 +207,14 @@ export class XmpService {
           writeArgs.Label = nextLabel;
         }
 
-        await exif.write(req.absPath, writeArgs, ['-overwrite_original']);
+        // 写前记下 mtime（连同 atime 一起存，utimes 要两个一起给）
+        const before = await fs.stat(req.absPath).catch(() => null);
+
+        await exif.write(req.absPath, writeArgs, ['-overwrite_original', '-P']);
+
+        // 兜底：写后校验 mtime，不一致就改回去
+        await restoreMtime(req.absPath, before);
+
         return {
           absPath: req.absPath,
           subjects: nextSubjects,
@@ -219,28 +266,6 @@ export class XmpService {
     return renamed;
   }
 
-  /**
-   * 把源文件的基础元数据（EXIF 拍摄时间、色彩配置等）复制进目标文件。
-   *
-   * 为什么需要：模型吃像素不吃元数据，抠图产出是被重新编码过的 PNG，本身是"裸"的。
-   * 不复制就没有拍摄时间，宽色域照片还会因缺 ICC 从 Display P3 掉回 sRGB 而偏色
-   * （规格 §4.4 的两个必处理细节之一）。
-   * 失败必须抛出，让调用方报可读原因，不能静默产出一个元数据不全的派生文件。
-   */
-  async copyMetadataFrom(sourceAbsPath: string, targetAbsPath: string): Promise<void> {
-    await this.enqueue(async () => {
-      const exif = await this.getExif();
-      // -all:all 只会带过同名可写标签；ICC 剖面是独立二进制块，必须再点名 -ICC_PROFILE。
-      // 本机 exiftool 13.59 实测：这样组合后目标 PNG 读回同时有 DateTimeOriginal 与
-      // ProfileDescription（只给 -all:all 时拍摄时间与剖面都拿不到）。
-      await exif.write(
-        targetAbsPath,
-        {},
-        ['-overwrite_original', '-TagsFromFile', sourceAbsPath, '-all:all', '-ICC_PROFILE']
-      );
-    });
-  }
-
   /** 读取图片基本信息（P1：分辨率/拍摄时间/文件大小/相机型号） */
   async getImageInfo(absPath: string): Promise<ImageInfo> {
     return this.enqueue(async () => {
@@ -266,7 +291,8 @@ export class XmpService {
           dateTimeOriginal: typeof tags.DateTimeOriginal === 'string' ? tags.DateTimeOriginal : undefined,
           make: typeof tags.Make === 'string' ? tags.Make : undefined,
           model: typeof tags.Model === 'string' ? tags.Model : undefined,
-          ok: true
+          ok: true,
+          ...describeExtended(absPath, tags, st)
         };
       } catch (err) {
         return { absPath, ok: false, error: this.mapError(err) };

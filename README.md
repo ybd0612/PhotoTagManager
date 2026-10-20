@@ -1,6 +1,6 @@
 # 图片管家 PhotoTagManager
 
-一款 Windows **本机图片管理工具**：把散落在下载目录、项目资料、移动硬盘和历史文件夹里的图片挂进来，就能浏览、搜索、打标、清理，并在本机做 AI 处理。标签直接写进图片文件自身的 XMP 元数据——**不搬文件、不建数据库**，图片被复制或移动后，标签跟着文件走。
+一款 Windows **本机图片管理工具**：把散落在下载目录、项目资料、移动硬盘和历史文件夹里的图片挂进来，就能浏览、搜索、打标和清理。标签直接写进图片文件自身的 XMP 元数据——**不搬文件、不建数据库**，图片被复制或移动后，标签跟着文件走。
 
 > 中文显示名「图片管家」只用于界面；程序实体（安装目录、进程、快捷方式、exe 文件名）仍是 `PhotoTagManager`，配置文件夹是 `%APPDATA%\photo-tag-manager`。为什么这些标识不能跟着改名，见「发布与更新」的最后一条。
 
@@ -8,9 +8,9 @@
 
 | | 说明 |
 |---|---|
-| **是** | 面向**已有文件**的图片浏览、查找、整理和轻处理工具。应用重新扫描任何目录，就能重新读出图片携带的标签。 |
+| **是** | 面向**已有文件**的图片浏览、查找、标签整理和可逆清理工具。应用重新扫描任何目录，就能重新读出图片携带的标签。 |
 | **不是** | 不替用户重新安排文件位置——不提供移动、重命名、按相册归档这类操作；不建"每张图片一条记录"的中心数据库；不上传照片，也没有任何云同步。 |
-| **边界** | 唯一会碰像素的动作是 AI 处理，而它的产物是**新文件**（`原名.cutout.png`），原图字节始终不变。删除动作只做"移到系统回收站"，不做物理删除。 |
+| **边界** | 标签写入图片 XMP 元数据，不改动图片像素；删除动作只做"移到系统回收站"，不做物理删除。 |
 
 ## 核心原则：文件是主数据，应用是管理界面
 
@@ -19,7 +19,7 @@
 - **先发现，再整理**：添加若干目录作为扫描根，应用递归扫描，只展示实际包含图片的目录。
 - **标签跟随文件**：分类标签和图片一起保存，复制、备份、移动、重命名后仍在。
 - **不依赖稳定文件身份**：绝对路径、文件名和哈希都不作为跨会话业务主键，只用于本次扫描、展示和访问文件。
-- **配置与图片数据分离**：根目录别名、隐藏目录、缩略图缓存、AI 模型偏好属于本机使用偏好，存在应用配置里；标签属于文件自身元数据。
+- **配置与图片数据分离**：根目录别名、隐藏目录、缩略图缓存和界面偏好属于本机使用偏好，存在应用配置里；标签属于文件自身元数据。
 - **按需读取标签**：扫描阶段只做文件发现和目录构建，浏览到图片时才读 XMP，避免大批量扫描被元数据读取拖慢。
 
 ## 功能
@@ -40,25 +40,12 @@
 - **找图**：常用标签（按当前目录上下文统计）+ 高级筛选全量列表 + AND/OR 组合，再叠加**文件名搜索**与**名称/时间/大小排序**（升/降序），三段管道依次过滤
 - **清理**：右键或批量「移到回收站」，走系统回收站可找回、一次显式确认；主进程只放行落在已添加根目录内的路径，越界逐条拒绝并给原因
 
-### 处理（本机 AI）
-
-预览大图时点底栏「人像抠图」即可对本机照片做处理：结果先进 `userData/ai-preview` 暂存，在棋盘格底纹上**按住空格对比**确认，点「保存」才落到原图旁边生成 `原名.cutout.png`（同名顺延 `.cutout.2.png`），并自动继承原图标签 + 追加行为标签 `AI人像抠图`，可一键筛出所有 AI 产物。
-
-- **全程本机**：推理用 `onnxruntime-node` 的 DirectML 后端，跑在独立的 `utilityProcess` 子进程，照片内容不出机器
-- **模型清单**：当前两个候选，`U²-Netp`（默认，约 4.4MB）与 `MODNet`（约 24.7MB）；**模型下载/卸载/删除/设为唯一的默认项全部在预览底栏那个下拉里**，设置页不重复提供，避免两处状态打架
-- **下载源**：按固定优先级先 ModelScope 再 hf-mirror（实测本机 ModelScope 直连更快，hf-mirror 需走代理）；首次下载前一次性告知体积与粗估时长，每次尝试的来源与 HTTP 状态都有日志
-- **代理**：设置「常规」里的网络代理只影响「模型下载」与「检查更新」两件事，不支持带账号密码的地址（那会明文落进配置文件）
-- **缓存**：暂存即缓存，键为五元组（原图指纹 : 模型指纹 : 输入尺寸 : 后处理参数 : 预处理管线版本），同图同模型再点一次秒出预览；改动原图或递增管线版本都会失效重跑
-- **暂存回收**：按保留天数与总量上限双条件 LRU 淘汰，删除前校验路径确在暂存目录内；已保存的成果不受影响
-- **可拓展**：行为→模型→运行时三层分离，加模型只改清单数据，加行为只加清单条目 + 一个后处理函数
-- **当前只有「人像抠图」一个行为**。U²-Netp 与 MODNet 都是人像 matting 模型：非人像照片**允许选错主体**（不会崩溃，界面也不承诺"去除任意背景"）。掩码在 320×320 上计算，分屏看右侧结果必然偏软，界面已注明。通用抠图、智能打标、批量处理、后处理参数调节尚未实装。
-
 ### 交付与维护
 
 - **自动更新**：应用启动时静默检查，发现新版本只在右下角给一条非阻塞提示（不打断操作）；检查、下载、安装都在设置「关于与更新」分区就地完成，不再另开对话框
 - **开源与作者**：设置「关于与更新」分区提供 GitHub 仓库和作者网站 `https://yangbang.de`，点击后经系统默认浏览器打开
 - **许可**：MIT License（全文见 [`LICENSE`](LICENSE)）。可自由使用、复制、修改与再分发，**包括商用**，唯一条件是分发时保留版权声明与许可正文。选它的代价也要说明白：MIT 不覆盖第三方组件，别人拿这份代码做闭源产品也完全合规
-- **第三方许可**：模型权重的许可全文逐字留存于 [`LICENSES/third-party/`](LICENSES/third-party)，归属与「系第三方转导出、非上游一手发布」的披露写在仓库根 [`NOTICE`](NOTICE)（`npm run notice` 从能力清单生成，随安装包分发）；代码依赖的许可正文随包内 `node_modules/<包>/LICENSE` 一同分发
+- **第三方许可**：代码依赖的许可正文随包内 `node_modules/<包>/LICENSE` 一同分发；此前评估过的模型许可与来源留存作为历史审计资料保存在 [`LICENSES/third-party/`](LICENSES/third-party) 和相关调研文档中，不代表当前应用仍提供模型下载或推理功能。
 
 ## 支持的图片格式
 
@@ -71,14 +58,12 @@ JPG / JPEG / PNG / WebP / GIF / BMP / TIFF / HEIC / HEIF / RAW / CR2 / CR3 / NEF
                                           ↓
                              增删标签并写回原图片 XMP
                                           ↓
-                （可选）预览里点「人像抠图」→ 对比确认 → 存为派生文件
-                                          ↓
                     文件带着标签进入复制、备份和其他目录
 ```
 
 ## 技术栈
 
-Electron + React 18（Vite + MUI + Tailwind CSS）+ exiftool-vendored + sharp + onnxruntime-node（DirectML）+ zustand + react-window + electron-updater + electron-log + vitest
+Electron + React 18（Vite + MUI + Tailwind CSS）+ exiftool-vendored + sharp + zustand + react-window + electron-updater + electron-log + vitest
 
 ## 快速开始
 
@@ -99,6 +84,10 @@ npm run dev        # 启动应用（dev server 端口 51783）
 | `npm run test` | Vitest 单元与集成测试 |
 | `npm run dist` | electron-builder 打包 NSIS 安装包（输出到 `dist/`，同时生成 `latest.yml` 供自动更新） |
 
+## EXIF 信息展示
+
+预览面板显示图片中实际存在的相机、曝光、拍摄时间、文件信息等字段；缺失字段不显示空占位。信息面板默认展开，可折叠并记住偏好。
+
 ## 标签存储设计
 
 | 项 | 说明 |
@@ -111,9 +100,9 @@ npm run dev        # 启动应用（dev server 端口 51783）
 
 ## 架构要点
 
-- **四个执行体**：主进程（窗口 / IPC 路由 / 文件系统 / XMP / 缩略图 / 回收站 / 持久化 / 代理 / 更新）、Worker 线程（目录扫描，批推送）、AI 推理子进程（`utilityProcess`，ONNX DirectML，崩溃不影响主界面）、渲染进程（React UI + zustand）
+- **三个执行体**：主进程（窗口 / IPC 路由 / 文件系统 / XMP / 缩略图 / 回收站 / 持久化 / 代理 / 更新）、Worker 线程（目录扫描，批推送）、渲染进程（React UI + zustand）
 - **多根隔离**：roots / treesByRoot / imagesByDir / scanStatsByRoot / hiddenSet 均按 `rootId` 分桶，复合 key = `${rootId}\u0000${relPath}`
-- **IPC 命名**：`域:动作`（kebab-case），统一响应信封 `IpcResult`；通道按域分为 roots / scan / folder / file / tags / thumb / image / prefs / ai / update / dialog / clipboard / shell / app
+- **IPC 命名**：`域:动作`（kebab-case），统一响应信封 `IpcResult`；通道按域分为 roots / scan / folder / file / tags / thumb / image / prefs / update / dialog / clipboard / shell / app
 - **缩略图缓存**：`userData/thumbnails/{sha1(absPath:mtimeMs:size)}.jpg`
 - **持久化**：根列表 `roots.json`、隐藏目录 `hiddenFolders.json`（按根隔离）、偏好 `settings.json`
 - **安全模型**：`contextIsolation: true, nodeIntegration: false`，preload 仅暴露白名单 `window.api`；写盘类通道（回收站）在主进程按根目录白名单守卫
@@ -121,12 +110,12 @@ npm run dev        # 启动应用（dev server 端口 51783）
 ## 目录结构
 
 ```
-electron/                主进程（main / preload / ipc / services / ai）
+electron/                主进程（main / preload / ipc / services）
 shared/                  跨进程共享（types.ts / imageExt.ts / proxyRule.ts）
 src/                     渲染进程（components / hooks / store / api / utils）
-tests/                   单元测试、渲染冒烟与 AI 集成测试
+tests/                   单元测试、渲染冒烟与集成测试
 scripts/                 图标生成、CDP 取证、构建后补写 app-update.yml 等辅助脚本
-docs/                    PRD.md / ARCHITECTURE.md / design 设计决策 / models 模型台账 / plans 实施计划
+docs/                    PRD.md / ARCHITECTURE.md / design 设计决策 / models 与 plans 历史调研档案
 ```
 
 ## 发布与更新
@@ -145,22 +134,21 @@ docs/                    PRD.md / ARCHITECTURE.md / design 设计决策 / models
 
   **三个资产必须齐全**：`latest.yml` 是自动更新的清单入口，缺它装机版就查不到新版本；`exe` 是安装包本体，`.blockmap` 供差分下载。`npm run dist` 已固定带 `--publish never`，electron-builder 自己不会去建 Release。`package.json` 的 `build.publish` 仍保留 github 坐标——它同时是装机版 `resources/app-update.yml`（更新源）的唯一来源，改动前先跑一次 `npm run dist` 确认该文件还在。`npm run app:go` 用的是 `--win dir`，这个目标不写 `app-update.yml`，脚本第③.5 步会用 `scripts/write-app-update-yml.cjs` 按同一口径补写，所以从 `dist/win-unpacked` 跑的副本也能自查更新。
 
-- **不要改的标识符**：`package.json` 的 `name`（`photo-tag-manager`）被 `electron/userDataDir.ts` 钉为 userData 目录名；`build.productName` / `appId` / `nsis.shortcutName` / `artifactName` / `publish.repo` 分别决定安装目录、注册表卸载项、快捷方式、安装包文件名和更新源地址。改动其中任何一个，老用户看到的就是"根目录和已下载模型凭空消失"或更新链路断裂——真要改名，得连数据目录迁移和更新链路一起做。
+- **不要改的标识符**：`package.json` 的 `name`（`photo-tag-manager`）被 `electron/userDataDir.ts` 钉为 userData 目录名；`build.productName` / `appId` / `nsis.shortcutName` / `artifactName` / `publish.repo` 分别决定安装目录、注册表卸载项、快捷方式、安装包文件名和更新源地址。改动其中任何一个，老用户看到的就是"根目录和应用偏好凭空消失"或更新链路断裂——真要改名，得连数据目录迁移和更新链路一起做。
 - **当前版本**：`0.1.5`（以 `package.json` 为准，v0.1.5 的 Release 已于 2026-09-29 发布）。
 
 ## 测试
 
 ```bash
-npm run typecheck   # 0 错误
-npm run test        # 35 个测试文件 / 397 用例通过（2026-09-30 实测）
+npm run typecheck
+npm run test
 ```
 
-覆盖范围：Worker 扫描统计、多根持久化、XMP 自定义命名空间读写、目录树与回收站守卫、标签筛选与排序管道、渲染冒烟与界面行为用例、AI 能力清单与模型仓库坐标、CPU 限核实测、人像抠图端到端（真下载 / 真 DirectML / 真 exiftool）。
+覆盖范围：Worker 扫描统计、多根持久化、XMP 自定义命名空间读写、EXIF 信息展示、目录树与回收站守卫、标签筛选与排序管道、渲染冒烟与界面行为用例。
 
 ## 已知限制
 
 1. **程序名与界面中文名不一致**：界面叫「图片管家」，而安装目录、进程、配置文件夹和 exe 文件名是 `PhotoTagManager`（配置文件夹实际取 `package.json` 的 `photo-tag-manager`）。这是有意冻结的——改名代价见「发布与更新」最后一条，设置「关于与更新」分区里也向用户说明了这一点。
 2. **`ptm` 命名空间仅本应用识别**：其他图片软件与 Windows 属性面板不会显示这些标签（有意为之）。
 3. **部分 RAW/HEIC 写回 XMP 可能不被 exiftool 支持** → 返回错误提示，不阻塞队列。
-4. **人像抠图只保证"人像"**：非人像照片允许选错主体；真机验收清单见 `docs/plans/2026-09-23-portrait-cutout-m1.md`。
-5. `electron-builder` 为开发依赖，`electron-updater` 随应用运行时打包；首次 `npm install` 或 `npm run dist` 前需先装好依赖，首次打包会联网下载打包工具链，耗时较长。
+4. `electron-builder` 为开发依赖，`electron-updater` 随应用运行时打包；首次 `npm install` 或 `npm run dist` 前需先装好依赖，首次打包会联网下载打包工具链，耗时较长。

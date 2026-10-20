@@ -1,7 +1,7 @@
 {
   "name": "photo-tag-manager",
   "version": "0.1.5",
-  "description": "图片管家 PhotoTagManager - Windows 本机图片管理工具（多根浏览、文件内 XMP 标签整理、回收站清理、本机 AI 人像抠图；Electron + React + Vite + MUI + Tailwind）",
+  "description": "图片管家 PhotoTagManager - Windows 本机图片管理工具（多根浏览、文件内 XMP 标签整理、回收站清理；Electron + React + Vite + MUI + Tailwind）",
   "main": "./out/main/index.js",
   "author": "Ybond",
   "license": "MIT",
@@ -17,12 +17,11 @@
     "notice": "node scripts/gen-notice.cjs",
     "notice:check": "node scripts/gen-notice.cjs --check",
     "dist": "electron-builder --publish never",
-    "verify:ai-child": "electron-vite build && electron scripts/ai-child-probe.cjs",
-    "verify:ai-crash": "electron-vite build && electron scripts/ai-crash-probe.cjs",
     "cdp:up": "node scripts/cdp-up.cjs",
     "cdp:layout": "node scripts/cdp-layout.cjs",
     "app:kill": "taskkill /IM PhotoTagManager.exe /F",
-    "app:go": "node scripts/rebuild-run.cjs"
+    "app:go": "node scripts/rebuild-run.cjs",
+    "app:win": "node scripts/start-windows.cjs"
   },
   "build": {
     "appId": "com.ybd0612.phototagmanager",
@@ -36,15 +35,9 @@
       "out/renderer/**",
       "package.json",
       "LICENSE",
-      "NOTICE",
-      "LICENSES/**",
-      "!out/main/crashHarness.js",
-      "!node_modules/onnxruntime-node/bin/napi-v6/darwin/**",
-      "!node_modules/onnxruntime-node/bin/napi-v6/linux/**",
-      "!node_modules/onnxruntime-node/bin/napi-v6/win32/arm64/**"
+      "NOTICE"
     ],
     "asarUnpack": [
-      "node_modules/onnxruntime-node/**",
       "node_modules/sharp/**",
       "node_modules/@img/**"
     ],
@@ -81,7 +74,6 @@
     "electron-log": "^5.1.0",
     "electron-updater": "^6.3.9",
     "exiftool-vendored": "^37.0.0",
-    "onnxruntime-node": "1.30.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-window": "^1.8.10",

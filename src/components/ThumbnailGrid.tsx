@@ -314,15 +314,15 @@ export function ThumbnailGrid(): JSX.Element {
               )}
             </Box>
           )}
-          {/* 文件名：只在鼠标悬停或键盘聚焦时浮现，平时把画面完整让给图片 */}
+          {/* 文件名：**常驻**（2026-10-20 用户要求「外层预览的时候就有这个文件名」）。
+              原实现是悬停/聚焦才浮现，那是"不打扰看图"的取舍，但这张照片管理器里
+              文件名本身就是主要信息（尤其相机导出的 DSCxxxx.JPG 全是序号，不显示就没法分辨），
+              所以改成常驻。渐变遮罩保留 —— 白字压在任何画面上都要靠它保证读得出。 */}
           <Box
             className="absolute bottom-0 left-0 right-0 flex items-end px-2 py-1"
             sx={{
               pointerEvents: 'none',
-              background: `linear-gradient(transparent, ${tokens.overlay.captionScrim})`,
-              opacity: 0,
-              transition: 'opacity var(--ptm-t-fast) var(--ptm-ease)',
-              '.MuiCard-root:hover &, .MuiCard-root:focus-visible &, .MuiCard-root:focus-within &': { opacity: 1 }
+              background: `linear-gradient(transparent, ${tokens.overlay.captionScrim})`
             }}
           >
             <Typography noWrap variant="caption" sx={{ minWidth: 0, color: 'white', textShadow: overlay.textOnImage }} title={image.name}>

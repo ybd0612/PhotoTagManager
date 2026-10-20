@@ -4,7 +4,7 @@
 > 依据：`docs/PRD.md`（v0.1）
 > 面向对象：工程师（照此实现）、QA（照此验证）
 > 团队任务对应：本文 T01–T05 为实施批次（对应团队任务 #3 工程师批量实现）；QA 验证对应团队任务 #4
-> 2026-09-30 修订：产品口径已从「标签管理工具」扩为本机图片管理工具，执行体从三个增到四个（新增 AI 推理子进程）。本文 §2 模块清单、§3 接口签名、§4 时序**尚未覆盖 AI 与自动更新**，权威规格见 `docs/design/ai-photo-processing.md` 与 `electron/ai/`。
+> 2026-10-20 修订：当前架构不包含 AI 推理子进程；早期抠图设计与模型调研仅作为历史资料，不属于现行产品接口或发行能力。本文描述当前文件管理、标签管理、扫描、缩略图、代理与自动更新架构。
 
 ---
 
@@ -12,16 +12,15 @@
 
 ### 1.1 架构一句话
 
-Electron 四执行体架构：**主进程**持有全部文件系统 / XMP / 缩略图 / 回收站 / 模型下载与写盘能力并做 IPC 路由，**Worker 线程**负责后台目录扫描（批推送），**AI 推理子进程**（`utilityProcess`）只加载 ONNX 模型做推理并把结果回传，**渲染进程**只做 React UI 与内存状态管理（zustand），四者通过预定义 IPC 通道协作，保证万级图片不卡顿、一张坏照片不拖垮窗口。
+Electron 三执行体架构：**主进程**持有文件系统 / XMP / 缩略图 / 回收站 / 持久化 / 代理 / 更新能力并做 IPC 路由，**Worker 线程**负责后台目录扫描（批推送），**渲染进程**只做 React UI 与内存状态管理（zustand），三者通过预定义 IPC 通道协作，保证万级图片不卡顿。
 
 ### 1.2 执行体职责划分
 
 | 执行体 | 职责 | 关键技术点 |
 |---|---|---|
-| **主进程**（`electron/`，Node 环境） | 创建窗口；注册所有 IPC Handler；编排扫描（启动/取消 Worker）；持有 exiftool 队列（XMP 读写）；缩略图生成队列 + 磁盘缓存；回收站守卫（只放行根目录内路径）；hiddenFolders.json / roots.json / settings.json 持久化；AI 暂存写盘与 LRU 清理；模型下载与多源切换；electron-updater | `contextIsolation: true, nodeIntegration: false`；**所有磁盘写入只在主进程** |
+| **主进程**（`electron/`，Node 环境） | 创建窗口；注册所有 IPC Handler；编排扫描（启动/取消 Worker）；持有 exiftool 队列（XMP 读写）；缩略图生成队列 + 磁盘缓存；回收站守卫（只放行根目录内路径）；roots.json / hiddenFolders.json / settings.json 持久化；应用代理与 electron-updater | `contextIsolation: true, nodeIntegration: false`；**所有磁盘写入只在主进程** |
 | **Worker 线程**（`scanWorker.ts`，worker_threads） | 递归遍历目录；识别图片扩展名；统计每目录 `directCount` / `totalCount`；每 ~200 文件推送一批结果；响应取消 | 只读文件系统，不触碰 XMP（性能） |
-| **AI 推理子进程**（`electron/ai/inferenceChild.ts`，`utilityProcess`） | 加载 ONNX 模型（DirectML / CPU 后端）；按清单做预处理→推理→回传掩码；**不写盘**，命名与落库都由主进程 `aiService` 负责 | 原生推理库的失败方式是**进程级崩溃**，隔离后一张坏照片不会干掉窗口；CPU 路径必须显式限线程（默认 2，实测不限会吃满 32 核并把进程撑到 6.3GB）；模型形状一律从 `capabilityCatalog.ts` 取 |
-| **渲染进程**（`src/`，React） | 顶栏（兼自绘标题栏）+ 左目录树 + 右网格的界面主体；目录树渲染与懒加载；虚拟滚动缩略图网格；预览覆盖层（含 AI 对比视图）；标签筛选、文件名搜索与排序；设置对话框四个分区；调用 `window.api`；内存状态管理 | 无 Node 权限，仅通过 preload 暴露的 `window.api` 通信 |
+| **渲染进程**（`src/`，React） | 顶栏（兼自绘标题栏）+ 左目录树 + 右网格的界面主体；目录树渲染与懒加载；虚拟滚动缩略图网格；预览覆盖层与 EXIF 信息面板；标签筛选、文件名搜索与排序；设置对话框三个分区；调用 `window.api`；内存状态管理 | 无 Node 权限，仅通过 preload 暴露的 `window.api` 通信 |
 
 ### 1.3 进程间通信（IPC）设计
 
@@ -69,13 +68,13 @@ new BrowserWindow({
 
 ## 2. 模块划分与文件列表
 
-> 源文件 23 个 + 配置文件 7 个 + 测试 3 个。相对路径以项目根 `PhotoTagManager/` 计。
+> 以下清单记录架构模块与代表性测试；实际文件总数以当前仓库为准。相对路径以项目根 `PhotoTagManager/` 计。
 
 ### 2.1 配置文件（T01）
 
 | 文件 | 职责 |
 |---|---|
-| `package.json` | 依赖声明、scripts（dev/build/test/typecheck） |
+| `package.json` | 依赖声明、scripts（dev/build/test/typecheck），不含已撤销的模型推理依赖 |
 | `electron.vite.config.ts` | 三端构建：main / preload / renderer；main 侧额外入口 `electron/services/scanWorker.ts`（worker_threads） |
 | `tsconfig.json` / `tsconfig.node.json` / `tsconfig.web.json` | TS 工程配置（node 侧与 web 侧分离） |
 | `tailwind.config.js` + `postcss.config.js` | Tailwind 配置 |
@@ -86,7 +85,7 @@ new BrowserWindow({
 
 | 文件 | 职责 |
 |---|---|
-| `shared/types.ts` | 全部核心 TS 类型（见 §3.1），主/渲染共用 |
+| `shared/types.ts` | 全部核心跨进程 TS 类型（含文件、标签、图片信息与 UI 偏好），主/渲染共用 |
 | `shared/imageExt.ts` | 图片扩展名白名单 + `isImageFile()` 判断（主/渲染共用） |
 
 ### 2.3 主进程（T02）
@@ -98,9 +97,9 @@ new BrowserWindow({
 | `electron/ipc.ts` | 集中注册所有 `ipcMain.handle` / 推送封装，路由到各 Service |
 | `electron/services/scanService.ts` | 扫描编排：创建/复用 Worker、转发批推送、处理取消、保存最终树快照 |
 | `electron/services/scanWorker.ts` | **worker_threads 扫描线程**：DFS 遍历、扩展名过滤、direct/total 统计、每 ~200 文件 postMessage 一批 |
-| `electron/services/xmpService.ts` | exiftool-vendored 封装：读标签 / 写标签 / 批量队列（限流）、错误映射 |
+| `electron/services/xmpService.ts` | exiftool-vendored 封装：读写标签 / 批量队列（限流）/ 图片信息读取、错误映射 |
 | `electron/services/thumbnailService.ts` | 缩略图生成队列 + 磁盘缓存（nativeImage 优先，RAW 回退 exiftool 抽取） |
-| `electron/services/folderStore.ts` | hiddenFolders.json 读写（相对路径集合，userData 目录） |
+| `electron/services/folderStore.ts` | hiddenFolders.json 读写（按根目录隔离的相对路径集合，userData 目录） |
 
 ### 2.4 渲染进程（T01 骨架 / T03 / T04）
 
@@ -108,14 +107,16 @@ new BrowserWindow({
 |---|---|
 | `src/main.tsx` | React 入口（挂载 App、引入样式） |
 | `src/App.tsx` | 根组件：空状态引导 / 主界面切换，持有全局布局 |
+| `src/components/ExifInfoPanel.tsx` | 预览中的可折叠 EXIF 信息面板（信息缺失时不展示空字段） |
+| `electron/services/exifFields.ts` | EXIF 字段格式化与展示说明 |
 | `src/api.ts` | `window.api` 的类型声明 + 调用封装（invoke/on 的 Promise 化） |
-| `src/store/useAppStore.ts` | zustand 全局 store：rootPath、扫描状态、目录树、图片分桶、隐藏集、标签筛选、选中项、预览状态 |
+| `src/store/useAppStore.ts` | zustand 全局 store：根目录、扫描状态、目录树、图片分桶、隐藏集、标签筛选、选中项、预览与 UI 偏好 |
 | `src/hooks/useScan.ts` | 扫描生命周期 hook（start/cancel + progress/done 订阅，增量合并到 store） |
 | `src/hooks/useThumbnails.ts` | 缩略图加载 hook（批量请求可视区、缓存 dataUrl、订阅 thumb:ready） |
 | `src/components/AppLayout.tsx` | 三栏布局容器 + 顶部工具栏 + 底部状态栏（含 EmptyState 空态） |
 | `src/components/FolderTree.tsx` | 目录树：懒加载展开、隐藏节点剪枝、节点右键菜单（隐藏/取消隐藏/重扫描） |
 | `src/components/ThumbnailGrid.tsx` | react-window 虚拟滚动网格 + 单卡（缩略图、标签角标、多选、点击预览） |
-| `src/components/PreviewOverlay.tsx` | 全屏预览覆盖层：大图、←/→ 翻页、Esc 关闭、标签编辑（含图片信息展示 P1） |
+| `src/components/PreviewOverlay.tsx` | 全屏预览覆盖层：大图、←/→ 翻页、Esc 关闭、标签编辑与 EXIF 信息面板 |
 | `src/components/TagFilterBar.tsx` | 标签筛选条：chips 展示、添加/删除筛选、AND/OR 切换、清除 |
 | `src/components/TagManagerDialog.tsx` | P1：标签管理面板（全量标签 + 计数、重命名/合并） |
 | `src/styles/index.css` | Tailwind 指令 + 全局样式（主题变量） |
@@ -127,6 +128,7 @@ new BrowserWindow({
 | `tests/scan.test.ts` | scanWorker 统计逻辑单测（mock fs）+ folderStore 持久化单测 |
 | `tests/xmp.test.ts` | xmpService 读写单测（mock exiftool-vendored） |
 | `tests/app.test.tsx` | 渲染集成冒烟（vitest + testing-library，mock api） |
+| `tests/ai/exifFields.test.ts` / `tests/ai/exifPanel.test.tsx` | EXIF 格式化与预览面板测试（路径保留兼容现有测试组织，与抠图无关） |
 
 ---
 
