@@ -135,4 +135,44 @@ describe('EXIF 面板 · 折叠交互', () => {
     fireEvent.click(screen.getByTestId('exif-collapse'));
     expect(onToggle).toHaveBeenCalledTimes(1);
   });
+
+  /**
+   * 2026-10-20 用户要求：收起入口是**箭头**且**整行可点**。
+   *
+   * 原实现是一颗 14px 的 `×` 加 `p: 0.25` —— 实际可点区域不到 16×16，
+   * 在预览大图上瞄不准。
+   *
+   * ⚠️ 这里**只断言点击行为、不断言样式值**：MUI 的 `sx` 编译成 emotion class，
+   * 内联 `style` 属性里查不到 `width:100%`，`toHaveStyle` 也需要本项目没装的 jest-dom。
+   * 而「点标题文字能收起」这件事本身就足以证明命中区够大 ——
+   * 若只给文字挂 `onClick`、整行不可点，这条断言恰好也会失败。
+   */
+  it('★ 收起入口是标题整行（不是一颗小图标），点行内空白处也生效', () => {
+    const { onToggle } = renderPanel();
+    const header = screen.getByTestId('exif-collapse');
+
+    // 点标题文字（不是图标）应触发 —— 说明命中区包住了整行而非只包那颗图标
+    fireEvent.click(screen.getByText('EXIF'));
+    expect(onToggle).toHaveBeenCalledTimes(1);
+
+    // 点标题行内的其它位置（靠近右侧箭头那侧）同样生效
+    fireEvent.click(header);
+    expect(onToggle).toHaveBeenCalledTimes(2);
+  });
+
+  it('★ 收起与展开用成对的箭头图标（方向相反），不是语义的 X / 问号', () => {
+    // 展开态：整行 header + 向上箭头
+    const { unmount } = render(
+      <ExifInfoPanel info={FULL} loading={false} error={false} expanded onToggle={vi.fn()} />
+    );
+    const header = screen.getByTestId('exif-collapse');
+    // header 是 ButtonBase（渲染成 button），不是给 Typography 挂 onClick
+    expect(header.tagName).toBe('BUTTON');
+    expect(header.getAttribute('aria-label')).toBe('收起图片信息');
+    unmount();
+
+    // 折叠态：向下箭头入口
+    render(<ExifInfoPanel info={FULL} loading={false} error={false} expanded={false} onToggle={vi.fn()} />);
+    expect(screen.getByTestId('exif-expand').getAttribute('aria-label')).toBe('展开图片信息');
+  });
 });

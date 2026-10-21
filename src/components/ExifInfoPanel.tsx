@@ -1,6 +1,6 @@
-import { Box, IconButton, Stack, Tooltip, Typography } from '@mui/material';
-import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
-import CloseIcon from '@mui/icons-material/Close';
+import { Box, ButtonBase, IconButton, Stack, Tooltip, Typography } from '@mui/material';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 
 import { overlay, px, tokens } from '../theme/tokens';
 import type { ImageInfo } from '../../shared/types';
@@ -99,7 +99,11 @@ const FIELDS: Array<{ label: string; get: (i: ImageInfo) => string | undefined }
 ];
 
 export function ExifInfoPanel({ info, loading, error, expanded, onToggle }: Props): JSX.Element | null {
-  // 折叠态也要能看到一个小入口，否则用户忘了面板存在就再也回不去
+  /**
+   * 折叠态留一个小入口，否则用户忘了面板存在就再也回不去。
+   * 图标用**向下箭头**与展开态的向上箭头成对 —— 同一组控件两种状态，
+   * 用方向表达「点它会往哪边动」，比一个语义的 `ⓘ` 更快被认出来。
+   */
   if (!expanded) {
     return (
       <Box className="pointer-events-none absolute left-3 top-3 z-10">
@@ -110,9 +114,9 @@ export function ExifInfoPanel({ info, loading, error, expanded, onToggle }: Prop
             className="pointer-events-auto"
             onClick={onToggle}
             aria-label="展开图片信息"
-            sx={{ color: 'white', bgcolor: PANEL_SCRIM, '&:hover': { bgcolor: overlay.surfaceHover } }}
+            sx={{ color: 'white', bgcolor: PANEL_SCRIM, p: 0.75, '&:hover': { bgcolor: overlay.surfaceHover } }}
           >
-            <InfoOutlinedIcon fontSize="small" />
+            <ExpandMoreIcon sx={{ fontSize: 20 }} />
           </IconButton>
         </Tooltip>
       </Box>
@@ -128,28 +132,42 @@ export function ExifInfoPanel({ info, loading, error, expanded, onToggle }: Prop
       className="pointer-events-none absolute left-3 top-3 z-10 max-h-[calc(100%-24px)] overflow-hidden"
       sx={{ bgcolor: PANEL_SCRIM, borderRadius: px(tokens.radius.sm), py: 0.75, pr: 1 }}
     >
-      <Stack
-        direction="row"
-        spacing={0.5}
-        alignItems="center"
-        sx={{ mb: 0.5, pl: 1, pointerEvents: 'none' }}
+      {/**
+       * 标题行 = 收起按钮（2026-10-20 用户要求「整行能点击收起」）。
+       *
+       * 原来那颗 `×` 只有 14px、还带 `p: 0.25`，实际可点区域不到 16×16 ——
+       * 在预览大图上根本瞄不准。改成整行可点（高度约 24px、横向占满面板宽度）。
+       *
+       * 图标从 `×` 换成**向上箭头**：面板是从顶部往下展开的，
+       * 「向上收起」比「关闭」更贴合它的运动方向（与展开态入口的 `ⓘ` 相对）。
+       *
+       * 用 `ButtonBase` 而不是给 Typography 挂 onClick：后者命中区只包文字本身，
+       * 点标题里的空白处没反应 —— 那不叫「整行可点」。
+       */}
+      <ButtonBase
+        onClick={onToggle}
+        aria-label="收起图片信息"
+        data-testid="exif-collapse"
+        className="pointer-events-auto"
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          width: '100%',
+          minHeight: 24,
+          pl: 1,
+          pr: 0.5,
+          mb: 0.5,
+          borderRadius: px(tokens.radius.sm),
+          '&:hover': { bgcolor: 'rgba(255,255,255,0.08)' },
+          '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.light', outlineOffset: '-2px' }
+        }}
       >
         <Typography variant="caption" sx={{ color: overlay.textStrong, fontWeight: 600 }}>
           EXIF
         </Typography>
-        <Tooltip title="收起（记住这个选择）">
-          <IconButton
-            size="small"
-            className="pointer-events-auto"
-            onClick={onToggle}
-            aria-label="收起图片信息"
-            data-testid="exif-collapse"
-            sx={{ color: 'white', p: 0.25 }}
-          >
-            <CloseIcon sx={{ fontSize: 14 }} />
-          </IconButton>
-        </Tooltip>
-      </Stack>
+        <ExpandLessIcon sx={{ fontSize: 16, color: overlay.textStrong, opacity: 0.85 }} />
+      </ButtonBase>
       <Stack spacing={0.15} sx={{ maxHeight: 'calc(100vh - 140px)', overflowY: 'auto', pl: 1, pr: 0.5 }}>
         {loading && !info ? (
           <Typography variant="caption" sx={{ color: overlay.mid }}>
